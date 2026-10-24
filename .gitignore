@@ -1,0 +1,13 @@
+# Machine-local files and generated output
+**/.gradle/
+**/build/
+**/local.properties
+**/.idea/
+*.iml
+*.apk
+*.aab
+*.keystore
+*.jks
+*.pem
+adbkey*
+.env*
