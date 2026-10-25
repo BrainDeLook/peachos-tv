@@ -82,7 +82,6 @@ final class TopShelf {
     private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
     private boolean refreshQueued;
-    private android.animation.ValueAnimator posterScroll;
     private final Runnable refreshImages = () -> { refreshQueued = false; updateVisible(); };
 
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation, boolean animateRows) {
@@ -256,9 +255,6 @@ final class TopShelf {
             FrameLayout tile = new FrameLayout(activity);
             tile.setClipChildren(false);
             tile.setFocusable(true); tile.setClickable(true);
-            // This row aligns the selected poster itself. Android's automatic focus reveal
-            // otherwise adds an immediate, direction-dependent scroll before our animation.
-            tile.setRevealOnFocusHint(false);
             tile.setContentDescription(item.title);
             ImageView poster = new ImageView(activity);
             // Fill the rounded bounds even when a provider's aspect hint is slightly inaccurate.
@@ -291,7 +287,7 @@ final class TopShelf {
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xf2ffffff : 0xb3ffffff);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
-                if (focus) { selected = index; scrollToPoster(tile); }
+                if (focus) { selected = index; scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0); }
             });
             tile.setOnKeyListener((v, key, event) -> {
                 if (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_BACK) {
@@ -341,25 +337,6 @@ final class TopShelf {
                 && panel.getVisibility() == View.VISIBLE && !targets.isEmpty()
                 && targets.get(Math.min(selected, targets.size() - 1)).requestFocus();
     }
-    private void scrollToPoster(View tile) {
-        stopPosterScroll();
-        int limit = Math.max(0, cards.getWidth() - scroll.getWidth());
-        int target = Math.min(limit, Math.max(0, tile.getLeft() - dp(40)));
-        if (!animateRows || target == scroll.getScrollX()) {
-            scroll.scrollTo(target, 0);
-            return;
-        }
-        // HorizontalScrollView.smoothScrollTo jumps instead of animating when called again
-        // within 250ms. Retarget from the actual position for every D-pad repeat instead.
-        posterScroll = android.animation.ValueAnimator.ofInt(scroll.getScrollX(), target);
-        posterScroll.setDuration(220);
-        posterScroll.setInterpolator(ROW_EASING);
-        posterScroll.addUpdateListener(animation -> scroll.scrollTo((int) animation.getAnimatedValue(), 0));
-        posterScroll.start();
-    }
-    private void stopPosterScroll() {
-        if (posterScroll != null) { posterScroll.cancel(); posterScroll = null; }
-    }
     boolean hasFocus() { return panel.hasFocus(); }
     boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
     private void position() {
@@ -382,7 +359,6 @@ final class TopShelf {
 
     void hide() {
         if (suspended) return;
-        stopPosterScroll();
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
         downloads.getQueue().clear();
@@ -408,7 +384,6 @@ final class TopShelf {
     void close() { pause(); downloads.shutdownNow(); }
     void trim() { images.trim(); }
     private void clear() {
-        stopPosterScroll();
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
