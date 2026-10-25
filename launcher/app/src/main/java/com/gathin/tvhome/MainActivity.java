@@ -772,12 +772,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 pill.setPaddingRelative(Math.round(8 * density), 0, Math.round(8 * density), 0);
             }
         }
-        // One compact clock/settings capsule. Legacy views stay available to their menu handlers only.
+        // Compact clock/settings capsule, with a separate source control only when TV inputs exist.
         findViewById(R.id.leftBlock).setVisibility(View.GONE);
         clockBlock = findViewById(R.id.compactClock);
-        showInputsPill = false;
-        for (View button : new View[]{btnInputs, btnWifi, btnReorder, btnLibraryTop}) button.setVisibility(View.GONE);
+        showInputsPill = cfg.showInputsPill;
+        for (View button : new View[]{btnWifi, btnReorder, btnLibraryTop}) button.setVisibility(View.GONE);
         for (View button : topAppButtons) button.setVisibility(View.GONE);
+        makeIconOnly((TextView) btnInputs);
+        btnInputs.setContentDescription(getString(R.string.inputs));
+        btnInputs.setBackgroundResource(R.drawable.compact_settings_bg);
+        btnInputs.getLayoutParams().width = Math.round(24 * density);
+        btnInputs.getLayoutParams().height = Math.round(24 * density);
+        ((LinearLayout.LayoutParams) btnInputs.getLayoutParams()).setMarginStart(Math.round(5 * density));
+        btnInputs.setPaddingRelative(Math.round(4 * density), 0, Math.round(4 * density), 0);
+        updateInputsButton();
         makeIconOnly((TextView) btnSettings);
         btnSettings.setContentDescription(getString(R.string.settings));
         btnSettings.setBackgroundResource(R.drawable.compact_settings_bg);
@@ -3035,6 +3043,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         String deviceLabel = name == null || name.length() == 0 ? label : name + " \u00B7 " + label;
                         final String deviceId = device.getId();
                         int state = hdmiStateBogus ? -1 : tim.getInputState(deviceId);
+                        // TCL can leave its sole CEC child in standby even while the physical
+                        // HDMI port carries a signal. Use that definite port state for the dot.
+                        if ("TCL".equalsIgnoreCase(Build.MANUFACTURER) && devices.size() == 1
+                                && state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY
+                                && tim.getInputState(info.getId()) == TvInputManager.INPUT_STATE_CONNECTED) {
+                            state = TvInputManager.INPUT_STATE_CONNECTED;
+                        }
                         addInputRow(rows, popup, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
                     }
                     continue;
