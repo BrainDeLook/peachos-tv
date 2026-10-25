@@ -43,6 +43,8 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        findViewById(R.id.topShelfChoice).setOnClickListener(v ->
+                startActivity(new Intent(this, TopShelfSettingsActivity.class)));
         Config config = Config.load(this);
         View reorderChoice = findViewById(R.id.reorderChoice);
         reorderChoice.setVisibility(config.launcherSettingsButton ? View.VISIBLE : View.GONE);

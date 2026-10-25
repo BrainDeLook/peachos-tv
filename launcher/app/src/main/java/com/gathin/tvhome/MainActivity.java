@@ -154,6 +154,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean cinematicWhiteFocus;
     private ImageView heroArt;
     private MetadataBackdrop metadataBackdrop;
+    private TopShelf topShelf;
     /** config.xml cinematic_dots: false leaves the dock position dots out of the cinematic shelf. */
     private boolean heroDotsShown = true;
     /** The artwork's opacity behind the cinematic shelf (config.xml cinematic_art); 0 leaves it out. */
@@ -437,6 +438,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroDots = findViewById(R.id.heroDots);
         heroArt = findViewById(R.id.heroArt);
         metadataBackdrop = new MetadataBackdrop(this, findViewById(R.id.metadataBackdrop));
+        topShelf = new TopShelf(this, (android.widget.FrameLayout) root, findViewById(R.id.hero), new TopShelf.Navigation() {
+            @Override public void dock() { focusTile(singleRow ? lastFocused : lastFocused % COLUMNS); }
+            @Override public void header() { findViewById(R.id.btnSettings).requestFocus(); }
+        });
         cinematic = cfg.cinematicHome;
         glowStyle = cfg.glowStyle;
         heroDotsShown = cfg.cinematicDots;
@@ -911,6 +916,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         if (metadataBackdrop != null) metadataBackdrop.resume();
+        if (topShelf != null) topShelf.resume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1143,6 +1149,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onStop() {
         super.onStop();
         if (metadataBackdrop != null) metadataBackdrop.pause();
+        if (topShelf != null) topShelf.pause();
         started = false;
         unregisterReceiver(timeReceiver);
         handler.removeCallbacks(clockCheck);
@@ -1186,6 +1193,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onDestroy() {
         super.onDestroy();
         if (metadataBackdrop != null) metadataBackdrop.pause();
+        if (topShelf != null) topShelf.pause();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1687,6 +1695,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void showHero(int position, float dockTopInRoot) {
         metadataBackdrop.show(adapter.packageAt(position));
+        if (!reordering) topShelf.show(adapter.packageAt(position), adapter.labelAt(position), dockTopInRoot);
+        else topShelf.hide();
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
@@ -1957,6 +1967,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * name above the dock does not show (every grid tile has its name underneath).
      */
     private void showGlowOnly(int position) {
+        topShelf.hide();
         metadataBackdrop.hide();
         int color = adapter.ambientColorAt(position);
         stopAmbientAnimation();
@@ -2202,6 +2213,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
+        if (!reordering && keyCode == KeyEvent.KEYCODE_DPAD_UP && (singleRow || position < COLUMNS)
+                && topShelf.focus()) return true;
         int count = adapter.appCount();
         int target;
         if (singleRow) {
@@ -3153,6 +3166,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             });
         }
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
+        addSettingsMenuRow(rows, popup, R.string.top_shelf,
+                () -> startActivity(new Intent(this, TopShelfSettingsActivity.class)));
         if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
         addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);

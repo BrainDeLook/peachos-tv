@@ -1,0 +1,17 @@
+<resources>
+    <string name="top_shelf">Top shelf</string>
+    <string name="shelf_settings_hint">Choose what appears above each app.</string>
+    <string name="shelf_off">Off</string>
+    <string name="shelf_auto">All cards</string>
+    <string name="shelf_continue">Continue watching</string>
+    <string name="shelf_history">Watch history</string>
+    <string name="shelf_channel">%1$s</string>
+    <string name="shelf_selected_channel">Selected app channel</string>
+    <string name="shelf_check">Check source</string>
+    <string name="shelf_diagnostics">Published channels: %1$d\nCards in the selected source: %2$d</string>
+    <string name="shelf_lampa_help">Empty sources are not replaced with recommendations. In Lampa, enable Android TV home channels, open its history, and return Home. The app must publish the list before this launcher can read it.</string>
+    <string name="shelf_unavailable">Android TV metadata could not be read. Check the launcher permissions and whether the app publishes home screen cards.</string>
+    <string name="shelf_cards">App cards</string>
+    <string name="shelf_heading">%1$s · %2$s</string>
+    <string name="shelf_open_failed">The app could not open this card. Open the app from the dock.</string>
+</resources>

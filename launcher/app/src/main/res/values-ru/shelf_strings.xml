@@ -1,0 +1,17 @@
+<resources>
+    <string name="top_shelf">Верхний ряд</string>
+    <string name="shelf_settings_hint">Выберите, что показывать над каждым приложением.</string>
+    <string name="shelf_off">Выключено</string>
+    <string name="shelf_auto">Все карточки</string>
+    <string name="shelf_continue">Продолжить просмотр</string>
+    <string name="shelf_history">История просмотра</string>
+    <string name="shelf_channel">%1$s</string>
+    <string name="shelf_selected_channel">Выбранный список приложения</string>
+    <string name="shelf_check">Проверить источник</string>
+    <string name="shelf_diagnostics">Опубликовано списков: %1$d\nКарточек в выбранном источнике: %2$d</string>
+    <string name="shelf_lampa_help">Пустой источник не подменяется рекомендациями. В Lampa включите каналы главного экрана Android TV, откройте историю и вернитесь домой. Список станет доступен, когда приложение опубликует его в системе.</string>
+    <string name="shelf_unavailable">Не удалось прочитать метаданные Android TV. Проверьте разрешения лаунчера и публикацию карточек главного экрана в приложении.</string>
+    <string name="shelf_cards">Карточки приложения</string>
+    <string name="shelf_heading">%1$s · %2$s</string>
+    <string name="shelf_open_failed">Приложение не открыло карточку. Откройте его из дока.</string>
+</resources>
