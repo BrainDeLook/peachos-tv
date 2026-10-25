@@ -73,9 +73,9 @@
     </queries>
 
     <application
-        android:label="CleanYourTV + Art"
+        android:label="PeachOS TV"
         android:icon="@mipmap/ic_launcher"
-        android:banner="@drawable/banner"
+        android:banner="@drawable/peachos_banner"
         android:theme="@style/Theme.TvHome"
         android:allowBackup="false"
         android:localeConfig="@xml/locales_config">
@@ -221,7 +221,7 @@
         <service
             android:name=".InputKeyService"
             android:exported="false"
-            android:label="CleanYourTV + Art"
+            android:label="PeachOS TV"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

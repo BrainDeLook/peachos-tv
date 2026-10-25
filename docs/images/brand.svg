@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="PeachOS TV — A calmer home for Android TV">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#171a25"/><stop offset="1" stop-color="#0b0d13"/></linearGradient><linearGradient id="peach" x2="1" y2="1"><stop stop-color="#ffbb93"/><stop offset="1" stop-color="#f17c88"/></linearGradient></defs>
+<rect width="1200" height="280" rx="28" fill="url(#bg)"/>
+<rect x="70" y="62" width="156" height="156" rx="42" fill="url(#peach)"/>
+<rect x="96" y="101" width="104" height="70" rx="14" fill="#171a25"/>
+<rect x="108" y="112" width="21" height="32" rx="5" fill="#ffbd99"/>
+<rect x="136" y="112" width="21" height="32" rx="5" fill="#f69da1"/>
+<rect x="164" y="112" width="24" height="32" rx="5" fill="#c5b9e7"/>
+<rect x="119" y="154" width="58" height="5" rx="2.5" fill="#fff" opacity=".8"/>
+<text x="274" y="133" fill="#f6f5f8" font-family="Inter,Arial,sans-serif" font-size="64" font-weight="600" letter-spacing="-2">PeachOS TV</text>
+<text x="278" y="181" fill="#b5b7c4" font-family="Inter,Arial,sans-serif" font-size="24">A calmer home for Android TV.</text>
+</svg>

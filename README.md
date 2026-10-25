@@ -1,113 +1,105 @@
-# CleanYourTV + Art
+# PeachOS TV
 
-Самостоятельная модификация [CleanYourTV](https://github.com/Gathin23/cleanyourtv) 2.7 для Android TV.
-Стабильная версия: **Art v1.2.0** · Android `2.7-art.1.2.0` · versionCode `32`.
+![PeachOS TV — A calmer home for Android TV](docs/images/brand.svg)
 
-## Кнопка источников на телевизорах
+**Your apps. Your posters. A calmer home screen.**
 
-Рядом с шестерёнкой доступна
-отдельная компактная кнопка для выбора HDMI/других входов. На устройствах без входов
-кнопка скрыта. Короткое и длинное нажатия шестерёнки сохраняют прежнее назначение.
-Зелёная точка означает подключение по данным TvInputManager; несколько входов могут
-показывать подключение одновременно. На TCL для единственного CEC-устройства
-в режиме standby учитывается подтверждённое подключение физического HDMI-порта.
-Меню источников использует компактные строки 36 dp, Inter 13 sp, мягкую полупрозрачную подсветку
-и лёгкое стекло без размытия. Состояние подключения обозначается зелёной точкой.
-Проверено на TCL Smart TV Pro / Android 12. На обычных приставках без HDMI/AV-входов кнопка скрыта.
+PeachOS TV is a minimal launcher for Android TV and Google TV, built around a dock of favourite apps, large artwork, and quiet glass effects. It replaces your home screen, while your apps and subscriptions stay where they are.
 
-## Главный экран
+[Download APK](https://github.com/BrainDeLook/peachos-tv/releases/latest) · [Русский](README.ru.md) · [Installation](#install) · [Build from source](#build)
 
-- Верхний ряд карточек выбранного приложения: пять крупных портретных постеров или горизонтальные превью с соответствующими пропорциями.
-- Ряд проходит через края экрана; список конечный, без искусственного повторения. Постеры без рамок, выбранный слегка увеличивается и показывает название под изображением.
-- Источник карточек настраивается отдельно для каждого приложения: все карточки, продолжение просмотра, история Lampa или конкретный канал Android TV.
-- Компактная капсула справа сверху объединяет часы и настройки. Под доком виден край следующего ряда приложений.
-- Выбранная плитка приложения плавно увеличивается, предыдущая уменьшается. Мягкий блик и лёгкое стекло работают без размытия и захвата экрана.
-- Локальный Inter 4.1, спокойная прозрачность текста и плавная смена рядов/цветного фона.
-- Сохранена привычная прокрутка постеров с инерцией. Кэш миниатюр ограничен: 2 МиБ декодированных изображений и 32 МиБ на диске; загрузка и декодирование выполняются одним фоновым потоком.
+> PeachOS TV was previously called **CleanYourTV + Art**. Existing users can update in place: the package ID and signing certificate are unchanged. Despite the name, this is a launcher, not a replacement operating system.
 
-Удерживайте OK на верхней кнопке «Настройки» → «Верхний ряд», выберите приложение и источник.
-Вверх из дока — к постерам; Влево/Вправо — листать; OK — открыть карточку в приложении;
-Вниз или Назад — в док; ещё раз Вверх — к верхним кнопкам.
+## A home screen built around what you watch
 
-По умолчанию у Lampa выбрана история, у YouTube/SmartTube ряд выключен,
-у остальных приложений — все доступные карточки. Пустой источник не подменяется
-чужими рекомендациями: при отсутствии постеров показывается название приложения.
-Пункт «Карточки приложений» в исходном меню CleanYourTV относится к отдельному протоколу модулей.
+![Large portrait artwork above the app dock](docs/images/home.png)
 
-Приложение должно публиковать карточки через Android TV Preview / Watch Next.
-История Lampa берётся из её канала `history`, в порядке, опубликованном приложением.
-Частные базы приложений не читаются, root не нужен. Если приложение временно очищает
-свой канал при обновлении, ряд может быть пуст до следующего обновления данных.
+- **Artwork for the focused app.** Choose a source for each app: all Android TV cards, continue watching, Lampa history, or a specific published channel.
+- **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
+- **A quiet dock.** A gentle focus zoom, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
+- **Lightweight glass.** Restrained translucent materials with no live background capture or blur buffers. Glass can be turned off.
+- **Your layout.** Rearrange apps and choose which ones belong in the dock.
+- **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
 
-## Фоны и оформление
+## Made for TVs and streaming boxes
 
-Когда выбран источник карточек, полноэкранные метаданные этого приложения не показываются;
-остаётся приглушённое цветное свечение. При выключенном ряде можно использовать прежние фоны:
-для Jellyfin и других приложений — Android TV Preview / Watch Next, для распознанных фильмов
-и сериалов — изображения Stremio/Cinemeta. YouTube и SmartTube используют статичный локальный логотип.
+![Compact source picker with green connection indicators](docs/images/sources.png)
 
-API-ключи не нужны. Поиск фонов может передавать названия фильмов внешним сервисам;
-изображения могут загружаться с адресов, опубликованных приложениями.
-Ссылки Lampa `http://image.tmdb.org/` переводятся на тот же ресурс по HTTPS.
+On TVs with available inputs, a compact button next to settings opens the HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs keep the simpler header.
 
-Лёгкое стекло переключается в настройках главного экрана.
-Для порядка приложений удерживайте OK на «Настройки» → «Изменить порядок приложений»;
-для состава дока — «Изменить док». Начальный порядок: SmartTube → Кинопоиск → Jellyfin →
-Lampa → Vimu → File Manager+. Отсутствующие приложения пропускаются, пользовательский порядок сохраняется.
+CEC device names are preserved. On supported TCL firmware, a confirmed physical HDMI connection is used when its sole CEC child incorrectly reports standby. The remote's native Input button keeps its existing behaviour.
 
-## Установка и обновление
+## Controls
 
-APK и SHA-256 доступны в [последнем стабильном релизе](../../releases/latest).
-Нужен Android TV 8.0 / API 26 или новее. Обновление совместимо с предыдущими APK этого форка:
-устанавливайте поверх, чтобы сохранить настройки.
+| Action | Remote control |
+| --- | --- |
+| Enter artwork from the dock | Up |
+| Browse artwork | Left / Right |
+| Open a card in its app | OK |
+| Return from artwork to the dock | Down / Back |
+| Open the launcher menu | Hold OK on the settings gear |
+| Choose artwork sources | Launcher menu → Top shelf |
+| Rearrange apps / edit the dock | Launcher menu → Reorder / Edit dock |
 
-Пакет: `com.gathin.tvhome.backdrops`. Оригинальный `com.gathin.tvhome` может оставаться рядом.
+Apps must publish their cards through Android TV Preview / Watch Next. Lampa history uses Lampa's published history channel. Private app databases are not read, and root is not required. Availability and freshness depend on the publishing app; empty or temporarily refreshed channels can show no cards.
+
+## Install
+
+Requires **Android TV / Google TV 8.0+ (API 26)**. This APK is not for Samsung Tizen or LG webOS.
+
+1. Download `PeachOS-TV.apk` from [Releases](https://github.com/BrainDeLook/peachos-tv/releases/latest).
+2. Install it on your TV or box and open **PeachOS TV**.
+3. Choose it as the default Home app if your firmware allows it. ADB can be used as follows.
 
 ```sh
-adb -s <device> install -r -g CleanYourTV-Art.apk
+adb -s <device> install -r -g PeachOS-TV.apk
 adb -s <device> shell am start -n com.gathin.tvhome.backdrops/com.gathin.tvhome.MainActivity
 ```
 
-После проверки запуска можно назначить Home:
+After confirming that it opens and your remote works:
 
 ```sh
 adb -s <device> shell cmd package set-home-activity com.gathin.tvhome.backdrops/com.gathin.tvhome.MainActivity
 ```
 
-Команды не очищают систему и не отключают заводской лаунчер.
+These commands do not debloat the device or disable its original launcher. Firmware may restrict Home replacement. Keep the original launcher available so you can switch back in system settings.
 
-## Сборка и подпись
+**Updating:** install the newer signed APK over the existing one. Do not uninstall first if you want to preserve settings. The package remains `com.gathin.tvhome.backdrops`, including for older CleanYourTV + Art installations. The original `com.gathin.tvhome` can remain installed alongside it.
 
-Нужны JDK 17, Android SDK Platform 34 и Build Tools 34.0.0. Задайте `JAVA_HOME` и `ANDROID_HOME`.
+## Data and network access
+
+No account or API key is required by the launcher. Artwork may be fetched from URLs published by your apps. When metadata backgrounds are enabled, title matching can contact Stremio/Cinemeta services. Lampa TMDB image links are upgraded from HTTP to HTTPS.
+
+With a card source selected, full-screen metadata backgrounds for that app are disabled. The decoded thumbnail cache is limited to 2 MiB, disk thumbnails to 32 MiB; one background worker loads artwork. Inter fonts are bundled locally.
+
+Screenshots show a real installation. App logos and film/series artwork belong to their respective owners; they are not supplied media subscriptions or included streaming content.
+
+## Build
+
+Use **JDK 17**, **Android SDK Platform 34**, **Build Tools 34.0.0**, and the bundled **Gradle 8.9** wrapper. Set `JAVA_HOME` and `ANDROID_HOME`.
 
 ```sh
 cd launcher
 ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease
 ```
 
-В PowerShell используйте `./gradlew.bat`. Wrapper: Gradle 8.9.
-APK: `launcher/app/build/outputs/apk/release/app-release.apk`.
+On Windows, use `gradlew.bat`. The APK is written to `launcher/app/build/outputs/apk/release/app-release.apk`.
 
-Release подписывается локальным debug-ключом, как в исходном проекте.
-**Приватный ключ в репозиторий не включён.** Для совместимого обновления своей сборкой нужен
-тот же `debug.keystore`: задайте `ANDROID_USER_HOME` на его каталог.
-При другом ключе Android откажется устанавливать APK поверх старого; удаление приложения стирает настройки.
+Release APKs currently use the project's original local debug signing certificate for update compatibility. **The private signing key is not in this repository.** A self-built APK signed with another key cannot update an installed release. Set `ANDROID_USER_HOME` to the directory containing your original `debug.keystore` only if you already have that key.
 
-## Проверка стабильной версии
+## Tested devices
 
-239 unit-тестов, release-сборка и lintRelease проходят без ошибок; предупреждения исходного проекта остаются.
-Код интерфейса совпадает с принятой пользователем сборкой `2.7-art.1.1.2-tv`:
-для стабильного выпуска изменены только версия и документация.
-На Homatics Box R 4K Plus / Android 12 проверены док/сетка, вертикальные и горизонтальные карточки,
-история Lampa, запуск карточек и возврат Home; внешний вид и плавность приняты пользователем.
-На TCL проверены меню источников, индикаторы подключения, выбор HDMI 1 и прежние действия шестерёнки. Ровные 60 кадров на всех устройствах не гарантируются.
+- **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
+- **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
 
-## Происхождение и лицензии
+239 existing unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device.
 
-- Основа: [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv), commit `ab7a89e7543f2ef12aac0fa66a4d58c7f4452781` (MIT).
-- Метаданные и фоны адаптированы из [maydings/vibe-launcher](https://github.com/maydings/vibe-launcher), v1.9.3, commit `fe00ad13730146def04275967e1df4b8365b670e` (MIT).
-- Копии лицензий: `LICENSE`, `LICENSE-CleanYourTV`, `LICENSE-VibeLauncher`.
-- [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1), SIL OFL 1.1: `launcher/FONT-LICENSE-INTER.txt`.
-- Исходные ресурсы Outfit: `launcher/FONT-LICENSE-OFL.txt`.
+## Credits and license
 
-Резервные копии устройств, адреса локальной сети, ADB-ключи, ключ подписи, кэши и локальные настройки сборки не включены.
+PeachOS TV is an independent fork of [CleanYourTV](https://github.com/Gathin23/cleanyourtv) 2.7, based on commit `ab7a89e7543f2ef12aac0fa66a4d58c7f4452781`. Metadata/background work was adapted from [Vibe Launcher](https://github.com/maydings/vibe-launcher) v1.9.3, commit `fe00ad13730146def04275967e1df4b8365b670e`.
+
+- Code: MIT; see [LICENSE](LICENSE), [CleanYourTV license](LICENSE-CleanYourTV), and [Vibe Launcher license](LICENSE-VibeLauncher).
+- [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1): [SIL OFL 1.1](launcher/FONT-LICENSE-INTER.txt). Original Outfit resources retain their [OFL license](launcher/FONT-LICENSE-OFL.txt).
+- PeachOS TV's original peach-coloured screen mark and branding assets are included under this repository's MIT license.
+
+This Android TV launcher is not affiliated with Apple, Google, the unrelated peachOS Linux project, or the apps shown in screenshots. No Apple logos, SF fonts, or SF Symbols are bundled as PeachOS TV branding.
