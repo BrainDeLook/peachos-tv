@@ -755,9 +755,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cfg.iconOnlyInputs) makeIconOnly((TextView) btnInputs);
         for (View button : new View[]{btnInputs, btnWifi, btnSettings, btnReorder, btnLibraryTop}) {
             TextView pill = (TextView) button;
-            for (Drawable icon : pill.getCompoundDrawablesRelative()) {
+            Drawable[] icons = pill.getCompoundDrawablesRelative();
+            for (Drawable icon : icons) {
                 if (icon != null) icon.setBounds(0, 0, Math.round(16 * density), Math.round(16 * density));
             }
+            // TextView caches drawable dimensions. Reassign after resizing so the 16dp icon is centred,
+            // rather than drawn at the top-left of the old 22dp slot.
+            pill.setCompoundDrawablesRelative(icons[0], icons[1], icons[2], icons[3]);
             if (pill.getText().length() == 0) {
                 pill.getLayoutParams().width = Math.round(32 * density);
                 pill.setPaddingRelative(Math.round(8 * density), 0, Math.round(8 * density), 0);
