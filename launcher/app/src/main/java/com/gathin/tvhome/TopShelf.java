@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Focusable top shelf. Queries and image decoding never run on Home's main thread. */
 final class TopShelf {
-    interface Navigation { void dock(); void header(); }
+    interface Navigation { void dock(); void header(); boolean settling(); }
     private final Activity activity;
     private final View hero;
     private final View dim;
@@ -57,6 +57,7 @@ final class TopShelf {
         ShelfRepository.Item item;
         int rowHeight, maxWidth;
         boolean loading, loaded;
+        volatile boolean wanted;
         long failedAt;
     }
     private volatile String requested;
@@ -64,7 +65,10 @@ final class TopShelf {
     private volatile int generation;
     private int selected;
     private volatile boolean active;
+    private boolean suspended;
     private float dockTop;
+    private final Runnable releaseImages = this::releaseDistantImages;
+    private final Runnable refreshImages = this::updateVisible;
 
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
@@ -113,8 +117,23 @@ final class TopShelf {
 
     void show(String pkg, String appLabel, float top) {
         dockTop = top; label = appLabel;
-        if (pkg == null || pkg.equals(requested)) { position(); return; }
+        if (pkg == null) return;
+        if (pkg.equals(requested)) {
+            if (suspended) {
+                suspended = false;
+                if (!bindings.isEmpty()) {
+                    if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
+                    dim.setVisibility(View.VISIBLE); panel.setVisibility(View.VISIBLE);
+                    panel.post(refreshImages);
+                } else {
+                    requested = null;
+                    show(pkg, appLabel, top);
+                }
+            }
+            position(); return;
+        }
         requested = pkg;
+        suspended = false;
         int ticket = ++generation;
         clear();
         images.stats();
@@ -123,7 +142,7 @@ final class TopShelf {
         String key = pkg + "\n" + source;
         Snapshot cached = lists.get(key);
         if (cached != null && android.os.SystemClock.elapsedRealtime() - cached.at < 60_000) {
-            render(pkg, cached.result, ticket);
+            whenSettled(ticket, pkg, () -> render(pkg, cached.result, ticket));
             return;
         }
         // A short debounce avoids building lists for every app crossed while holding Right.
@@ -132,10 +151,21 @@ final class TopShelf {
             queries.execute(() -> {
                 ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
                 activity.runOnUiThread(() -> {
-                    if (valid(ticket, pkg)) { lists.put(key, new Snapshot(result)); render(pkg, result, ticket); }
+                    if (valid(ticket, pkg)) {
+                        lists.put(key, new Snapshot(result));
+                        whenSettled(ticket, pkg, () -> render(pkg, result, ticket));
+                    }
                 });
             });
         }, 180);
+    }
+
+    private void whenSettled(int ticket, String pkg, Runnable action) {
+        panel.postDelayed(() -> {
+            if (!valid(ticket, pkg)) return;
+            if (navigation.settling()) whenSettled(ticket, pkg, action);
+            else action.run();
+        }, 32);
     }
 
     private void render(String pkg, ShelfRepository.Result result, int ticket) {
@@ -239,9 +269,17 @@ final class TopShelf {
         View buttons = activity.findViewById(R.id.topButtons);
         return Math.max(dp(48), buttons == null ? 0 : buttons.getBottom() + dp(8));
     }
-    private boolean valid(int ticket, String pkg) { return active && ticket == generation && pkg.equals(requested); }
+    private boolean valid(int ticket, String pkg) { return active && !suspended && ticket == generation && pkg.equals(requested); }
 
-    void hide() { requested = null; generation++; clear(); }
+    void hide() {
+        if (suspended) return;
+        suspended = true; generation++;
+        downloads.getQueue().clear();
+        for (Binding b : bindings) b.loading = false;
+        panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
+        panel.setVisibility(View.INVISIBLE); dim.setVisibility(View.GONE);
+        if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
+    }
     void pause() {
         active = false; generation++; clear();
         if (queries != null) queries.shutdownNow();
@@ -253,6 +291,7 @@ final class TopShelf {
     void close() { pause(); downloads.shutdownNow(); }
     void trim() { images.trim(); }
     private void clear() {
+        panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
         bindings.clear();
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
@@ -290,36 +329,52 @@ final class TopShelf {
         caption.topMargin = artwork.topMargin + dimensions[1] + Math.round(dimensions[1] * .0225f) + dp(7);
         binding.tile.requestLayout();
     }
-    private boolean inWindow(Binding b) {
+    private boolean inWindow(Binding b, int spare) {
         if (b.tile.getWidth() == 0) return false; // before layout every unmeasured tile has left/right == 0
-        int spare = dp(160);
         return b.tile.getRight() >= scroll.getScrollX() - spare
                 && b.tile.getLeft() <= scroll.getScrollX() + scroll.getWidth() + spare;
     }
     private void updateVisible() {
         if (!active || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
+        panel.removeCallbacks(refreshImages);
+        if (navigation.settling()) { panel.postDelayed(refreshImages, 32); return; }
+        panel.removeCallbacks(releaseImages);
+        panel.postDelayed(releaseImages, 300);
         final int ticket = generation;
         final String pkg = requested;
-        for (Binding b : bindings) {
-            if (!inWindow(b)) {
-                b.image.setImageDrawable(null); b.loaded = false;
-                continue;
-            }
+        for (Binding b : bindings) b.wanted = inWindow(b, scroll.getWidth() / 2);
+        // Visible artwork gets ahead of speculative neighbours in the single worker's queue.
+        for (int pass = 0; pass < 2; pass++) for (Binding b : bindings) {
+            if (!b.wanted || inWindow(b, 0) != (pass == 0)) continue;
             if (b.loaded || b.loading || b.item.image.isEmpty()
                     || (b.failedAt != 0 && android.os.SystemClock.elapsedRealtime() - b.failedAt < 60_000)) continue;
             Bitmap cached = images.peek(b.item.image);
             if (cached != null) { bind(b, cached); continue; }
             b.loading = true;
             downloads.execute(() -> {
-                if (!valid(ticket, pkg)) return;
+                if (!valid(ticket, pkg) || !b.wanted) {
+                    activity.runOnUiThread(() -> {
+                        b.loading = false;
+                        if (valid(ticket, pkg) && b.wanted) updateVisible();
+                    });
+                    return;
+                }
                 Bitmap ready = images.load(b.item.image);
                 activity.runOnUiThread(() -> {
                     b.loading = false;
                     if (ready == null) b.failedAt = android.os.SystemClock.elapsedRealtime();
                     if (!active) images.trim();
-                    if (ready != null && valid(ticket, pkg) && inWindow(b)) bind(b, ready);
+                    if (ready != null && valid(ticket, pkg) && inWindow(b, scroll.getWidth())) bind(b, ready);
                 });
             });
+        }
+    }
+    private void releaseDistantImages() {
+        if (!active || suspended) return;
+        for (Binding b : bindings) {
+            if (b.loaded && !inWindow(b, scroll.getWidth())) {
+                b.image.setImageDrawable(null); b.loaded = false;
+            }
         }
     }
     private void bind(Binding b, Bitmap bitmap) {

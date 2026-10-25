@@ -4,7 +4,6 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
@@ -17,7 +16,6 @@ final class LiquidGlass extends Drawable {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint light = new Paint(Paint.ANTI_ALIAS_FLAG), shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF area = new RectF(), shadeArea = new RectF();
-    private final Path clip = new Path();
     private final float density;
     private float radius, focus = .25f;
     private int opacity = 255;
@@ -27,14 +25,11 @@ final class LiquidGlass extends Drawable {
     }
     void radius(float value) {
         if (radius == value) return;
-        radius = value; outline();
+        radius = value;
     }
     void focus(float value) {
         if (Math.abs(focus - value) < .001f) return;
         focus = value; lighting();
-    }
-    private void outline() {
-        clip.reset(); clip.addRoundRect(area, radius, radius, Path.Direction.CW);
     }
     private void lighting() {
         if (area.isEmpty()) return;
@@ -51,7 +46,7 @@ final class LiquidGlass extends Drawable {
         edge.setShader(new LinearGradient(area.left, area.top, area.right, area.bottom,
                 new int[]{0x50FFFFFF, 0x0CFFFFFF, 0x05FFFFFF, 0x2CDAE7F2},
                 new float[]{0, .26f, .70f, 1}, Shader.TileMode.CLAMP));
-        outline(); lighting();
+        lighting();
     }
     @Override public void draw(Canvas canvas) {
         // Three very faint, inset-free contours approximate a soft lift without allocating a blurred layer.
@@ -62,8 +57,7 @@ final class LiquidGlass extends Drawable {
             canvas.drawRoundRect(shadeArea, radius + i * density, radius + i * density, shadow);
         }
         canvas.drawRoundRect(area, radius, radius, fill);
-        int save = canvas.save();
-        canvas.clipPath(clip); canvas.drawRect(area, light); canvas.restoreToCount(save);
+        canvas.drawRoundRect(area, radius, radius, light);
         canvas.drawRoundRect(area, radius, radius, edge);
     }
     @Override public void setAlpha(int value) {
