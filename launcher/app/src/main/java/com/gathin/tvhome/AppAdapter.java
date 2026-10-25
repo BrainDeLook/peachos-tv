@@ -877,7 +877,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             name = v.findViewById(R.id.name);
             sheen = new View(v.getContext());
             sheen.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    new int[]{0x20FFFFFF, 0x06FFFFFF, 0x00FFFFFF}));
+                    new int[]{0x12FFFFFF, 0x03FFFFFF, 0x00FFFFFF}));
             sheen.setAlpha(0f);
             sheen.forceHasOverlappingRendering(false);
             sheen.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);

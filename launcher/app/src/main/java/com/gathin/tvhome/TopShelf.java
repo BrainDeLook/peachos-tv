@@ -214,7 +214,8 @@ final class TopShelf {
             tile.setFocusable(true); tile.setClickable(true);
             tile.setContentDescription(item.title);
             ImageView poster = new ImageView(activity);
-            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            // Fill the rounded bounds even when a provider's aspect hint is slightly inaccurate.
+            poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
             GradientDrawable placeholder = new GradientDrawable();
             placeholder.setColor(0xff25303d); placeholder.setCornerRadius(dp(8));
             poster.setBackground(placeholder);
