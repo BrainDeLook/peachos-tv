@@ -58,17 +58,20 @@ final class TopShelf {
         panel.setVisibility(View.GONE);
         heading = new TextView(activity);
         heading.setTextColor(0xffffffff); heading.setTextSize(19);
-        heading.setSingleLine(true); heading.setPadding(dp(8), 0, 0, dp(5));
+        heading.setSingleLine(true); heading.setPadding(dp(40), 0, dp(40), dp(5));
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
-        scroll.setPadding(dp(7), dp(7), dp(7), dp(7));
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setHorizontalFadingEdgeEnabled(false);
+        scroll.setPadding(0, dp(8), 0, dp(8));
         cards = new LinearLayout(activity);
         cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false);
+        // Content has an initial inset; the viewport itself reaches both physical screen edges.
+        cards.setPadding(dp(40), 0, dp(40), 0);
         scroll.addView(cards);
         panel.addView(scroll);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
-        lp.leftMargin = dp(56); lp.rightMargin = dp(56);
         root.addView(panel, lp);
     }
 
@@ -111,7 +114,11 @@ final class TopShelf {
         }
         heading.setText(ShelfSelection.AUTO.equals(source) ? label : section);
         cards.removeAllViews(); targets.clear(); selected = 0;
-        int height = Math.max(dp(80), Math.min(dp(168), (int) dockTop - dp(210)));
+        int viewport = activity.getResources().getDisplayMetrics().widthPixels;
+        // Five full portrait cards, with the next one peeking in at the physical right edge.
+        int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
+        int height = Math.max(dp(120), Math.min(Math.round((widthForFive - dp(6)) * 1.5f),
+                Math.min(dp(252), (int) dockTop - dp(166))));
         for (ShelfRepository.Item item : result.items) {
             LinearLayout tile = new LinearLayout(activity);
             tile.setOrientation(LinearLayout.VERTICAL);
@@ -131,9 +138,9 @@ final class TopShelf {
             title.setAlpha(0f);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             title.setPadding(dp(3), dp(5), dp(3), 0);
-            tile.addView(title, new LinearLayout.LayoutParams(-1, dp(26)));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(118), -2);
-            lp.rightMargin = dp(18); cards.addView(tile, lp); targets.add(tile);
+            tile.addView(title, new LinearLayout.LayoutParams(-1, dp(20)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.round(height * 2f / 3f) + dp(6), -2);
+            lp.rightMargin = dp(20); cards.addView(tile, lp); targets.add(tile);
             int index = targets.size() - 1;
             final int[] navigationKey = {-1};
             tile.setOnFocusChangeListener((v, focus) -> {
@@ -141,7 +148,7 @@ final class TopShelf {
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xffffffff : 0xffc0c6cc);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
-                if (focus) { selected = index; scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(14)), 0); }
+                if (focus) { selected = index; scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0); }
             });
             tile.setOnKeyListener((v, key, event) -> {
                 if (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_BACK) {
@@ -180,7 +187,7 @@ final class TopShelf {
     }
     boolean hasFocus() { return panel.hasFocus(); }
     private void position() {
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(Math.max(dp(116), dockTop - panel.getHeight() - dp(22)));
+        if (panel.getVisibility() == View.VISIBLE) panel.setY(Math.max(dp(72), dockTop - panel.getHeight() - dp(14)));
     }
     private boolean valid(int ticket, String pkg) { return active && ticket == generation && pkg.equals(requested); }
 

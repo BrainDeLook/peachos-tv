@@ -1,4 +1,5 @@
 <resources>
+    <string name="compact_home_date">EEE, d MMM</string>
     <string name="top_shelf">Top shelf</string>
     <string name="shelf_settings_hint">Choose what appears above each app.</string>
     <string name="shelf_off">Off</string>

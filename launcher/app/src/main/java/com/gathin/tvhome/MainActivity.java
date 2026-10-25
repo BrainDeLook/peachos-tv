@@ -605,6 +605,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
             // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
             if (!MainActivity.this.dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
+            // The larger poster shelf needs a little more height; keep the app dock comfortably below it.
+            if (MainActivity.this.dockRow && !singleRow) want += (int) (22 * density);
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
@@ -751,6 +753,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             makeIconOnly((TextView) btnSettings);
         }
         if (cfg.iconOnlyInputs) makeIconOnly((TextView) btnInputs);
+        for (View button : new View[]{btnInputs, btnWifi, btnSettings, btnReorder, btnLibraryTop}) {
+            TextView pill = (TextView) button;
+            for (Drawable icon : pill.getCompoundDrawablesRelative()) {
+                if (icon != null) icon.setBounds(0, 0, Math.round(16 * density), Math.round(16 * density));
+            }
+            if (pill.getText().length() == 0) {
+                pill.getLayoutParams().width = Math.round(32 * density);
+                pill.setPaddingRelative(Math.round(8 * density), 0, Math.round(8 * density), 0);
+            }
+        }
         btnSettings.setOnLongClickListener(v -> {
             showSettingsMenu();
             return true;
@@ -2287,7 +2299,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void addTopBarApps(List<String> packages) {
         ViewGroup bar = findViewById(R.id.topButtons);
         PackageManager pm = getPackageManager();
-        int size = Math.round(22 * density);
+        int size = Math.round(16 * density);
         for (String pkg : packages) {
             Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (launch == null) launch = pm.getLaunchIntentForPackage(pkg);
