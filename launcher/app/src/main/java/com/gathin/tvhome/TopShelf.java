@@ -36,6 +36,7 @@ final class TopShelf {
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
     private final android.graphics.Typeface bodyFace;
+    private final boolean animateRows;
     private ExecutorService queries;
     private final ThreadPoolExecutor downloads = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(), task -> new Thread(() -> {
@@ -60,6 +61,7 @@ final class TopShelf {
         boolean loading, loaded;
         volatile boolean wanted;
         long failedAt;
+        android.animation.ObjectAnimator reveal;
     }
     private volatile String requested;
     private String label;
@@ -68,13 +70,16 @@ final class TopShelf {
     private volatile boolean active;
     private boolean suspended;
     private boolean cardMode;
+    private boolean rowExiting, awaitingRow;
+    private String renderedPkg;
     private float dockTop;
     private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
     private final Runnable refreshImages = this::updateVisible;
 
-    TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation) {
+    TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation, boolean animateRows) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
+        this.animateRows = animateRows;
         images = new ShelfImages(activity);
         bodyFace = activity.getResources().getFont(R.font.inter_regular);
         dim = new View(activity);
@@ -88,6 +93,8 @@ final class TopShelf {
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setClipChildren(false);
+        // Cards, captions and heading occupy separate areas; fade their existing render nodes directly.
+        panel.forceHasOverlappingRendering(false);
         panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> position());
         panel.setVisibility(View.GONE);
         heading = new TextView(activity);
@@ -128,8 +135,10 @@ final class TopShelf {
         if (pkg.equals(requested)) {
             if (suspended) {
                 suspended = false;
-                if (!bindings.isEmpty()) {
+                if (!bindings.isEmpty() && pkg.equals(renderedPkg)) {
                     if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
+                    awaitingRow = false;
+                    panel.setAlpha(1f);
                     setDim(true); panel.setVisibility(View.VISIBLE);
                     panel.post(refreshImages);
                 } else {
@@ -148,7 +157,8 @@ final class TopShelf {
         // Unknown results stay hidden while loading; a known empty list uses the ordinary app title.
         cardMode = !ShelfSelection.OFF.equals(source) && (!fresh || !cached.result.items.isEmpty());
         int ticket = ++generation;
-        clear();
+        awaitingRow = true;
+        dismissRow(ticket, pkg);
         if (hero.getVisibility() != View.GONE) {
             hero.animate().cancel();
             hero.setVisibility(cardMode ? View.INVISIBLE : View.VISIBLE);
@@ -172,18 +182,36 @@ final class TopShelf {
                     }
                 });
             });
-        }, 180);
+        }, 120);
+    }
+
+    private void dismissRow(int ticket, String pkg) {
+        panel.animate().cancel();
+        panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
+        downloads.getQueue().clear();
+        if (!animateRows || panel.getVisibility() != View.VISIBLE || bindings.isEmpty() || panel.getAlpha() == 0f) {
+            clear(); return;
+        }
+        rowExiting = true;
+        panel.animate().alpha(0f).setDuration(120)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .withEndAction(() -> {
+                    if (!valid(ticket, pkg)) return;
+                    clear();
+                    if (!cardMode) navigation.fallback(dockTop);
+                }).start();
     }
 
     private void whenSettled(int ticket, String pkg, Runnable action) {
         panel.postDelayed(() -> {
             if (!valid(ticket, pkg)) return;
-            if (navigation.settling()) whenSettled(ticket, pkg, action);
+            if (navigation.settling() || rowExiting) whenSettled(ticket, pkg, action);
             else action.run();
         }, 32);
     }
 
     private void render(String pkg, ShelfRepository.Result result, int ticket) {
+        awaitingRow = false;
         if (result.items.isEmpty()) {
             cardMode = false;
             if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
@@ -191,6 +219,7 @@ final class TopShelf {
             return; // no posters: restore this app's title, never unrelated recommendations
         }
         cardMode = true;
+        renderedPkg = pkg;
         String source = ShelfRepository.source(activity, pkg);
         String section = activity.getString(ShelfSelection.HISTORY.equals(source) ? R.string.shelf_history
                 : ShelfSelection.CONTINUE.equals(source) ? R.string.shelf_continue : R.string.shelf_cards);
@@ -271,21 +300,30 @@ final class TopShelf {
                 }
                 return false;
             });
-            tile.setOnClickListener(v -> open(pkg, item));
+            tile.setOnClickListener(v -> {
+                if (active && !suspended && !awaitingRow && pkg.equals(requested) && pkg.equals(renderedPkg)) open(pkg, item);
+            });
         }
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
         setDim(true);
         panel.setVisibility(View.VISIBLE);
+        panel.setAlpha(animateRows ? 0f : 1f);
         scroll.scrollTo(0, 0);
-        panel.post(() -> { position(); updateVisible(); });
+        panel.post(() -> {
+            if (!valid(ticket, pkg)) return;
+            position(); updateVisible();
+            if (animateRows) panel.animate().alpha(1f).setDuration(220)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        });
     }
 
     boolean focus() {
-        return panel.getVisibility() == View.VISIBLE && !targets.isEmpty()
+        return !awaitingRow && requested != null && requested.equals(renderedPkg)
+                && panel.getVisibility() == View.VISIBLE && !targets.isEmpty()
                 && targets.get(Math.min(selected, targets.size() - 1)).requestFocus();
     }
     boolean hasFocus() { return panel.hasFocus(); }
-    boolean replacesHero() { return cardMode && !suspended; }
+    boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
     private void position() {
         // dockTop is the unscaled app tile, while the dock material extends another 14dp upwards.
         if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(16));
@@ -307,6 +345,7 @@ final class TopShelf {
     void hide() {
         if (suspended) return;
         suspended = true; generation++;
+        panel.animate().cancel(); rowExiting = false;
         downloads.getQueue().clear();
         for (Binding b : bindings) b.loading = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
@@ -325,9 +364,13 @@ final class TopShelf {
     void close() { pause(); downloads.shutdownNow(); }
     void trim() { images.trim(); }
     private void clear() {
+        panel.animate().cancel(); rowExiting = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
+        for (Binding b : bindings) if (b.reveal != null) b.reveal.cancel();
         bindings.clear();
+        renderedPkg = null;
+        panel.setAlpha(0f);
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
     }
 
@@ -367,7 +410,7 @@ final class TopShelf {
                 && b.tile.getLeft() <= scroll.getScrollX() + scroll.getWidth() + spare;
     }
     private void updateVisible() {
-        if (!active || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
+        if (!active || awaitingRow || rowExiting || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
         panel.removeCallbacks(refreshImages);
         if (navigation.settling()) { panel.postDelayed(refreshImages, 32); return; }
         panel.removeCallbacks(releaseImages);
@@ -405,11 +448,13 @@ final class TopShelf {
         if (!active || suspended) return;
         for (Binding b : bindings) {
             if (b.loaded && !inWindow(b, scroll.getWidth())) {
+                if (b.reveal != null) b.reveal.cancel();
                 b.image.setImageDrawable(null); b.loaded = false;
             }
         }
     }
     private void bind(Binding b, Bitmap bitmap) {
+        boolean first = !b.loaded;
         b.loaded = true;
         float actual = bitmap.getWidth() / (float) bitmap.getHeight();
         if (Math.abs(actual - b.item.aspect) > .02f) {
@@ -417,6 +462,15 @@ final class TopShelf {
             cards.post(this::updateVisible);
         }
         b.image.setImageBitmap(bitmap);
+        if (first) {
+            if (b.reveal != null) b.reveal.cancel();
+            b.image.setImageAlpha(animateRows ? 0 : 255);
+            if (animateRows) {
+                // Image paint alpha avoids a bitmap snapshot or a temporary per-image hardware layer.
+                b.reveal = android.animation.ObjectAnimator.ofInt(b.image, "imageAlpha", 0, 255);
+                b.reveal.setDuration(160); b.reveal.start();
+            }
+        }
     }
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
 }

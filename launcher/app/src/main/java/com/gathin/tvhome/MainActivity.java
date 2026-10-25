@@ -446,7 +446,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             @Override public void header() { findViewById(R.id.btnSettings).requestFocus(); }
             @Override public void fallback(float top) { showHero(lastFocused, top); }
             @Override public boolean settling() { return grid != null && grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE; }
-        });
+        }, cfg.animations && !cfg.reducedMotion);
         cinematic = cfg.cinematicHome;
         glowStyle = cfg.glowStyle;
         heroDotsShown = cfg.cinematicDots;
