@@ -262,6 +262,12 @@ final class TopShelf {
             GradientDrawable placeholder = new GradientDrawable();
             placeholder.setColor(0xff25303d); placeholder.setCornerRadius(dp(8));
             poster.setBackground(placeholder);
+            // Keep rounded clipping independent of the placeholder, which is removed after loading.
+            poster.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(8));
+                }
+            });
             poster.setClipToOutline(true);
             tile.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
             TextView title = new TextView(activity);
@@ -477,6 +483,7 @@ final class TopShelf {
             if (b.loaded && !inWindow(b, scroll.getWidth())) {
                 if (b.reveal != null) b.reveal.cancel();
                 b.image.setImageDrawable(null); b.loaded = false;
+                // Offscreen tiles have no need for either a bitmap or a placeholder draw.
             }
         }
     }
@@ -489,10 +496,16 @@ final class TopShelf {
             scheduleVisible();
         }
         b.image.setImageBitmap(bitmap);
+        // The bitmap fills the bounds. Drawing a second rounded rectangle underneath every poster
+        // wastes fill rate, especially while the whole row fades or scrolls.
+        b.image.setBackground(null);
         if (first) {
             if (b.reveal != null) b.reveal.cancel();
-            b.image.setImageAlpha(animateRows ? 0 : 255);
-            if (animateRows) {
+            // A row that is already fading in needs no second, per-image animation. Late downloads
+            // still fade gently after the row has become fully visible.
+            boolean reveal = animateRows && panel.getAlpha() >= .99f;
+            b.image.setImageAlpha(reveal ? 0 : 255);
+            if (reveal) {
                 // Image paint alpha avoids a bitmap snapshot or a temporary per-image hardware layer.
                 b.reveal = android.animation.ObjectAnimator.ofInt(b.image, IMAGE_ALPHA, 0, 255);
                 b.reveal.setDuration(160); b.reveal.start();

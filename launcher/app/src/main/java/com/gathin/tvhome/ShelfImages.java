@@ -10,19 +10,24 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 
-/** One worker calls load; UI calls peek/trim. Decoded RAM cache is 2 MiB, disk thumbnails 32 MiB. */
+/** One worker calls load; UI calls peek/trim. Bounded decoded cache, disk thumbnails 32 MiB. */
 final class ShelfImages {
     private final Context context;
     private final ShelfDiskCache disk;
-    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(2 * 1024 * 1024) {
-        @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
-    };
+    private final LruCache<String, Bitmap> memory;
     private final java.util.concurrent.atomic.AtomicInteger network = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.concurrent.atomic.AtomicInteger diskHits = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.concurrent.atomic.AtomicInteger memoryHits = new java.util.concurrent.atomic.AtomicInteger();
     private final LruCache<String, Long> failures = new LruCache<>(64);
     ShelfImages(Context context) {
         this.context = context.getApplicationContext();
+        android.app.ActivityManager manager = context.getSystemService(android.app.ActivityManager.class);
+        // Two nearby rows exceed 2 MiB and evict each other on every app switch. Another 2 MiB
+        // avoids repeated disk reads/decodes on ordinary devices; retain the smaller low-RAM budget.
+        int budget = manager != null && manager.isLowRamDevice() ? 2 : 4;
+        memory = new LruCache<String, Bitmap>(budget * 1024 * 1024) {
+            @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
+        };
         disk = new ShelfDiskCache(new File(context.getCacheDir(), "shelf-thumbnails"), 32L * 1024 * 1024);
     }
     Bitmap peek(String url) { Bitmap found = memory.get(url); if (found != null) memoryHits.incrementAndGet(); return found; }
