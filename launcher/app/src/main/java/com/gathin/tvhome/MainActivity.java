@@ -443,6 +443,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         topShelf = new TopShelf(this, (android.widget.FrameLayout) root, findViewById(R.id.hero), new TopShelf.Navigation() {
             @Override public void dock() { focusTile(singleRow ? lastFocused : lastFocused % COLUMNS); }
             @Override public void header() { findViewById(R.id.btnSettings).requestFocus(); }
+            @Override public void fallback(float top) { showHero(lastFocused, top); }
             @Override public boolean settling() { return grid != null && grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE; }
         });
         cinematic = cfg.cinematicHome;

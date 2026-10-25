@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Focusable top shelf. Queries and image decoding never run on Home's main thread. */
 final class TopShelf {
-    interface Navigation { void dock(); void header(); boolean settling(); }
+    interface Navigation { void dock(); void header(); void fallback(float top); boolean settling(); }
     private final Activity activity;
     private final View hero;
     private final View dim;
@@ -139,7 +139,11 @@ final class TopShelf {
         requested = pkg;
         suspended = false;
         String source = ShelfRepository.source(activity, pkg);
-        cardMode = !ShelfSelection.OFF.equals(source);
+        String key = pkg + "\n" + source;
+        Snapshot cached = lists.get(key);
+        boolean fresh = cached != null && android.os.SystemClock.elapsedRealtime() - cached.at < 60_000;
+        // Unknown results stay hidden while loading; a known empty list uses the ordinary app title.
+        cardMode = !ShelfSelection.OFF.equals(source) && (!fresh || !cached.result.items.isEmpty());
         int ticket = ++generation;
         clear();
         if (hero.getVisibility() != View.GONE) {
@@ -149,9 +153,7 @@ final class TopShelf {
         images.stats();
         setDim(active && !ShelfSelection.OFF.equals(source));
         if (!active || ShelfSelection.OFF.equals(source)) return;
-        String key = pkg + "\n" + source;
-        Snapshot cached = lists.get(key);
-        if (cached != null && android.os.SystemClock.elapsedRealtime() - cached.at < 60_000) {
+        if (fresh) {
             whenSettled(ticket, pkg, () -> render(pkg, cached.result, ticket));
             return;
         }
@@ -179,7 +181,13 @@ final class TopShelf {
     }
 
     private void render(String pkg, ShelfRepository.Result result, int ticket) {
-        if (result.items.isEmpty()) return; // keep the original hero, never substitute unrelated recommendations
+        if (result.items.isEmpty()) {
+            cardMode = false;
+            if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
+            navigation.fallback(dockTop);
+            return; // no posters: restore this app's title, never unrelated recommendations
+        }
+        cardMode = true;
         String source = ShelfRepository.source(activity, pkg);
         String section = activity.getString(ShelfSelection.HISTORY.equals(source) ? R.string.shelf_history
                 : ShelfSelection.CONTINUE.equals(source) ? R.string.shelf_continue : R.string.shelf_cards);
