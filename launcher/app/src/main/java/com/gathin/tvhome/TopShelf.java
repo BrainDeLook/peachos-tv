@@ -67,6 +67,7 @@ final class TopShelf {
     private volatile boolean active;
     private boolean suspended;
     private float dockTop;
+    private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
     private final Runnable refreshImages = this::updateVisible;
 
@@ -76,6 +77,8 @@ final class TopShelf {
         dim = new View(activity);
         dim.setBackgroundColor(0x99000000);
         dim.setVisibility(View.GONE);
+        dim.setAlpha(0f);
+        dim.forceHasOverlappingRendering(false);
         dim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         root.addView(dim, root.indexOfChild(root.findViewById(R.id.metadataBackdrop)) + 1,
                 new FrameLayout.LayoutParams(-1, -1));
@@ -123,7 +126,7 @@ final class TopShelf {
                 suspended = false;
                 if (!bindings.isEmpty()) {
                     if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
-                    dim.setVisibility(View.VISIBLE); panel.setVisibility(View.VISIBLE);
+                    setDim(true); panel.setVisibility(View.VISIBLE);
                     panel.post(refreshImages);
                 } else {
                     requested = null;
@@ -137,8 +140,9 @@ final class TopShelf {
         int ticket = ++generation;
         clear();
         images.stats();
-        if (!active || ShelfSelection.OFF.equals(ShelfRepository.source(activity, pkg))) return;
         String source = ShelfRepository.source(activity, pkg);
+        setDim(active && !ShelfSelection.OFF.equals(source));
+        if (!active || ShelfSelection.OFF.equals(source)) return;
         String key = pkg + "\n" + source;
         Snapshot cached = lists.get(key);
         if (cached != null && android.os.SystemClock.elapsedRealtime() - cached.at < 60_000) {
@@ -250,7 +254,7 @@ final class TopShelf {
             tile.setOnClickListener(v -> open(pkg, item));
         }
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
-        dim.setVisibility(View.VISIBLE);
+        setDim(true);
         panel.setVisibility(View.VISIBLE);
         scroll.scrollTo(0, 0);
         panel.post(() -> { position(); updateVisible(); });
@@ -263,7 +267,15 @@ final class TopShelf {
     boolean hasFocus() { return panel.hasFocus(); }
     private void position() {
         // dockTop is the unscaled app tile, while the dock material extends another 14dp upwards.
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(28));
+        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(16));
+    }
+    private void setDim(boolean enabled) {
+        float target = enabled ? 1f : 0f;
+        if (dimTarget == target) return;
+        dimTarget = target;
+        dim.animate().cancel();
+        dim.setVisibility(View.VISIBLE);
+        dim.animate().alpha(target).setDuration(320).start();
     }
     private int topClearance() {
         View buttons = activity.findViewById(R.id.topButtons);
@@ -277,11 +289,12 @@ final class TopShelf {
         downloads.getQueue().clear();
         for (Binding b : bindings) b.loading = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
-        panel.setVisibility(View.INVISIBLE); dim.setVisibility(View.GONE);
+        panel.setVisibility(View.INVISIBLE); setDim(false);
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
     }
     void pause() {
         active = false; generation++; clear();
+        dim.animate().cancel(); dimTarget = 0f; dim.setAlpha(0f); dim.setVisibility(View.GONE);
         if (queries != null) queries.shutdownNow();
         downloads.getQueue().clear();
         images.trim();
@@ -295,7 +308,6 @@ final class TopShelf {
         downloads.getQueue().clear();
         bindings.clear();
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
-        dim.setVisibility(View.GONE);
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
     }
 

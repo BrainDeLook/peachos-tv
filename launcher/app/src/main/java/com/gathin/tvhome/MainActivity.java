@@ -167,6 +167,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int glassAccent;
     private int ambientColor = -1;
     private ValueAnimator ambientAnimator;
+    private Runnable pendingAmbient;
+    private int ambientTarget = -1;
     private boolean heroShown;
     private boolean animations;
     private boolean advancedEffects;
@@ -1784,14 +1786,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 hero.setTranslationX(12 * density);
                 hero.animate().alpha(1f).translationX(0f).setDuration(200).start();
             }).start();
-            if (ambientGlow && advancedEffects) {
-                transitionAmbient(color);
-            } else if (ambientGlow && color != ambientColor) {
-                ambient.animate().alpha(0.35f).setDuration(200).withEndAction(() -> {
-                    setAmbient(color);
-                    ambient.animate().alpha(1f).setDuration(500).start();
-                }).start();
-            }
+            if (ambientGlow) transitionAmbient(color);
         } else {
             hero.setY(y);
         }
@@ -1984,21 +1979,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void transitionAmbient(int color) {
-        // A rapid focus change continues from the colour actually displayed on screen.
+        if (color == ambientTarget && (pendingAmbient != null
+                || ambientAnimator != null && ambientAnimator.isRunning())) return;
+        // Freeze the current blend, debounce focus repeats, then continue towards only the latest target.
         stopAmbientAnimation();
         ambient.animate().cancel();
-        if (color == ambientColor) {
-            ambient.animate().alpha(1f).setDuration(180).start();
+        ambientTarget = color;
+        if (ambient.getBackground() == null) {
+            setAmbient(color); ambient.setAlpha(1f);
             return;
         }
-        ambient.animate().alpha(1f).setDuration(180).start();
-        ambientAnimator = ValueAnimator.ofObject(new ArgbEvaluator(), ambientColor, color);
-        ambientAnimator.setDuration(360);
-        ambientAnimator.addUpdateListener(animation -> setAmbient((int) animation.getAnimatedValue()));
-        ambientAnimator.start();
+        pendingAmbient = () -> {
+            pendingAmbient = null;
+            ambient.animate().alpha(1f).setDuration(260).start();
+            if (color == ambientColor) return;
+            ambientAnimator = ValueAnimator.ofObject(new ArgbEvaluator(), ambientColor, color);
+            ambientAnimator.setDuration(480);
+            ambientAnimator.addUpdateListener(animation -> setAmbient((int) animation.getAnimatedValue()));
+            ambientAnimator.start();
+        };
+        handler.postDelayed(pendingAmbient, 90);
     }
 
     private void stopAmbientAnimation() {
+        if (pendingAmbient != null) { handler.removeCallbacks(pendingAmbient); pendingAmbient = null; }
+        ambientTarget = -1;
         if (ambientAnimator != null) {
             ambientAnimator.cancel();
             ambientAnimator = null;
@@ -2026,15 +2031,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ambient.setAlpha(1f);
             return;
         }
-        if (color == ambientColor && ambient.getBackground() != null) {
-            ambient.animate().alpha(1f).setDuration(300).start();
-            return;
-        }
-        // The same dip-and-swap as the dock's top shelf.
-        ambient.animate().alpha(0.35f).setDuration(ambient.getAlpha() > 0.35f ? 200 : 0).withEndAction(() -> {
-            setAmbient(color);
-            ambient.animate().alpha(1f).setDuration(500).start();
-        }).start();
+        transitionAmbient(color);
     }
 
     private void hideHero() {
