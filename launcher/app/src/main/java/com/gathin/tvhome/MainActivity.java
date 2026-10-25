@@ -571,7 +571,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         });
         if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding,
-                singleRow, cfg.dockBandAll));
+                singleRow, cfg.dockBandAll, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)));
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -780,6 +780,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.getLayoutParams().height = Math.round(24 * density);
         ((LinearLayout.LayoutParams) btnSettings.getLayoutParams()).setMarginStart(Math.round(5 * density));
         btnSettings.setPaddingRelative(Math.round(4 * density), 0, Math.round(4 * density), 0);
+        if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)) {
+            findViewById(R.id.topButtons).setBackground(new LiquidGlass(density, 18 * density));
+        }
         btnSettings.setOnLongClickListener(v -> {
             showSettingsMenu();
             return true;
@@ -1194,6 +1197,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
+        if (topShelf != null) topShelf.trim();
         // RUNNING_LOW and CRITICAL also arrive while Home is visible when an accessibility service keeps the
         // process in the foreground; never blank the screen the owner is looking at.
         if (!MemoryTrimPolicy.shouldRelease(level, started)) return;
@@ -1222,7 +1226,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onDestroy() {
         super.onDestroy();
         if (metadataBackdrop != null) metadataBackdrop.pause();
-        if (topShelf != null) topShelf.pause();
+        if (topShelf != null) topShelf.close();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);

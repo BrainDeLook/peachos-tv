@@ -43,6 +43,15 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        TextView glassChoice = findViewById(R.id.liquidGlassChoice);
+        glassChoice.setText(getString(R.string.liquid_glass_state,
+                getString(choices.getBoolean("liquid_glass", true) ? R.string.on : R.string.off)));
+        glassChoice.setOnClickListener(v -> {
+            boolean enabled = !choices.getBoolean("liquid_glass", true);
+            choices.edit().putBoolean("liquid_glass", enabled).apply();
+            glassChoice.setText(getString(R.string.liquid_glass_state, getString(enabled ? R.string.on : R.string.off)));
+            changed();
+        });
         findViewById(R.id.topShelfChoice).setOnClickListener(v ->
                 startActivity(new Intent(this, TopShelfSettingsActivity.class)));
         Config config = Config.load(this);

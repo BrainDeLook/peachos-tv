@@ -20,6 +20,7 @@ final class ShelfRepository {
     }
     static final class Item {
         String title, image, link;
+        float aspect;
         long rank, id;
         boolean continuing;
     }
@@ -74,7 +75,12 @@ final class ShelfRepository {
                     Item item = new Item();
                     item.title = text(c, "title");
                     item.image = text(c, "poster_art_uri");
-                    if (item.image.isEmpty()) item.image = text(c, "thumbnail_uri");
+                    String aspectColumn = "poster_art_aspect_ratio";
+                    if (item.image.isEmpty()) {
+                        item.image = text(c, "thumbnail_uri");
+                        aspectColumn = "thumbnail_aspect_ratio";
+                    }
+                    item.aspect = ShelfGeometry.ratio((int) number(c, aspectColumn, -1));
                     item.image = ShelfArtworkUrl.normalize(item.image);
                     item.link = text(c, "intent_uri");
                     if (item.title.isEmpty()) continue;

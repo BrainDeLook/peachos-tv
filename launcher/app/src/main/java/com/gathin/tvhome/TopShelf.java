@@ -3,10 +3,8 @@ package com.gathin.tvhome;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.util.LruCache;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -15,12 +13,15 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /** Focusable top shelf. Queries and image decoding never run on Home's main thread. */
 final class TopShelf {
@@ -33,10 +34,30 @@ final class TopShelf {
     private final TextView heading;
     private final HorizontalScrollView scroll;
     private final List<View> targets = new ArrayList<>();
-    private final LruCache<String, Bitmap> images = new LruCache<String, Bitmap>(10 * 1024 * 1024) {
-        @Override protected int sizeOf(String key, Bitmap bitmap) { return bitmap.getAllocationByteCount(); }
+    private final ShelfImages images;
+    private ExecutorService queries;
+    private final ThreadPoolExecutor downloads = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(), task -> new Thread(() -> {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                task.run();
+            }, "shelf-images"));
+    private final List<Binding> bindings = new ArrayList<>();
+    private static final class Snapshot {
+        final ShelfRepository.Result result;
+        final long at = android.os.SystemClock.elapsedRealtime();
+        Snapshot(ShelfRepository.Result result) { this.result = result; }
+    }
+    private final Map<String, Snapshot> lists = new LinkedHashMap<String, Snapshot>(8, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Snapshot> entry) { return size() > 6; }
     };
-    private ExecutorService queries, downloads;
+    private static final class Binding {
+        LinearLayout tile;
+        ImageView image;
+        ShelfRepository.Item item;
+        int rowHeight, maxWidth;
+        boolean loading, loaded;
+        long failedAt;
+    }
     private volatile String requested;
     private String label;
     private volatile int generation;
@@ -46,6 +67,7 @@ final class TopShelf {
 
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
+        images = new ShelfImages(activity);
         dim = new View(activity);
         dim.setBackgroundColor(0x99000000);
         dim.setVisibility(View.GONE);
@@ -65,10 +87,12 @@ final class TopShelf {
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setHorizontalFadingEdgeEnabled(false);
         scroll.setPadding(0, dp(8), 0, dp(8));
+        scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> updateVisible());
         cards = new LinearLayout(activity);
         cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false);
         // Content has an initial inset; the viewport itself reaches both physical screen edges.
         cards.setPadding(dp(40), 0, dp(40), 0);
+        cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> updateVisible());
         scroll.addView(cards);
         panel.addView(scroll);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
@@ -79,7 +103,7 @@ final class TopShelf {
         if (active) return;
         active = true;
         queries = Executors.newSingleThreadExecutor();
-        downloads = Executors.newFixedThreadPool(2);
+        lists.clear(); // refresh history after returning from playback; thumbnails remain on disk
         String pkg = requested;
         requested = null;
         if (pkg != null) show(pkg, label, dockTop);
@@ -91,14 +115,22 @@ final class TopShelf {
         requested = pkg;
         int ticket = ++generation;
         clear();
+        images.stats();
         if (!active || ShelfSelection.OFF.equals(ShelfRepository.source(activity, pkg))) return;
+        String source = ShelfRepository.source(activity, pkg);
+        String key = pkg + "\n" + source;
+        Snapshot cached = lists.get(key);
+        if (cached != null && android.os.SystemClock.elapsedRealtime() - cached.at < 60_000) {
+            render(pkg, cached.result, ticket);
+            return;
+        }
         // A short debounce avoids building lists for every app crossed while holding Right.
         panel.postDelayed(() -> {
             if (!valid(ticket, pkg)) return;
             queries.execute(() -> {
-                ShelfRepository.Result result = ShelfRepository.read(activity, pkg, ShelfRepository.source(activity, pkg));
+                ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
                 activity.runOnUiThread(() -> {
-                    if (valid(ticket, pkg)) render(pkg, result, ticket);
+                    if (valid(ticket, pkg)) { lists.put(key, new Snapshot(result)); render(pkg, result, ticket); }
                 });
             });
         }, 180);
@@ -113,7 +145,7 @@ final class TopShelf {
             if (source.equals("channel:" + channel.id)) section = channel.name;
         }
         heading.setText(ShelfSelection.AUTO.equals(source) ? label : section);
-        cards.removeAllViews(); targets.clear(); selected = 0;
+        cards.removeAllViews(); targets.clear(); bindings.clear(); selected = 0;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
         int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
@@ -127,12 +159,15 @@ final class TopShelf {
             tile.setFocusable(true); tile.setClickable(true);
             tile.setContentDescription(item.title);
             ImageView poster = new ImageView(activity);
-            poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
             GradientDrawable placeholder = new GradientDrawable();
             placeholder.setColor(0xff25303d); placeholder.setCornerRadius(dp(8));
             poster.setBackground(placeholder);
             poster.setClipToOutline(true);
-            tile.addView(poster, new LinearLayout.LayoutParams(-1, height));
+            FrameLayout pictureArea = new FrameLayout(activity);
+            pictureArea.setClipChildren(false);
+            pictureArea.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.CENTER_VERTICAL));
+            tile.addView(pictureArea, new LinearLayout.LayoutParams(-1, height));
             TextView title = new TextView(activity);
             title.setText(item.title); title.setTextSize(11); title.setTextColor(0xffd9dfe6);
             title.setAlpha(0f);
@@ -141,6 +176,11 @@ final class TopShelf {
             tile.addView(title, new LinearLayout.LayoutParams(-1, dp(20)));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.round(height * 2f / 3f) + dp(6), -2);
             lp.rightMargin = dp(20); cards.addView(tile, lp); targets.add(tile);
+            Binding binding = new Binding();
+            binding.tile = tile; binding.image = poster; binding.item = item;
+            binding.rowHeight = height; binding.maxWidth = Math.round(viewport * .35f);
+            bindings.add(binding);
+            size(binding, item.aspect);
             int index = targets.size() - 1;
             final int[] navigationKey = {-1};
             tile.setOnFocusChangeListener((v, focus) -> {
@@ -172,13 +212,12 @@ final class TopShelf {
                 return false;
             });
             tile.setOnClickListener(v -> open(pkg, item));
-            loadImage(item.image, poster, ticket, pkg);
         }
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
         dim.setVisibility(View.VISIBLE);
         panel.setVisibility(View.VISIBLE);
         scroll.scrollTo(0, 0);
-        panel.post(this::position);
+        panel.post(() -> { position(); updateVisible(); });
     }
 
     boolean focus() {
@@ -195,10 +234,16 @@ final class TopShelf {
     void pause() {
         active = false; generation++; clear();
         if (queries != null) queries.shutdownNow();
-        if (downloads != null) downloads.shutdownNow();
-        images.evictAll();
+        downloads.getQueue().clear();
+        images.trim();
+        lists.clear();
+        images.stats();
     }
+    void close() { pause(); downloads.shutdownNow(); }
+    void trim() { images.trim(); }
     private void clear() {
+        downloads.getQueue().clear();
+        bindings.clear();
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
         dim.setVisibility(View.GONE);
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
@@ -220,46 +265,53 @@ final class TopShelf {
         }
     }
 
-    private void loadImage(String url, ImageView target, int ticket, String pkg) {
-        if (url.isEmpty()) return;
-        Bitmap cached = images.get(url);
-        if (cached != null) { target.setImageBitmap(cached); return; }
-        downloads.execute(() -> {
-            if (!valid(ticket, pkg) || Thread.currentThread().isInterrupted()) return;
-            Bitmap bitmap = null;
-            try {
-                byte[] bytes;
-                if (url.startsWith("https://") || url.startsWith("http://")) {
-                    bytes = Http.get(url, 5 * 1024 * 1024);
-                } else if (url.startsWith("content://") || url.startsWith("android.resource://")) {
-                    try (InputStream in = activity.getContentResolver().openInputStream(Uri.parse(url));
-                         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-                        if (in == null) return;
-                        byte[] buffer = new byte[16384]; int count;
-                        while ((count = in.read(buffer)) != -1) {
-                            if (out.size() + count > 5 * 1024 * 1024) return;
-                            out.write(buffer, 0, count);
-                        }
-                        bytes = out.toByteArray();
-                    }
-                } else return;
-                BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return;
-                BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inSampleSize = 1;
-                while (bounds.outWidth / opts.inSampleSize > 480 || bounds.outHeight / opts.inSampleSize > 720) opts.inSampleSize *= 2;
-                bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
-            } catch (Exception e) {
-                // No titles, private URLs or tokens in the log. Keep text and focus usable offline.
-                Uri uri = Uri.parse(url);
-                android.util.Log.w("TopShelf", "Poster unavailable for " + pkg + " via "
-                        + uri.getScheme() + "://" + uri.getHost() + ": " + e.getClass().getSimpleName());
+    private void size(Binding binding, float aspect) {
+        int[] dimensions = ShelfGeometry.size(aspect, binding.rowHeight, binding.maxWidth);
+        binding.item.aspect = aspect;
+        binding.tile.getLayoutParams().width = dimensions[0] + dp(6);
+        binding.image.getLayoutParams().height = dimensions[1];
+        binding.tile.requestLayout();
+    }
+    private boolean inWindow(Binding b) {
+        if (b.tile.getWidth() == 0) return false; // before layout every unmeasured tile has left/right == 0
+        int spare = dp(160);
+        return b.tile.getRight() >= scroll.getScrollX() - spare
+                && b.tile.getLeft() <= scroll.getScrollX() + scroll.getWidth() + spare;
+    }
+    private void updateVisible() {
+        if (!active || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
+        final int ticket = generation;
+        final String pkg = requested;
+        for (Binding b : bindings) {
+            if (!inWindow(b)) {
+                b.image.setImageDrawable(null); b.loaded = false;
+                continue;
             }
-            Bitmap ready = bitmap;
-            activity.runOnUiThread(() -> {
-                if (ready != null && valid(ticket, pkg)) { images.put(url, ready); target.setImageBitmap(ready); }
+            if (b.loaded || b.loading || b.item.image.isEmpty()
+                    || (b.failedAt != 0 && android.os.SystemClock.elapsedRealtime() - b.failedAt < 60_000)) continue;
+            Bitmap cached = images.peek(b.item.image);
+            if (cached != null) { bind(b, cached); continue; }
+            b.loading = true;
+            downloads.execute(() -> {
+                if (!valid(ticket, pkg)) return;
+                Bitmap ready = images.load(b.item.image);
+                activity.runOnUiThread(() -> {
+                    b.loading = false;
+                    if (ready == null) b.failedAt = android.os.SystemClock.elapsedRealtime();
+                    if (!active) images.trim();
+                    if (ready != null && valid(ticket, pkg) && inWindow(b)) bind(b, ready);
+                });
             });
-        });
+        }
+    }
+    private void bind(Binding b, Bitmap bitmap) {
+        b.loaded = true;
+        float actual = bitmap.getWidth() / (float) bitmap.getHeight();
+        if (Math.abs(actual - b.item.aspect) > .02f) {
+            size(b, actual);
+            cards.post(this::updateVisible);
+        }
+        b.image.setImageBitmap(bitmap);
     }
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
 }
