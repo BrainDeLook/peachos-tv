@@ -120,9 +120,9 @@
             android:layout_height="wrap_content"
             android:layout_gravity="right"
             android:gravity="right"
-            android:textColor="#FFFFFFFF"
+            android:textColor="#E6FFFFFF"
             android:textSize="48sp"
-            android:fontFamily="@string/font_light"
+            android:fontFamily="@string/font_medium"
             android:letterSpacing="-0.02"
             android:includeFontPadding="false"
             android:singleLine="true" />
@@ -227,7 +227,7 @@
                             android:ellipsize="end"
                             android:textColor="#80FFFFFF"
                             android:textSize="14sp"
-                            android:fontFamily="@font/outfit_regular"
+                            android:fontFamily="@font/inter_regular"
                             android:letterSpacing="0.14"
                             android:textAllCaps="true"
                             android:visibility="gone" />

@@ -35,6 +35,7 @@ final class TopShelf {
     private final HorizontalScrollView scroll;
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
+    private final android.graphics.Typeface bodyFace;
     private ExecutorService queries;
     private final ThreadPoolExecutor downloads = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(), task -> new Thread(() -> {
@@ -75,6 +76,7 @@ final class TopShelf {
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
         images = new ShelfImages(activity);
+        bodyFace = activity.getResources().getFont(R.font.inter_regular);
         dim = new View(activity);
         dim.setBackgroundColor(0x99000000);
         dim.setVisibility(View.GONE);
@@ -89,7 +91,8 @@ final class TopShelf {
         panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> position());
         panel.setVisibility(View.GONE);
         heading = new TextView(activity);
-        heading.setTextColor(0xffffffff); heading.setTextSize(19);
+        heading.setTypeface(activity.getResources().getFont(R.font.inter_medium));
+        heading.setTextColor(0xe6ffffff); heading.setTextSize(19);
         heading.setSingleLine(true); heading.setPadding(dp(40), 0, dp(40), dp(5));
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
@@ -201,6 +204,7 @@ final class TopShelf {
         int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
         TextView captionMeasure = new TextView(activity);
         captionMeasure.setTextSize(11);
+        captionMeasure.setTypeface(bodyFace);
         int captionHeight = (int) Math.ceil(captionMeasure.getPaint().getFontSpacing() * 2) + dp(2);
         int headingHeight = (int) Math.ceil(heading.getPaint().getFontMetrics().bottom
                 - heading.getPaint().getFontMetrics().top) + heading.getPaddingBottom();
@@ -222,7 +226,8 @@ final class TopShelf {
             poster.setClipToOutline(true);
             tile.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
             TextView title = new TextView(activity);
-            title.setText(item.title); title.setTextSize(11); title.setTextColor(0xffd9dfe6);
+            title.setText(item.title); title.setTextSize(11); title.setTextColor(0xf2ffffff);
+            title.setTypeface(bodyFace);
             title.setAlpha(0f);
             title.setIncludeFontPadding(false);
             title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -241,7 +246,7 @@ final class TopShelf {
             tile.setOnFocusChangeListener((v, focus) -> {
                 poster.animate().scaleX(focus ? 1.045f : 1f).scaleY(focus ? 1.045f : 1f)
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
-                title.setTextColor(focus ? 0xffffffff : 0xffc0c6cc);
+                title.setTextColor(focus ? 0xf2ffffff : 0xb3ffffff);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
                 if (focus) { selected = index; scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0); }
             });
