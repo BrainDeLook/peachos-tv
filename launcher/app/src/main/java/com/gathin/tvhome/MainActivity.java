@@ -3108,13 +3108,51 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
 
-        // Fit the widest row: TVs that report a status on every port (Sony) would otherwise squeeze the names out.
+        styleSourcePicker(panel, rows);
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max(width, Math.min(panel.getMeasuredWidth(), (int) (360 * density))));
+        popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (260 * density))));
 
         int alignment = getResources().getBoolean(R.bool.rtl_menu_bar) != underGear ? Gravity.END : Gravity.START;
         dropIn(popup, panel, anchor, alignment);
         rows.getChildAt(0).requestFocus();
+    }
+
+    /** Source-picker styling only: other launcher/settings menus keep their existing sizing. */
+    private void styleSourcePicker(View panel, LinearLayout rows) {
+        Drawable base = getDrawable(R.drawable.sources_panel);
+        if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)) {
+            panel.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{base,
+                    new LiquidGlass(density, 16 * density)}));
+        } else panel.setBackground(base);
+        int inset = Math.round(5 * density);
+        panel.setPadding(inset, inset, inset, inset);
+        panel.setElevation(0f);
+        android.graphics.Typeface face = getResources().getFont(R.font.inter_medium);
+        for (int i = 0; i < rows.getChildCount(); i++) {
+            View row = rows.getChildAt(i);
+            TextView title = row.findViewById(R.id.title);
+            if (title == null) continue; // separators
+            row.getLayoutParams().height = Math.round(36 * density);
+            row.setPaddingRelative(Math.round(10 * density), 0, Math.round(10 * density), 0);
+            row.setBackgroundResource(R.drawable.source_row_bg);
+            title.setTextSize(13);
+            title.setTypeface(face);
+            title.setTextColor(0xE6FFFFFF);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams textParams = (LinearLayout.LayoutParams) title.getLayoutParams();
+            textParams.setMarginStart(Math.round(8 * density));
+            textParams.setMarginEnd(Math.round(10 * density));
+            ImageView icon = row.findViewById(R.id.icon);
+            icon.getLayoutParams().width = icon.getLayoutParams().height = Math.round(16 * density);
+            icon.setImageTintList(ColorStateList.valueOf(0xCFFFFFFF));
+            TextView status = row.findViewById(R.id.status);
+            row.setContentDescription(title.getText() + (status.getVisibility() == View.VISIBLE
+                    ? ", " + status.getText() : ""));
+            status.setVisibility(View.GONE); // connection is indicated by the small green light
+            View dot = row.findViewById(R.id.dot);
+            dot.getLayoutParams().width = dot.getLayoutParams().height = Math.round(5 * density);
+            ((LinearLayout.LayoutParams) dot.getLayoutParams()).setMarginEnd(0);
+        }
     }
 
     private PopupWindow glassPopup(View panel, int width) {
