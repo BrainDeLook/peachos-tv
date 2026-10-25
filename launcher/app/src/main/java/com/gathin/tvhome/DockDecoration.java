@@ -86,6 +86,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     @Override
     public void onDraw(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
         boolean any = false;
+        float focusedCenter = Float.NaN;
         int cardWidth = 0;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
@@ -98,6 +99,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             float t = child.getTop() + card.getTop() + child.getTranslationY();
             float r = l + card.getWidth();
             float b = t + card.getHeight();
+            if (card.hasFocus()) focusedCenter = (l + r) * .5f;
             cardWidth = card.getWidth();
             if (!any) {
                 rect.set(l, t, r, b);
@@ -139,6 +141,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         if (liquid != null) {
             liquid.radius(radius);
             liquid.setBounds(Math.round(rect.left), Math.round(rect.top), Math.round(rect.right), Math.round(rect.bottom));
+            liquid.focus(Float.isNaN(focusedCenter) ? .25f : (focusedCenter - rect.left) / rect.width());
             liquid.draw(c);
             return;
         }

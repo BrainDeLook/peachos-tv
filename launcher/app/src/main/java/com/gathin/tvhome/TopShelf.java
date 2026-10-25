@@ -51,8 +51,9 @@ final class TopShelf {
         @Override protected boolean removeEldestEntry(Map.Entry<String, Snapshot> entry) { return size() > 6; }
     };
     private static final class Binding {
-        LinearLayout tile;
+        FrameLayout tile;
         ImageView image;
+        TextView title;
         ShelfRepository.Item item;
         int rowHeight, maxWidth;
         boolean loading, loaded;
@@ -77,6 +78,7 @@ final class TopShelf {
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setClipChildren(false);
+        panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> position());
         panel.setVisibility(View.GONE);
         heading = new TextView(activity);
         heading.setTextColor(0xffffffff); heading.setTextSize(19);
@@ -89,7 +91,7 @@ final class TopShelf {
         scroll.setPadding(0, dp(8), 0, dp(8));
         scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> updateVisible());
         cards = new LinearLayout(activity);
-        cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false);
+        cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false); cards.setClipToPadding(false);
         // Content has an initial inset; the viewport itself reaches both physical screen edges.
         cards.setPadding(dp(40), 0, dp(40), 0);
         cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> updateVisible());
@@ -149,12 +151,17 @@ final class TopShelf {
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
         int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
-        int height = Math.max(dp(120), Math.min(Math.round((widthForFive - dp(6)) * 1.5f),
-                Math.min(dp(252), (int) dockTop - dp(144))));
+        TextView captionMeasure = new TextView(activity);
+        captionMeasure.setTextSize(11);
+        int captionHeight = (int) Math.ceil(captionMeasure.getPaint().getFontSpacing() * 2) + dp(2);
+        int headingHeight = (int) Math.ceil(heading.getPaint().getFontMetrics().bottom
+                - heading.getPaint().getFontMetrics().top) + heading.getPaddingBottom();
+        int available = (int) dockTop - dp(28) - topClearance() - headingHeight - dp(16)
+                - captionHeight - dp(14);
+        int height = Math.max(dp(80), Math.min(Math.round((widthForFive - dp(6)) * 1.5f),
+                Math.min(dp(252), (int) (available / 1.0225f))));
         for (ShelfRepository.Item item : result.items) {
-            LinearLayout tile = new LinearLayout(activity);
-            tile.setOrientation(LinearLayout.VERTICAL);
-            tile.setPadding(dp(3), dp(3), dp(3), dp(3));
+            FrameLayout tile = new FrameLayout(activity);
             tile.setClipChildren(false);
             tile.setFocusable(true); tile.setClickable(true);
             tile.setContentDescription(item.title);
@@ -164,27 +171,26 @@ final class TopShelf {
             placeholder.setColor(0xff25303d); placeholder.setCornerRadius(dp(8));
             poster.setBackground(placeholder);
             poster.setClipToOutline(true);
-            FrameLayout pictureArea = new FrameLayout(activity);
-            pictureArea.setClipChildren(false);
-            pictureArea.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.CENTER_VERTICAL));
-            tile.addView(pictureArea, new LinearLayout.LayoutParams(-1, height));
+            tile.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
             TextView title = new TextView(activity);
             title.setText(item.title); title.setTextSize(11); title.setTextColor(0xffd9dfe6);
             title.setAlpha(0f);
-            title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            title.setPadding(dp(3), dp(5), dp(3), 0);
-            tile.addView(title, new LinearLayout.LayoutParams(-1, dp(20)));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.round(height * 2f / 3f) + dp(6), -2);
+            title.setIncludeFontPadding(false);
+            title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            tile.addView(title, new FrameLayout.LayoutParams(-1, captionHeight,
+                    android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(widthForFive,
+                    height + captionHeight + dp(14) + Math.round(height * .0225f));
             lp.rightMargin = dp(20); cards.addView(tile, lp); targets.add(tile);
             Binding binding = new Binding();
-            binding.tile = tile; binding.image = poster; binding.item = item;
+            binding.tile = tile; binding.image = poster; binding.title = title; binding.item = item;
             binding.rowHeight = height; binding.maxWidth = Math.round(viewport * .35f);
             bindings.add(binding);
             size(binding, item.aspect);
             int index = targets.size() - 1;
             final int[] navigationKey = {-1};
             tile.setOnFocusChangeListener((v, focus) -> {
-                tile.animate().scaleX(focus ? 1.045f : 1f).scaleY(focus ? 1.045f : 1f)
+                poster.animate().scaleX(focus ? 1.045f : 1f).scaleY(focus ? 1.045f : 1f)
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xffffffff : 0xffc0c6cc);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
@@ -226,7 +232,12 @@ final class TopShelf {
     }
     boolean hasFocus() { return panel.hasFocus(); }
     private void position() {
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(Math.max(dp(60), dockTop - panel.getHeight() - dp(14)));
+        // dockTop is the unscaled app tile, while the dock material extends another 14dp upwards.
+        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(28));
+    }
+    private int topClearance() {
+        View buttons = activity.findViewById(R.id.topButtons);
+        return Math.max(dp(48), buttons == null ? 0 : buttons.getBottom() + dp(8));
     }
     private boolean valid(int ticket, String pkg) { return active && ticket == generation && pkg.equals(requested); }
 
@@ -268,8 +279,15 @@ final class TopShelf {
     private void size(Binding binding, float aspect) {
         int[] dimensions = ShelfGeometry.size(aspect, binding.rowHeight, binding.maxWidth);
         binding.item.aspect = aspect;
-        binding.tile.getLayoutParams().width = dimensions[0] + dp(6);
-        binding.image.getLayoutParams().height = dimensions[1];
+        int viewport = activity.getResources().getDisplayMetrics().widthPixels;
+        int portraitSlot = (viewport - dp(80) - 4 * dp(20)) / 5;
+        binding.tile.getLayoutParams().width = Math.max(portraitSlot, dimensions[0] + dp(6));
+        FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
+        artwork.width = dimensions[0]; artwork.height = dimensions[1];
+        artwork.topMargin = dp(3) + (binding.rowHeight - dimensions[1]) / 2;
+        FrameLayout.LayoutParams caption = (FrameLayout.LayoutParams) binding.title.getLayoutParams();
+        caption.width = dimensions[0];
+        caption.topMargin = artwork.topMargin + dimensions[1] + Math.round(dimensions[1] * .0225f) + dp(7);
         binding.tile.requestLayout();
     }
     private boolean inWindow(Binding b) {
