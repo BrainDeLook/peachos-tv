@@ -25,7 +25,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.OvershootInterpolator;
+
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -95,7 +95,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    static final float FOCUS_SCALE = 1.10f;
+    static final float FOCUS_SCALE = 1.10f; // keep the existing layout clearance
+    private static final float SELECTED_SCALE = 1.12f;
+    private static final DecelerateInterpolator FOCUS_EASING = new DecelerateInterpolator(1.5f);
     /** Design size of a tile (dp); tiles shrink from here when the columns don't fit, see tileWidthPx. */
     static final float DESIGN_W_DP = 180f, DESIGN_H_DP = 101f;
 
@@ -206,8 +208,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean showHomeSettings;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): no overshoot, shorter fades. */
     private final boolean reducedMotion;
-    /** The focus zoom may overshoot (config.xml, focus_overshoot). */
-    private final boolean focusOvershoot;
     /** Package to the action its tile sends instead of the start screen (config.xml, launch_actions). */
     private final Map<String, String> launchActions;
     /** Hold OK opens the activity's tile menu (config.xml, tile_menu); false opens App info, as before. */
@@ -231,7 +231,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.showHomeSettings = cfg.showHomeSettingsShortcut;
         this.showLibrary = cfg.appLibrary;
         this.reducedMotion = cfg.reducedMotion;
-        this.focusOvershoot = cfg.focusOvershoot;
+
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
@@ -426,7 +426,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             iconLp.bottomMargin = 0;
             icon.setLayoutParams(iconLp);
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, reducedMotion, restNameAlpha);
     }
 
     @Override
@@ -447,19 +447,21 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         h.card.setVisibility(View.VISIBLE);
         h.card.setFocusable(true);
+        h.card.animate().cancel(); h.banner.animate().cancel(); h.name.animate().cancel(); h.sheen.animate().cancel();
         h.name.setText(e.name);
         // The dock has no labels, unless always_show_names asks for them (DockDecoration then makes room in the band).
         // In a single row every tile is the dock's kind: the big title above names it.
         boolean dockKind = dockRow && (singleRow || position < dockSize);
         h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
         boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
+        h.sheen.setAlpha(focused ? 1f : 0f);
         h.name.setAlpha(focused ? 1f : restNameAlpha);
-        h.card.setScaleX(focused && animations ? focusScale() : 1f);
-        h.card.setScaleY(focused && animations ? focusScale() : 1f);
-        h.card.setTranslationY(focused && advancedEffects ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
-        h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
+        h.card.setScaleX(focused ? focusScale() : 1f);
+        h.card.setScaleY(focused ? focusScale() : 1f);
+        h.card.setTranslationY(0f);
+        h.card.setTranslationZ(0f);
+        h.banner.setScaleX(1f);
+        h.banner.setScaleY(1f);
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
         // nothing on every frame; keep it under banners with transparent parts and under icon tiles.
         h.card.setBackground(e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
@@ -642,7 +644,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     float focusScale() {
-        return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
+        return SELECTED_SCALE;
     }
 
     /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
@@ -857,15 +859,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final ImageView icon;
         final TextView label;
         final TextView name;
+        final View sheen;
         final boolean animations;
-        final boolean advancedEffects;
+
         final boolean reducedMotion;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
-        final boolean overshoot;
 
-        Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+        Holder(View v, TileListener listener, boolean animations,
+               boolean reducedMotion, float restNameAlpha) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -873,11 +875,17 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             icon = v.findViewById(R.id.icon);
             label = v.findViewById(R.id.label);
             name = v.findViewById(R.id.name);
+            sheen = new View(v.getContext());
+            sheen.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    new int[]{0x20FFFFFF, 0x06FFFFFF, 0x00FFFFFF}));
+            sheen.setAlpha(0f);
+            sheen.forceHasOverlappingRendering(false);
+            sheen.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            ((FrameLayout) card).addView(sheen, new FrameLayout.LayoutParams(-1, -1));
             this.animations = animations;
-            this.advancedEffects = advancedEffects;
+
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
-            this.overshoot = overshoot;
 
             final float density = v.getResources().getDisplayMetrics().density;
             card.setOutlineProvider(new ViewOutlineProvider() {
@@ -901,46 +909,28 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.animate().cancel();
                 banner.animate().cancel();
                 name.animate().cancel();
-                float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
-                float s = focused ? scale : 1f;
+                sheen.animate().cancel();
+                float target = focused ? SELECTED_SCALE : 1f;
+                view.setTranslationY(0f); view.setTranslationZ(0f);
+                banner.setScaleX(1f); banner.setScaleY(1f);
                 if (!animations) {
-                    view.setScaleX(1f);
-                    view.setScaleY(1f);
-                    view.setTranslationY(0f);
-                    view.setTranslationZ(0f);
-                    banner.setScaleX(1f);
-                    banner.setScaleY(1f);
-                    name.setAlpha(focused ? 1f : restNameAlpha);
-                    name.setTranslationY(0f);
-                } else if (reducedMotion) {
-                    // A short zoom with no hardware layer: building a layer for so short an animation costs more
-                    // frames than it saves. The name just appears instead of fading.
-                    view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
-                            .setDuration(focused ? Motion.REDUCED_MS : 60)
-                            .setInterpolator(new DecelerateInterpolator())
-                            .start();
-                    name.setAlpha(focused ? 1f : restNameAlpha);
-                    // Same place as the full motion's slide ends: the layout's -6dp is only its starting point, and
-                    // left there the name overlaps the zoomed tile.
-                    // Only on focus: snapping it back to -6dp while it fades out would jump it up over the tile.
-                    if (focused) name.setTranslationY(density * 4f);
+                    view.setScaleX(target); view.setScaleY(target);
+                    sheen.setAlpha(focused ? 1f : 0f);
                 } else {
-                    view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
-                            .setDuration(advancedEffects ? (focused ? 220 : 170) : (focused ? 260 : 180))
-                            .setInterpolator(focused && !overshoot ? new DecelerateInterpolator(1.5f)
-                                    : new OvershootInterpolator(focused ? (advancedEffects ? 0.7f : 1.6f) : 0f))
-                            .withLayer().start();
-                    if (advancedEffects) {
-                        banner.animate().scaleX(focused ? 1.035f : 1f).scaleY(focused ? 1.035f : 1f)
-                                .setDuration(280).start();
-                    }
-                    name.animate().alpha(focused ? 1f : restNameAlpha)
-                            .translationY(focused ? density * 4f : -density * 6f)
-                            .setDuration(220).start();
+                    // Property transforms reuse the existing render node; no relayout, spring or temporary layer.
+                    // Cancelling preserves the current scale, so rapid focus changes reverse smoothly.
+                    view.animate().scaleX(target).scaleY(target)
+                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
+                            .setInterpolator(FOCUS_EASING).start();
+                    sheen.animate().alpha(focused ? 1f : 0f)
+                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
+                            .setInterpolator(FOCUS_EASING).start();
+                }
+                if (name.getVisibility() == View.VISIBLE) {
+                    name.setTranslationY(density * 4f);
+                    if (!animations || reducedMotion) name.setAlpha(focused ? 1f : restNameAlpha);
+                    else name.animate().alpha(focused ? 1f : restNameAlpha)
+                            .setDuration(180).setInterpolator(FOCUS_EASING).start();
                 }
                 int pos = getBindingAdapterPosition();
                 if (focused && listener != null && pos != RecyclerView.NO_POSITION) {

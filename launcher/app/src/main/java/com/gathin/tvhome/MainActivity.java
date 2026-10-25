@@ -423,6 +423,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
         glass.setStyle(cfg.glassStyle);
+        glass.setVisibility(View.GONE); // ordinary focus is expressed only by the tile scale
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
@@ -1646,47 +1647,53 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         r.set(0, 0, card.getWidth(), card.getHeight());
         root.offsetDescendantRectToMyCoords(card, r);
         float pad = 6f * density;        // matches GlassView's glow inset
-        float scale = adapter.focusScale();
-        float w = card.getWidth() * scale + 2 * pad;
-        float h = card.getHeight() * scale + 2 * pad;
-        float x = r.exactCenterX() - w / 2f;
-        float y = r.exactCenterY() - h / 2f - (advancedEffects ? 4f * density : 0f);
+        if (reordering) {
+            glass.setVisibility(View.VISIBLE);
+            float scale = adapter.focusScale();
+            float w = card.getWidth() * scale + 2 * pad;
+            float h = card.getHeight() * scale + 2 * pad;
+            float x = r.exactCenterX() - w / 2f;
+            float y = r.exactCenterY() - h / 2f;
 
-        ViewGroup.LayoutParams lp = glass.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h || card.getWidth() != glassCardW) {
-            lp.width = (int) w;
-            lp.height = (int) h;
-            glass.setLayoutParams(lp);
-            // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
-            glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
-        }
-        glassCardW = card.getWidth();
-        glassTargetX = x;
-        glassTargetY = y;
-        // Cinematic shelf: the highlight glows in the dock app's colour, plain white in the grid (and on the dock with
-        // cinematic_white_focus). app_glow: every tile. In a single row every tile is the dock's kind.
-        boolean coloured = (appGlow || cinematic && !cinematicWhiteFocus && (singleRow || position < COLUMNS)) && !festive;
-        int accent = coloured ? adapter.ambientColorAt(position) : 0;
-        if ((cinematic || appGlow) && !festive && accent != glassAccent) {
-            glassAccent = accent;
-            glass.setAccent(accent);
-        }
-        if (!glassShown) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-            if (animations && !reducedMotion) glass.animate().alpha(1f).setDuration(180).start();
-            else glass.setAlpha(1f);
-            glassShown = true;
-        } else if (!animations) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-        } else {
-            springX.animateToFinalPosition(x - glassScrollShiftX);
-            springY.animateToFinalPosition(y - glassScrollShift);
+            ViewGroup.LayoutParams lp = glass.getLayoutParams();
+            if (lp.width != (int) w || lp.height != (int) h || card.getWidth() != glassCardW) {
+                lp.width = (int) w;
+                lp.height = (int) h;
+                glass.setLayoutParams(lp);
+                // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
+                glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
+            }
+            glassCardW = card.getWidth();
+            glassTargetX = x;
+            glassTargetY = y;
+            // Cinematic shelf: the highlight glows in the dock app's colour, plain white in the grid (and on the dock with
+            // cinematic_white_focus). app_glow: every tile. In a single row every tile is the dock's kind.
+            boolean coloured = (appGlow || cinematic && !cinematicWhiteFocus && (singleRow || position < COLUMNS)) && !festive;
+            int accent = coloured ? adapter.ambientColorAt(position) : 0;
+            if ((cinematic || appGlow) && !festive && accent != glassAccent) {
+                glassAccent = accent;
+                glass.setAccent(accent);
+            }
+            if (!glassShown) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+                if (animations && !reducedMotion) glass.animate().alpha(1f).setDuration(180).start();
+                else glass.setAlpha(1f);
+                glassShown = true;
+            } else if (!animations) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+            } else {
+                springX.animateToFinalPosition(x - glassScrollShiftX);
+                springY.animateToFinalPosition(y - glassScrollShift);
+            }
+        } else if (glass.getVisibility() != View.GONE) {
+            springX.cancel(); springY.cancel(); glass.animate().cancel();
+            glassShown = false; glass.setAlpha(0f); glass.setVisibility(View.GONE);
         }
         View item = (View) card.getParent();
         if (dockRow && (singleRow || position < COLUMNS)) {
@@ -1719,13 +1726,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
         View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
         if (card == null || card.getWidth() <= 0 || !card.isFocused()) return;
-        float pad = 6f * density;
-        float scale = adapter.focusScale();
-        int w = (int) (card.getWidth() * scale + 2 * pad);
-        int h = (int) (card.getHeight() * scale + 2 * pad);
-        if (!glassShown || card.getWidth() != glassCardW || glass.getWidth() != w || glass.getHeight() != h) {
-            onTileFocused(pos, card);
-        }
+        onTileFocused(pos, card);
     }
 
     // ---- top shelf -------------------------------------------------------------------------------
