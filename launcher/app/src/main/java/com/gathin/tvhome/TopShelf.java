@@ -118,7 +118,7 @@ final class TopShelf {
         // Five full portrait cards, with the next one peeking in at the physical right edge.
         int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
         int height = Math.max(dp(120), Math.min(Math.round((widthForFive - dp(6)) * 1.5f),
-                Math.min(dp(252), (int) dockTop - dp(166))));
+                Math.min(dp(252), (int) dockTop - dp(144))));
         for (ShelfRepository.Item item : result.items) {
             LinearLayout tile = new LinearLayout(activity);
             tile.setOrientation(LinearLayout.VERTICAL);
@@ -187,7 +187,7 @@ final class TopShelf {
     }
     boolean hasFocus() { return panel.hasFocus(); }
     private void position() {
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(Math.max(dp(72), dockTop - panel.getHeight() - dp(14)));
+        if (panel.getVisibility() == View.VISIBLE) panel.setY(Math.max(dp(60), dockTop - panel.getHeight() - dp(14)));
     }
     private boolean valid(int ticket, String pkg) { return active && ticket == generation && pkg.equals(requested); }
 

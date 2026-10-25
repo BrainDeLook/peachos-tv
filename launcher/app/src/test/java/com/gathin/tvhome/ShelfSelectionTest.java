@@ -4,6 +4,11 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ShelfSelectionTest {
+    @Test public void cardSourcesNeverUseFullScreenAppArtwork() {
+        assertTrue(ShelfSelection.usesBackdrop(ShelfSelection.OFF));
+        for (String source : new String[]{ShelfSelection.AUTO, ShelfSelection.CONTINUE,
+                ShelfSelection.HISTORY, "channel:42"}) assertFalse(ShelfSelection.usesBackdrop(source));
+    }
     @Test public void lampaHistoryRecognizesPublishedIdentity() {
         assertTrue(ShelfSelection.isHistory("top.rootu.lampa", "", "history", "", ""));
         assertTrue(ShelfSelection.isHistory("top.rootu.lampa", "", "", "lampa://top.rootu.lampa/update_channel/history", ""));

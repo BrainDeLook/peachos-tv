@@ -5,6 +5,8 @@ final class ShelfSelection {
     static final String AUTO = "auto", OFF = "off", CONTINUE = "continue", HISTORY = "lampa-history";
     static final String LAMPA = "top.rootu.lampa";
 
+    static boolean usesBackdrop(String source) { return OFF.equals(source); }
+
     static boolean isHistory(String pkg, String providerId, String data, String link, String name) {
         if (!LAMPA.equals(pkg)) return false;
         return "history".equals(providerId) || "history".equals(data)

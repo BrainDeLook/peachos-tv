@@ -40,6 +40,11 @@ final class MetadataBackdrop {
         image.animate().cancel();
         image.setImageDrawable(null);
         image.setVisibility(View.GONE);
+        if (!ShelfSelection.usesBackdrop(ShelfRepository.source(context, pkg))) {
+            // Cards and full-screen app artwork are mutually exclusive, including an empty selected list.
+            if (backdrops != null) { backdrops.close(); backdrops = null; }
+            return;
+        }
         if (BackdropPolicy.isStaticYouTube(pkg)) {
             image.setForeground(null);
             image.setImageDrawable(new YouTubeBackdrop());
@@ -59,7 +64,8 @@ final class MetadataBackdrop {
         if (backdrops == null || BackdropPolicy.isStaticYouTube(pkg)) return;
         backdrops.load(pkg, (loaded, bitmap, logo, title, link) -> {
             // A slow result must never paint Jellyfin over YouTube or over another app.
-            if (!active || ticket != generation || !loaded.equals(showing) || bitmap == null) return;
+            if (!active || ticket != generation || !loaded.equals(showing) || bitmap == null
+                    || !ShelfSelection.usesBackdrop(ShelfRepository.source(context, loaded))) return;
             image.animate().cancel();
             image.setForeground(scrim);
             image.setImageBitmap(bitmap);

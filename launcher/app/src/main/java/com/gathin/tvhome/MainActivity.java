@@ -605,8 +605,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
             // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
             if (!MainActivity.this.dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
-            // The larger poster shelf needs a little more height; keep the app dock comfortably below it.
-            if (MainActivity.this.dockRow && !singleRow) want += (int) (22 * density);
+            // Raise the dock enough to leave a glimpse of the next app row below it.
+            if (MainActivity.this.dockRow && !singleRow) want -= (int) (12 * density);
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
@@ -767,6 +767,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 pill.setPaddingRelative(Math.round(8 * density), 0, Math.round(8 * density), 0);
             }
         }
+        // One compact clock/settings capsule. Legacy views stay available to their menu handlers only.
+        findViewById(R.id.leftBlock).setVisibility(View.GONE);
+        clockBlock = findViewById(R.id.compactClock);
+        showInputsPill = false;
+        for (View button : new View[]{btnInputs, btnWifi, btnReorder, btnLibraryTop}) button.setVisibility(View.GONE);
+        for (View button : topAppButtons) button.setVisibility(View.GONE);
+        makeIconOnly((TextView) btnSettings);
+        btnSettings.setContentDescription(getString(R.string.settings));
+        btnSettings.setBackgroundResource(R.drawable.compact_settings_bg);
+        btnSettings.getLayoutParams().width = Math.round(24 * density);
+        btnSettings.getLayoutParams().height = Math.round(24 * density);
+        ((LinearLayout.LayoutParams) btnSettings.getLayoutParams()).setMarginStart(Math.round(5 * density));
+        btnSettings.setPaddingRelative(Math.round(4 * density), 0, Math.round(4 * density), 0);
         btnSettings.setOnLongClickListener(v -> {
             showSettingsMenu();
             return true;
@@ -2288,7 +2301,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ViewGroup bar = findViewById(R.id.topButtons);
         for (int i = 0; i < bar.getChildCount(); i++) {
             View button = bar.getChildAt(i);
-            if (button != btnInputs && button.getVisibility() == View.VISIBLE) return button;
+            if (button != btnInputs && button.getVisibility() == View.VISIBLE && button.isFocusable()) return button;
         }
         return findViewById(R.id.btnSettings);
     }

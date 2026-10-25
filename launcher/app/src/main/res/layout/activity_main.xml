@@ -324,13 +324,28 @@
             <LinearLayout
                 android:id="@+id/topButtons"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="30dp"
                 android:layout_alignParentEnd="true"
-                android:layout_alignBottom="@id/leftBlock"
+                android:layout_alignParentTop="true"
                 android:layout_marginBottom="0dp"
+                android:gravity="center_vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="4dp"
+                android:background="@drawable/pill_bg"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:orientation="horizontal">
+
+                <TextClock
+                    android:id="@+id/compactClock"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:format12Hour="h:mm"
+                    android:format24Hour="HH:mm"
+                    android:textColor="#DDFFFFFF"
+                    android:textSize="14sp"
+                    android:fontFamily="@string/font_medium"
+                    android:includeFontPadding="false" />
 
                 <TextView
                     android:id="@+id/btnInputs"
