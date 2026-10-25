@@ -1735,9 +1735,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else topShelf.hide();
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
-        if (hero.getVisibility() == View.GONE) {
+        if (hero.getVisibility() == View.GONE || topShelf.replacesHero()) {
             // The custom shelf hides the stock hero. Do not animate its text/dots behind the cards.
-            heroShown = true;
+            hero.animate().cancel(); hero.setAlpha(0f);
+            heroShown = false;
             if (ambientGlow) {
                 if (animations && !reducedMotion) transitionAmbient(color);
                 else { setAmbient(color); ambient.setAlpha(1f); }

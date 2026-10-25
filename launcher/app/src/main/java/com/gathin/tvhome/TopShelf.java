@@ -66,6 +66,7 @@ final class TopShelf {
     private int selected;
     private volatile boolean active;
     private boolean suspended;
+    private boolean cardMode;
     private float dockTop;
     private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
@@ -137,10 +138,15 @@ final class TopShelf {
         }
         requested = pkg;
         suspended = false;
+        String source = ShelfRepository.source(activity, pkg);
+        cardMode = !ShelfSelection.OFF.equals(source);
         int ticket = ++generation;
         clear();
+        if (hero.getVisibility() != View.GONE) {
+            hero.animate().cancel();
+            hero.setVisibility(cardMode ? View.INVISIBLE : View.VISIBLE);
+        }
         images.stats();
-        String source = ShelfRepository.source(activity, pkg);
         setDim(active && !ShelfSelection.OFF.equals(source));
         if (!active || ShelfSelection.OFF.equals(source)) return;
         String key = pkg + "\n" + source;
@@ -265,6 +271,7 @@ final class TopShelf {
                 && targets.get(Math.min(selected, targets.size() - 1)).requestFocus();
     }
     boolean hasFocus() { return panel.hasFocus(); }
+    boolean replacesHero() { return cardMode && !suspended; }
     private void position() {
         // dockTop is the unscaled app tile, while the dock material extends another 14dp upwards.
         if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(16));
@@ -308,7 +315,6 @@ final class TopShelf {
         downloads.getQueue().clear();
         bindings.clear();
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
-        if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
     }
 
     private void open(String pkg, ShelfRepository.Item item) {
