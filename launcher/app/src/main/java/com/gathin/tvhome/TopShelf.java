@@ -25,6 +25,12 @@ import java.util.concurrent.TimeUnit;
 
 /** Focusable top shelf. Queries and image decoding never run on Home's main thread. */
 final class TopShelf {
+    private static final android.view.animation.DecelerateInterpolator ROW_EASING =
+            new android.view.animation.DecelerateInterpolator();
+    private static final android.util.IntProperty<ImageView> IMAGE_ALPHA = new android.util.IntProperty<ImageView>("imageAlpha") {
+        @Override public Integer get(ImageView image) { return image.getImageAlpha(); }
+        @Override public void setValue(ImageView image, int alpha) { image.setImageAlpha(alpha); }
+    };
     interface Navigation { void dock(); void header(); void fallback(float top); boolean settling(); }
     private final Activity activity;
     private final View hero;
@@ -68,14 +74,15 @@ final class TopShelf {
     private volatile int generation;
     private int selected;
     private volatile boolean active;
-    private boolean suspended;
+    private volatile boolean suspended;
     private boolean cardMode;
     private boolean rowExiting, awaitingRow;
     private String renderedPkg;
     private float dockTop;
     private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
-    private final Runnable refreshImages = this::updateVisible;
+    private boolean refreshQueued;
+    private final Runnable refreshImages = () -> { refreshQueued = false; updateVisible(); };
 
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation, boolean animateRows) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
@@ -107,12 +114,12 @@ final class TopShelf {
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setHorizontalFadingEdgeEnabled(false);
         scroll.setPadding(0, dp(8), 0, dp(8));
-        scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> updateVisible());
+        scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> scheduleVisible());
         cards = new LinearLayout(activity);
         cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false); cards.setClipToPadding(false);
         // Content has an initial inset; the viewport itself reaches both physical screen edges.
         cards.setPadding(dp(40), 0, dp(40), 0);
-        cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> updateVisible());
+        cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> scheduleVisible());
         scroll.addView(cards);
         panel.addView(scroll);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
@@ -122,7 +129,10 @@ final class TopShelf {
     void resume() {
         if (active) return;
         active = true;
-        queries = Executors.newSingleThreadExecutor();
+        queries = Executors.newSingleThreadExecutor(task -> new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            task.run();
+        }, "shelf-metadata"));
         lists.clear(); // refresh history after returning from playback; thumbnails remain on disk
         String pkg = requested;
         requested = null;
@@ -138,9 +148,8 @@ final class TopShelf {
                 if (!bindings.isEmpty() && pkg.equals(renderedPkg)) {
                     if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
                     awaitingRow = false;
-                    panel.setAlpha(1f);
-                    setDim(true); panel.setVisibility(View.VISIBLE);
-                    panel.post(refreshImages);
+                    setDim(true);
+                    presentRow(generation, pkg);
                 } else {
                     requested = null;
                     show(pkg, appLabel, top);
@@ -187,6 +196,7 @@ final class TopShelf {
 
     private void dismissRow(int ticket, String pkg) {
         panel.animate().cancel();
+        refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
         if (!animateRows || panel.getVisibility() != View.VISIBLE || bindings.isEmpty() || panel.getAlpha() == 0f) {
@@ -194,7 +204,7 @@ final class TopShelf {
         }
         rowExiting = true;
         panel.animate().alpha(0f).setDuration(120)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .setInterpolator(ROW_EASING)
                 .withEndAction(() -> {
                     if (!valid(ticket, pkg)) return;
                     clear();
@@ -306,14 +316,19 @@ final class TopShelf {
         }
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
         setDim(true);
-        panel.setVisibility(View.VISIBLE);
-        panel.setAlpha(animateRows ? 0f : 1f);
         scroll.scrollTo(0, 0);
+        presentRow(ticket, pkg);
+    }
+
+    private void presentRow(int ticket, String pkg) {
+        panel.animate().cancel();
+        panel.setAlpha(animateRows ? 0f : 1f);
+        panel.setVisibility(View.VISIBLE);
         panel.post(() -> {
             if (!valid(ticket, pkg)) return;
-            position(); updateVisible();
+            position(); scheduleVisible();
             if (animateRows) panel.animate().alpha(1f).setDuration(220)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+                    .setInterpolator(ROW_EASING).start();
         });
     }
 
@@ -347,7 +362,12 @@ final class TopShelf {
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
         downloads.getQueue().clear();
-        for (Binding b : bindings) b.loading = false;
+        for (Binding b : bindings) {
+            b.loading = false;
+            if (b.reveal != null) { b.reveal.cancel(); b.reveal = null; }
+            if (b.loaded) b.image.setImageAlpha(255);
+        }
+        refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         panel.setVisibility(View.INVISIBLE); setDim(false);
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
@@ -365,6 +385,7 @@ final class TopShelf {
     void trim() { images.trim(); }
     private void clear() {
         panel.animate().cancel(); rowExiting = false;
+        refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
         for (Binding b : bindings) if (b.reveal != null) b.reveal.cancel();
@@ -409,10 +430,16 @@ final class TopShelf {
         return b.tile.getRight() >= scroll.getScrollX() - spare
                 && b.tile.getLeft() <= scroll.getScrollX() + scroll.getWidth() + spare;
     }
+    private void scheduleVisible() {
+        if (refreshQueued || !active || suspended || awaitingRow || rowExiting
+                || panel.getVisibility() != View.VISIBLE) return;
+        refreshQueued = true;
+        panel.postOnAnimation(refreshImages);
+    }
     private void updateVisible() {
         if (!active || awaitingRow || rowExiting || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
         panel.removeCallbacks(refreshImages);
-        if (navigation.settling()) { panel.postDelayed(refreshImages, 32); return; }
+        if (navigation.settling()) { refreshQueued = true; panel.postDelayed(refreshImages, 32); return; }
         panel.removeCallbacks(releaseImages);
         panel.postDelayed(releaseImages, 300);
         final int ticket = generation;
@@ -430,7 +457,7 @@ final class TopShelf {
                 if (!valid(ticket, pkg) || !b.wanted) {
                     activity.runOnUiThread(() -> {
                         b.loading = false;
-                        if (valid(ticket, pkg) && b.wanted) updateVisible();
+                        if (valid(ticket, pkg) && b.wanted) scheduleVisible();
                     });
                     return;
                 }
@@ -459,7 +486,7 @@ final class TopShelf {
         float actual = bitmap.getWidth() / (float) bitmap.getHeight();
         if (Math.abs(actual - b.item.aspect) > .02f) {
             size(b, actual);
-            cards.post(this::updateVisible);
+            scheduleVisible();
         }
         b.image.setImageBitmap(bitmap);
         if (first) {
@@ -467,7 +494,7 @@ final class TopShelf {
             b.image.setImageAlpha(animateRows ? 0 : 255);
             if (animateRows) {
                 // Image paint alpha avoids a bitmap snapshot or a temporary per-image hardware layer.
-                b.reveal = android.animation.ObjectAnimator.ofInt(b.image, "imageAlpha", 0, 255);
+                b.reveal = android.animation.ObjectAnimator.ofInt(b.image, IMAGE_ALPHA, 0, 255);
                 b.reveal.setDuration(160); b.reveal.start();
             }
         }

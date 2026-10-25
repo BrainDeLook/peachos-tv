@@ -19,6 +19,7 @@ final class LiquidGlass extends Drawable {
     private final float density;
     private float radius, focus = .25f;
     private int opacity = 255;
+    private int width = -1, height = -1;
     LiquidGlass(float density, float radius) {
         this.density = density; this.radius = radius;
         edge.setStyle(Paint.Style.STROKE); edge.setStrokeWidth(.55f * density);
@@ -38,7 +39,11 @@ final class LiquidGlass extends Drawable {
                 new int[]{0x10FFFFFF, 0x04E5F1FF, 0x00FFFFFF}, new float[]{0, .45f, 1}, Shader.TileMode.CLAMP));
     }
     @Override protected void onBoundsChange(Rect bounds) {
-        area.set(bounds); area.inset(.6f * density, .6f * density);
+        // Scrolling moves the dock without changing its shape: keep shaders in local coordinates.
+        if (width == bounds.width() && height == bounds.height()) return;
+        width = bounds.width(); height = bounds.height();
+        area.set(0, 0, width, height); area.inset(.6f * density, .6f * density);
+        if (area.isEmpty()) return;
         // Low contrast through the centre; highlights live at the curved perimeter, not in a glossy top stripe.
         fill.setShader(new LinearGradient(0, area.top, 0, Math.max(area.top + 1, area.bottom),
                 new int[]{0x14FFFFFF, 0x0CFFFFFF, 0x18172027, 0x12172027},
@@ -49,6 +54,9 @@ final class LiquidGlass extends Drawable {
         lighting();
     }
     @Override public void draw(Canvas canvas) {
+        if (area.isEmpty()) return;
+        int save = canvas.save();
+        canvas.translate(getBounds().left, getBounds().top);
         // Three very faint, inset-free contours approximate a soft lift without allocating a blurred layer.
         for (int i = 3; i >= 1; i--) {
             shadeArea.set(area); shadeArea.inset(-i * density, -i * density);
@@ -59,6 +67,7 @@ final class LiquidGlass extends Drawable {
         canvas.drawRoundRect(area, radius, radius, fill);
         canvas.drawRoundRect(area, radius, radius, light);
         canvas.drawRoundRect(area, radius, radius, edge);
+        canvas.restoreToCount(save);
     }
     @Override public void setAlpha(int value) {
         opacity = value; fill.setAlpha(value); edge.setAlpha(value); light.setAlpha(value); invalidateSelf();
