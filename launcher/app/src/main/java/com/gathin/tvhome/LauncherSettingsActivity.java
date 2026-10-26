@@ -43,6 +43,16 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        TextView soundChoice = findViewById(R.id.navigationSoundChoice);
+        soundChoice.setText(getString(R.string.navigation_sound_state,
+                getString(choices.getBoolean(NavigationSound.KEY, true) ? R.string.on : R.string.off)));
+        soundChoice.setOnClickListener(v -> {
+            boolean enabled = !choices.getBoolean(NavigationSound.KEY, true);
+            choices.edit().putBoolean(NavigationSound.KEY, enabled).apply();
+            soundChoice.setText(getString(R.string.navigation_sound_state,
+                    getString(enabled ? R.string.on : R.string.off)));
+            changed();
+        });
         TextView glassChoice = findViewById(R.id.liquidGlassChoice);
         glassChoice.setText(getString(R.string.liquid_glass_state,
                 getString(choices.getBoolean("liquid_glass", true) ? R.string.on : R.string.off)));

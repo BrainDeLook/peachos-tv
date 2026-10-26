@@ -56,7 +56,6 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.SoundEffectConstants;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
@@ -131,6 +130,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean coocaaSources;
 
     private AppAdapter adapter;
+    private NavigationSound navigationSound;
+    private final Rect navigationFocusRect = new Rect();
     private RecyclerView grid;
     private FrameLayout root;
     private WallpaperPlayer wallpaperPlayer;
@@ -584,6 +585,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     AnimationUtils.loadAnimation(this, R.anim.tile_enter), 0.06f));
         }
         adapter = new AppAdapter(this, this, COLUMNS, cfg);
+        navigationSound = new NavigationSound(this);
         dockApps = cfg.dockApps;
         fillDockLeavesSlots = !cfg.fillDock;
         Order savedOrder = Order.load(Order.file(this));
@@ -1173,6 +1175,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (navigationSound != null) navigationSound.stop();
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1238,6 +1241,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (navigationSound != null) navigationSound.close();
         if (metadataBackdrop != null) metadataBackdrop.pause();
         if (topShelf != null) topShelf.close();
         unregisterReceiver(packageReceiver);
@@ -1295,7 +1299,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 return true;
             }
         }
-        if (!reordering) return super.dispatchKeyEvent(event);
+        if (!reordering) {
+            int code = event.getKeyCode();
+            int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
+                    : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
+                    : code == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP
+                    : code == KeyEvent.KEYCODE_DPAD_DOWN ? View.FOCUS_DOWN : 0;
+            if (direction != 0 && event.getAction() == KeyEvent.ACTION_DOWN
+                    && !event.isCanceled() && openPopup == null && cardPrompt == null
+                    && focusedTilePosition() >= 0) {
+                return dispatchAppNavigation(event, direction);
+            }
+            return super.dispatchKeyEvent(event);
+        }
         if (dockEditing) return dispatchDockEdit(event);
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
         int code = event.getKeyCode();
@@ -1339,6 +1355,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return true;
         }
         return super.dispatchKeyEvent(event);   // arrows navigate; OK on a top-bar pill works as usual
+    }
+
+    /** Keep the normal key listeners and focus search, but replace ViewRoot's stock navigation click.
+     * Consuming a successful move here prevents a second system sound underneath our own tick. */
+    private boolean dispatchAppNavigation(KeyEvent event, int direction) {
+        View before = getCurrentFocus();
+        boolean handled = super.dispatchKeyEvent(event);
+        if (!handled && getCurrentFocus() == before) {
+            View next = before.focusSearch(direction);
+            if (next != null && next != before) {
+                before.getFocusedRect(navigationFocusRect);
+                ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+                decor.offsetDescendantRectToMyCoords(before, navigationFocusRect);
+                decor.offsetRectIntoDescendantCoords(next, navigationFocusRect);
+                handled = next.requestFocus(direction, navigationFocusRect);
+            }
+        }
+        View after = getCurrentFocus();
+        if (after != before && focusedTilePosition() >= 0 && navigationSound != null) {
+            navigationSound.play();
+        }
+        return handled || after != before;
     }
 
     /** Adapter position of the focused tile, or -1 when focus is not on a tile. */
@@ -2306,9 +2344,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             target = Math.min(position + COLUMNS, count - 1);
         }
         focusTile(target);
-        // The default focus search clicks for Left/Right; Up/Down are handled here, so click for them too.
-        grid.playSoundEffect(keyCode == KeyEvent.KEYCODE_DPAD_UP
-                ? SoundEffectConstants.NAVIGATION_UP : SoundEffectConstants.NAVIGATION_DOWN);
+        // dispatchAppNavigation owns the sound for both automatic and explicit tile moves.
         return true;
     }
 
