@@ -111,6 +111,9 @@ final class TopShelf {
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
+        // Focus zoom extends above the inner cards row into the scroll view's existing padding.
+        // Do not clip to that child's bounds; the root still clips at the physical screen edges.
+        scroll.setClipChildren(false);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setHorizontalFadingEdgeEnabled(false);
         scroll.setPadding(0, dp(8), 0, dp(8));
