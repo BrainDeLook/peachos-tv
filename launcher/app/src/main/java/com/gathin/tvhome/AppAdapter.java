@@ -32,6 +32,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.dynamicanimation.animation.FloatPropertyCompat;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
@@ -98,6 +101,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     static final float FOCUS_SCALE = 1.10f; // keep the existing layout clearance
     private static final float SELECTED_SCALE = 1.12f;
     private static final DecelerateInterpolator FOCUS_EASING = new DecelerateInterpolator(1.5f);
+    // One spring drives both scale axes. No extra view layer, bitmap or second physics solver.
+    private static final FloatPropertyCompat<View> FOCUS_ZOOM = new FloatPropertyCompat<View>("focusZoom") {
+        @Override public float getValue(View view) { return view.getScaleX(); }
+        @Override public void setValue(View view, float value) { view.setScaleX(value); view.setScaleY(value); }
+    };
     /** Design size of a tile (dp); tiles shrink from here when the columns don't fit, see tileWidthPx. */
     static final float DESIGN_W_DP = 180f, DESIGN_H_DP = 101f;
 
@@ -433,6 +441,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         if (isLibraryAt(position)) return;
         Holder h = (Holder) holder;
+        h.cancelFocusSpring();
         Entry e = items.get(position);
         if (e.kind == Entry.EMPTY) {
             // A free dock slot keeps its place in the row and the band, but shows nothing and takes no focus.
@@ -497,6 +506,23 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             }
             return true;
         });
+    }
+
+    @Override
+    public void onViewDetachedFromWindow(@NonNull RecyclerView.ViewHolder holder) {
+        if (holder instanceof Holder) {
+            Holder h = (Holder) holder;
+            h.cancelFocusSpring();
+            float scale = h.card.isFocused() ? SELECTED_SCALE : 1f;
+            h.card.setScaleX(scale); h.card.setScaleY(scale);
+        }
+        super.onViewDetachedFromWindow(holder);
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        if (holder instanceof Holder) ((Holder) holder).cancelFocusSpring();
+        super.onViewRecycled(holder);
     }
 
     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
@@ -863,6 +889,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean animations;
 
         final boolean reducedMotion;
+        private SpringAnimation focusSpring;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
 
@@ -914,16 +941,17 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.setTranslationY(0f); view.setTranslationZ(0f);
                 banner.setScaleX(1f); banner.setScaleY(1f);
                 if (!animations) {
+                    cancelFocusSpring();
                     view.setScaleX(target); view.setScaleY(target);
                     sheen.setAlpha(focused ? 1f : 0f);
                 } else {
-                    // Property transforms reuse the existing render node; no relayout, spring or temporary layer.
-                    // Cancelling preserves the current scale, so rapid focus changes reverse smoothly.
-                    view.animate().scaleX(target).scaleY(target)
-                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
-                            .setInterpolator(FOCUS_EASING).start();
+                    if (reducedMotion) {
+                        cancelFocusSpring();
+                        view.animate().scaleX(target).scaleY(target)
+                                .setDuration(Motion.REDUCED_MS).setInterpolator(FOCUS_EASING).start();
+                    } else animateFocusScale(target, focused);
                     sheen.animate().alpha(focused ? 1f : 0f)
-                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
+                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
                             .setInterpolator(FOCUS_EASING).start();
                 }
                 if (name.getVisibility() == View.VISIBLE) {
@@ -937,6 +965,22 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     listener.onTileFocused(pos, view);
                 }
             });
+        }
+
+        private void animateFocusScale(float target, boolean focused) {
+            if (focusSpring == null) {
+                focusSpring = new SpringAnimation(card, FOCUS_ZOOM);
+                focusSpring.setSpring(new SpringForce(target));
+                focusSpring.setMinimumVisibleChange(.001f); // well below one screen pixel
+            }
+            focusSpring.getSpring().setStiffness(focused ? 1500f : 1900f)
+                    .setDampingRatio(focused ? .68f : SpringForce.DAMPING_RATIO_NO_BOUNCY);
+            // Retarget without cancelling: rapid reversals retain their current position and velocity.
+            focusSpring.animateToFinalPosition(target);
+        }
+
+        void cancelFocusSpring() {
+            if (focusSpring != null) focusSpring.cancel();
         }
     }
 }
