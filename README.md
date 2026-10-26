@@ -16,7 +16,8 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 
 - **Artwork for the focused app.** Choose a source for each app: all Android TV cards, continue watching, Lampa history, or a specific published channel.
 - **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
-- **A quiet dock.** A gentle focus zoom, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
+- **A quiet dock.** Responsive spring focus, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
+- **Soft navigation sound.** A short, preloaded tick when switching app tiles. Turn it off in Launcher settings → App navigation sound.
 - **Lightweight glass.** Restrained translucent materials with no live background capture or blur buffers. Glass can be turned off.
 - **Your layout.** Rearrange apps and choose which ones belong in the dock.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
