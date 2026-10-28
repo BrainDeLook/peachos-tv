@@ -18,4 +18,6 @@
     <string name="cc_standby_help">Enable “PeachOS TV · Sleep” in Accessibility to use standby. This helper does not read the screen or intercept buttons. Wake the device with its remote.</string>
     <string name="cc_sleep_unavailable">Standby through this button requires Android 9 or newer. Use the remote power button on this device.</string>
     <string name="cc_network_status">%1$s\n%2$s</string>
+    <string name="cc_launcher_settings">Launcher settings</string>
+    <string name="cc_search">Search</string>
 </resources>

@@ -27,6 +27,7 @@
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
     <queries>
+        <intent><action android:name="android.search.action.GLOBAL_SEARCH" /></intent>
         <intent><action android:name="com.nes.intent.action.ACCESSORIES" /></intent>
         <intent><action android:name="android.net.VpnService" /></intent>
         <intent><action android:name="android.settings.VPN_SETTINGS" /></intent>

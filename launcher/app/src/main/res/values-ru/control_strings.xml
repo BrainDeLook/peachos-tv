@@ -18,4 +18,6 @@
     <string name="cc_standby_help">Для сна включите «PeachOS TV · Сон» в разделе доступности. Помощник не читает экран и не перехватывает кнопки. Пробуждение — пультом устройства.</string>
     <string name="cc_sleep_unavailable">Для этой кнопки сна требуется Android 9 или новее. Используйте кнопку питания пульта.</string>
     <string name="cc_network_status">%1$s\n%2$s</string>
+    <string name="cc_launcher_settings">Настройки лаунчера</string>
+    <string name="cc_search">Поиск</string>
 </resources>
