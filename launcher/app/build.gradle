@@ -11,8 +11,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 38
-        versionName '1.5.0-sounds-preview'
+        versionCode 39
+        versionName '1.5.0-home-preview'
     }
 
     buildTypes {

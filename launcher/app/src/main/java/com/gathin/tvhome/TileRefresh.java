@@ -25,7 +25,7 @@ final class TileRefresh {
         refocus = true;
     }
 
-    /** Home pressed while Home is in front: back to the first tile. */
+    /** A Home intent asks to restore the remembered tile without rebuilding unchanged apps. */
     void onHomeAgain() {
         refocus = true;
     }
