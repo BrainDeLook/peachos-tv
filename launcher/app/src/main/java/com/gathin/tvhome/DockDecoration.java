@@ -111,12 +111,9 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         }
         if (!any) return;
         float pad = 20 * density;
-        // The band can only draw inside the grid, and the first and last dock tiles sit 12dp in from its
-        // edges: a full 14dp at the sides sliced the rounded ends flat (#454). Keep the sides, with the
-        // 1dp edge line, inside the grid; the top and bottom have room.
-        // 22dp at the sides (the grid's 10dp padding makes room): a focused first or last tile grows about 7dp
-        // outwards and still keeps about the band's top margin from its rounded end.
-        float sidePad = 20 * density;
+        // Extra paint room at the row ends keeps a zoomed first/last icon inset from the band.
+        // The wrapper's wider viewport is balanced by grid padding, so tile positions stay fixed.
+        float sidePad = 25 * density;
         float side = Math.max(0f, Math.min(sidePad, Math.min(rect.left, parent.getWidth() - rect.right) - density));
         float radius = AppAdapter.cornerRadius(cardWidth, density);
         if (evenPadding) {

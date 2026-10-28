@@ -33,30 +33,44 @@ public final class AppTile extends FrameLayout {
         canvas.restoreToCount(save);
     }
 
-    /** A narrow, low-contrast light roll at the selected icon's perimeter; the artwork stays untouched. */
+    /** Three faint, overlapping light bands feather inward; no hard rim or dark bevel. */
     static final class Edge extends Drawable {
-        private final Path outer = new Path(), inner = new Path();
-        private final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG), roll = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path[] bands = {new Path(), new Path(), new Path()};
+        private final Paint[] light = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
+        private static final int[] STRENGTH = {45, 30, 16};
         private final float density;
         Edge(float density) {
             this.density = density;
-            rim.setStyle(Paint.Style.STROKE); rim.setStrokeWidth(.65f * density);
-            roll.setStyle(Paint.Style.STROKE); roll.setStrokeWidth(1.8f * density);
+            float[] widths = {1.2f, 2.4f, 4.8f};
+            for (int i = 0; i < light.length; i++) {
+                light[i].setStyle(Paint.Style.STROKE);
+                light[i].setStrokeWidth(widths[i] * density);
+                light[i].setAlpha(STRENGTH[i]);
+            }
         }
         @Override protected void onBoundsChange(Rect b) {
-            float radius = AppAdapter.cornerRadius(b.width(), density), inset = .7f * density;
-            ContinuousCorners.set(outer, b.left + inset, b.top + inset, b.right - inset, b.bottom - inset, radius - inset);
-            inset = 1.8f * density;
-            ContinuousCorners.set(inner, b.left + inset, b.top + inset, b.right - inset, b.bottom - inset, radius - inset);
-            rim.setShader(new LinearGradient(b.left, b.top, b.right, b.bottom,
-                    new int[]{0x55ffffff, 0x0affffff, 0x06ffffff, 0x2effffff},
-                    new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP));
-            roll.setShader(new LinearGradient(0, b.top, 0, Math.max(b.top + 1, b.bottom),
-                    new int[]{0x18ffffff, 0x00ffffff, 0x18000000}, new float[]{0, .4f, 1}, Shader.TileMode.CLAMP));
+            float radius = AppAdapter.cornerRadius(b.width(), density);
+            float[] insets = {.6f, 1.8f, 3f};
+            Shader illumination = new LinearGradient(b.left, b.top, b.right, b.bottom,
+                    new int[]{0x20ffffff, 0x06ffffff, 0x00ffffff, 0x12ffffff},
+                    new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
+            for (int i = 0; i < bands.length; i++) {
+                float inset = insets[i] * density;
+                ContinuousCorners.set(bands[i], b.left + inset, b.top + inset, b.right - inset, b.bottom - inset, radius - inset);
+                light[i].setShader(illumination);
+            }
         }
-        @Override public void draw(Canvas canvas) { canvas.drawPath(inner, roll); canvas.drawPath(outer, rim); }
-        @Override public void setAlpha(int alpha) { rim.setAlpha(alpha); roll.setAlpha(alpha); invalidateSelf(); }
-        @Override public void setColorFilter(ColorFilter filter) { rim.setColorFilter(filter); roll.setColorFilter(filter); invalidateSelf(); }
+        @Override public void draw(Canvas canvas) {
+            for (int i = bands.length - 1; i >= 0; i--) canvas.drawPath(bands[i], light[i]);
+        }
+        @Override public void setAlpha(int alpha) {
+            for (int i = 0; i < light.length; i++) light[i].setAlpha(alpha * STRENGTH[i] / 255);
+            invalidateSelf();
+        }
+        @Override public void setColorFilter(ColorFilter filter) {
+            for (Paint paint : light) paint.setColorFilter(filter);
+            invalidateSelf();
+        }
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 }

@@ -99,7 +99,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final float FOCUS_SCALE = 1.10f; // keep the existing layout clearance
-    private static final float SELECTED_SCALE = 1.20f;
+    private static final float SELECTED_SCALE = 1.23f;
     private static final DecelerateInterpolator FOCUS_EASING = new DecelerateInterpolator(1.5f);
     // One spring drives both scale axes. No extra view layer, bitmap or second physics solver.
     private static final FloatPropertyCompat<View> FOCUS_ZOOM = new FloatPropertyCompat<View>("focusZoom") {
