@@ -13,7 +13,7 @@ public class TileFitTest {
     private static final int GRID_H = 846;          // grid height under the top bar
 
     private static int height(int tileW, int rows, boolean title) {
-        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(tileW), D);
+        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(tileW, true), D);
         return itemH * (rows + 1) + Math.round((AppAdapter.DOCK_EXTRA_DP + AppAdapter.BOTTOM_ROOM_DP
                 + (title ? AppAdapter.TITLE_ROOM_DP : 0)) * D);
     }
@@ -57,7 +57,7 @@ public class TileFitTest {
     public void plainGridFitsFourRowsAtSixColumns() {
         // dock_row false, rows_below_dock 3: the first row and 3 more under a 12dp top margin.
         int w = AppAdapter.tileWidthPx(INNER, GRID_H, 6, 3, true, false, D);
-        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(w), false, D);
+        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(w, false), false, D);
         int needed = itemH * 4 + Math.round((AppAdapter.TOP_ROOM_DP + AppAdapter.COMPACT_BOTTOM_ROOM_DP) * D);
         assertTrue(needed + " > " + GRID_H, needed <= GRID_H + 2);
         // With the compact spacing the width limit decides, not the height: no extra whitespace between tiles.

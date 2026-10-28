@@ -158,8 +158,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:paddingStart="32dp"
-        android:paddingEnd="32dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
         android:paddingTop="26dp"
         android:clipChildren="false"
         android:clipToPadding="false">
@@ -342,8 +342,8 @@
                     android:layout_height="wrap_content"
                     android:format12Hour="h:mm"
                     android:format24Hour="HH:mm"
-                    android:textColor="#E6FFFFFF"
-                    android:textSize="14sp"
+                    android:textColor="#BFFFFFFF"
+                    android:textSize="12.5sp"
                     android:fontFamily="@string/font_medium"
                     android:includeFontPadding="false" />
 

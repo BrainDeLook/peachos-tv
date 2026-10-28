@@ -90,7 +90,15 @@ final class TopShelf {
         images = new ShelfImages(activity);
         bodyFace = activity.getResources().getFont(R.font.inter_regular);
         dim = new View(activity);
-        dim.setBackgroundColor(0x99000000);
+        // A quiet, opaque shelf backdrop replaces app metadata without live blur or extra buffers.
+        GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xff2a232a, 0xff262027, 0xff18212d, 0xff20181b});
+        GradientDrawable warmth = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x2a7d3218, 0x007d3218});
+        warmth.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+        warmth.setGradientCenter(.5f, .14f);
+        warmth.setGradientRadius(activity.getResources().getDisplayMetrics().widthPixels * .48f);
+        dim.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{base, warmth}));
         dim.setVisibility(View.GONE);
         dim.setAlpha(0f);
         dim.forceHasOverlappingRendering(false);
@@ -105,9 +113,11 @@ final class TopShelf {
         panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> position());
         panel.setVisibility(View.GONE);
         heading = new TextView(activity);
-        heading.setTypeface(activity.getResources().getFont(R.font.inter_medium));
-        heading.setTextColor(0xe6ffffff); heading.setTextSize(19);
-        heading.setSingleLine(true); heading.setPadding(dp(40), 0, dp(40), dp(5));
+        heading.setTypeface(activity.getResources().getFont(R.font.inter_semibold));
+        heading.setTextColor(0x66ffffff); heading.setTextSize(24);
+        heading.setIncludeFontPadding(false);
+        heading.setSingleLine(true); heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heading.setPadding(dp(45), 0, dp(45), 0);
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
@@ -124,7 +134,9 @@ final class TopShelf {
         cards.setPadding(dp(40), 0, dp(40), 0);
         cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> scheduleVisible());
         scroll.addView(cards);
-        panel.addView(scroll);
+        LinearLayout.LayoutParams scrollLayout = new LinearLayout.LayoutParams(-1, -2);
+        scrollLayout.topMargin = -dp(6);
+        panel.addView(scroll, scrollLayout);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
         root.addView(panel, lp);
     }
@@ -248,11 +260,11 @@ final class TopShelf {
         captionMeasure.setTextSize(11);
         captionMeasure.setTypeface(bodyFace);
         int captionHeight = (int) Math.ceil(captionMeasure.getPaint().getFontSpacing() * 2) + dp(2);
-        int headingHeight = (int) Math.ceil(heading.getPaint().getFontMetrics().bottom
-                - heading.getPaint().getFontMetrics().top) + heading.getPaddingBottom();
-        int available = (int) dockTop - dp(28) - topClearance() - headingHeight - dp(16)
+        int headingHeight = (int) Math.ceil(heading.getPaint().getFontMetrics().descent
+                - heading.getPaint().getFontMetrics().ascent) + heading.getPaddingBottom();
+        int available = (int) dockTop - dp(28) - topClearance() - headingHeight - dp(38)
                 - captionHeight - dp(14);
-        int height = Math.max(dp(80), Math.min(Math.round((widthForFive - dp(6)) * 1.5f),
+        int height = Math.max(dp(80), Math.min(Math.round((widthForFive - dp(10)) * 1.5f),
                 Math.min(dp(252), (int) (available / 1.0225f))));
         for (ShelfRepository.Item item : result.items) {
             FrameLayout tile = new FrameLayout(activity);
@@ -343,8 +355,8 @@ final class TopShelf {
     boolean hasFocus() { return panel.hasFocus(); }
     boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
     private void position() {
-        // dockTop is the unscaled app tile, while the dock material extends another 14dp upwards.
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(16));
+        // Keep a calm gap above the dock, including room for a focused poster's caption and zoom.
+        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(38));
     }
     private void setDim(boolean enabled) {
         float target = enabled ? 1f : 0f;
@@ -356,7 +368,7 @@ final class TopShelf {
     }
     private int topClearance() {
         View buttons = activity.findViewById(R.id.topButtons);
-        return Math.max(dp(48), buttons == null ? 0 : buttons.getBottom() + dp(8));
+        return Math.max(dp(44), buttons == null ? 0 : buttons.getBottom() + dp(8));
     }
     private boolean valid(int ticket, String pkg) { return active && !suspended && ticket == generation && pkg.equals(requested); }
 

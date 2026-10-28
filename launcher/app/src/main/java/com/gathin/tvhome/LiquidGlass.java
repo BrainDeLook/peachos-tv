@@ -46,10 +46,10 @@ final class LiquidGlass extends Drawable {
         if (area.isEmpty()) return;
         // Low contrast through the centre; highlights live at the curved perimeter, not in a glossy top stripe.
         fill.setShader(new LinearGradient(0, area.top, 0, Math.max(area.top + 1, area.bottom),
-                new int[]{0x14FFFFFF, 0x0CFFFFFF, 0x18172027, 0x12172027},
+                new int[]{0x1CFFFFFF, 0x18FFFFFF, 0x12FFFFFF, 0x10FFFFFF},
                 new float[]{0, .14f, .70f, 1}, Shader.TileMode.CLAMP));
         edge.setShader(new LinearGradient(area.left, area.top, area.right, area.bottom,
-                new int[]{0x50FFFFFF, 0x0CFFFFFF, 0x05FFFFFF, 0x2CDAE7F2},
+                new int[]{0x38C8DBEF, 0x16FFFFFF, 0x0AFFFFFF, 0x20B9CBDD},
                 new float[]{0, .26f, .70f, 1}, Shader.TileMode.CLAMP));
         lighting();
     }
