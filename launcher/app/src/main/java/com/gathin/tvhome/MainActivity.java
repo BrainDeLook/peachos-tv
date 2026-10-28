@@ -264,6 +264,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int packageSequence;
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
+    private ControlCenter controlCenter;
+    private boolean dashboardHasInputs;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
     /** Key of the tile being carried in reorder mode, or null. */
@@ -801,6 +803,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)) {
             findViewById(R.id.topButtons).setBackground(new LiquidGlass(density, 18 * density));
         }
+        btnSettings.setContentDescription(getString(R.string.cc_title));
+        btnSettings.setOnClickListener(v -> showControlCenter());
         btnSettings.setOnLongClickListener(v -> {
             showSettingsMenu();
             return true;
@@ -896,7 +900,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean openInputsIfAsked(Intent intent) {
         if (intent == null || !ACTION_VIEW_INPUTS.equals(intent.getAction())) return false;
         setIntent(new Intent(Intent.ACTION_MAIN));
-        View anchor = topMenu ? findViewById(R.id.btnSettings) : btnInputs;
+        View anchor = findViewById(R.id.btnSettings);
         if (anchor.getVisibility() != View.VISIBLE) return true;
         if (anchor.isLaidOut()) {
             anchor.requestFocus();
@@ -935,6 +939,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (openPopup != null) openPopup.dismiss();
         if (stopped) {
             tileRefresh.onHomeAgain();
         } else {
@@ -2634,6 +2639,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
     private void updateWifiLabel() {
+        if (controlCenter != null) controlCenter.refreshNetwork();
         String text = getString(R.string.wifi);
         boolean vpn = false, online = false, validated = false;
         int icon = R.drawable.ic_wifi;
@@ -2825,10 +2831,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Hides the Inputs pill when it would have nothing to list: streaming boxes have no HDMI-in, AV or tuner. */
     private void updateInputsButton() {
-        if (!showInputsPill) {
-            btnInputs.setVisibility(View.GONE);
-            return;
-        }
         boolean any = liveTvIntent() != null || !sourcePanelService.isEmpty()
                 || (coocaaSources && !CoocaaSources.list(this).isEmpty());
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -2841,7 +2843,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }
             }
         }
-        btnInputs.setVisibility(any ? View.VISIBLE : View.GONE);
+        dashboardHasInputs = any;
+        btnInputs.setVisibility(View.GONE);
     }
 
     /** boot_to_live_tv, or the Open on start app: the first time Home comes up after the TV starts, open that app
@@ -2988,11 +2991,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             openSourcePanel();
             return;
         }
-        // top_menu: the pill is gone, so the list hangs under the gear, growing inward from the right.
-        // Read the switch, not the pill: show_inputs_pill=false hides the pill too, and there the list
-        // keeps its usual place.
-        boolean underGear = topMenu;
-        View anchor = findViewById(underGear ? R.id.btnSettings : R.id.btnInputs);
+        // External input shortcuts keep the compact picker anchored to the gear.
+        boolean underGear = true;
+        View anchor = findViewById(R.id.btnSettings);
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
 
@@ -3000,6 +3001,48 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int width = Math.max(anchor.getWidth(), (int) (150 * density));
         final PopupWindow popup = glassPopup(panel, width);
 
+        populateInputRows(rows, popup, coocaa);
+        if (rows.getChildCount() == 0) {
+            Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        styleSourcePicker(panel, rows);
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (260 * density))));
+
+        int alignment = getResources().getBoolean(R.bool.rtl_menu_bar) != underGear ? Gravity.END : Gravity.START;
+        dropIn(popup, panel, anchor, alignment);
+        rows.getChildAt(0).requestFocus();
+    }
+
+    private void showControlCenter() {
+        if (controlCenter != null && controlCenter.popup.isShowing()) {
+            controlCenter.close();
+            return;
+        }
+        if (openPopup != null) openPopup.dismiss();
+        updateInputsButton();
+        controlCenter = new ControlCenter(this, findViewById(R.id.btnSettings), dashboardHasInputs, animations, reducedMotion, vpnApp);
+        openPopup = controlCenter.popup;
+        controlCenter.show();
+    }
+
+    void controlCenterDismissed(ControlCenter center) {
+        if (controlCenter == center) controlCenter = null;
+        if (openPopup == center.popup) openPopup = null;
+    }
+
+    void controlOpen(Intent intent) { open(intent); }
+
+    void controlInputRows(LinearLayout rows, PopupWindow popup) {
+        populateInputRows(rows, popup, coocaaSources ? CoocaaSources.list(this) : Collections.emptyList());
+        styleSourcePicker(rows, rows);
+        rows.setBackground(null);
+        rows.setPadding(0, 0, 0, 0);
+    }
+
+    private void populateInputRows(LinearLayout rows, PopupWindow popup, List<CoocaaSources.Source> coocaa) {
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         boolean sawNonHdmi = false;
         String tunerId = null;
@@ -3145,18 +3188,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             final Intent liveTvIntent = liveTv;
             addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
         }
-        if (rows.getChildCount() == 0) {
-            Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        styleSourcePicker(panel, rows);
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (260 * density))));
-
-        int alignment = getResources().getBoolean(R.bool.rtl_menu_bar) != underGear ? Gravity.END : Gravity.START;
-        dropIn(popup, panel, anchor, alignment);
-        rows.getChildAt(0).requestFocus();
     }
 
     /** Source-picker styling only: other launcher/settings menus keep their existing sizing. */

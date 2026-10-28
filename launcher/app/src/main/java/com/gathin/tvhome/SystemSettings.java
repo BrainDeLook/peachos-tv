@@ -20,6 +20,11 @@ final class SystemSettings {
         // Fire OS resolves the standard actions to a CTS compliance stub that opens nothing;
         // treat it as missing so the vendor fallback runs.
         if (resolved != null && !resolved.activityInfo.name.contains("CTSDummy")) return standard;
+        if (Settings.ACTION_BLUETOOTH_SETTINGS.equals(action)) {
+            Intent accessories = new Intent("com.nes.intent.action.ACCESSORIES");
+            if (accessories.resolveActivity(pm) != null) return accessories;
+            return intent(context, Settings.ACTION_SETTINGS);
+        }
         Intent vendor = vendorIntent(context);
         return vendor != null ? vendor : standard;
     }

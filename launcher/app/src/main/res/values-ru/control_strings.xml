@@ -1,0 +1,21 @@
+<resources>
+    <string name="cc_title">Панель управления</string>
+    <string name="cc_sleep">Режим сна</string>
+    <string name="cc_bluetooth">Bluetooth</string>
+    <string name="cc_clock">Часы</string>
+    <string name="cc_accessibility">Доступность</string>
+    <string name="cc_vpn">VPN</string>
+    <string name="cc_vpn_app">Приложение VPN</string>
+    <string name="cc_system_vpn">Системные настройки VPN</string>
+    <string name="cc_network_settings">Настройки сети</string>
+    <string name="cc_online">Интернет доступен</string>
+    <string name="cc_no_internet">Доступ к интернету не подтверждён</string>
+    <string name="cc_vpn_connected">VPN подключён</string>
+    <string name="cc_vpn_disconnected">VPN отключён</string>
+    <string name="cc_vpn_client_hint">Управление подключением — в вашем приложении VPN.</string>
+    <string name="cc_standby_name">PeachOS TV · Сон</string>
+    <string name="cc_standby_description">Позволяет кнопке «Режим сна» переводить устройство в ожидание. Не читает экран, не получает события доступности и не перехватывает кнопки пульта.</string>
+    <string name="cc_standby_help">Для сна включите «PeachOS TV · Сон» в разделе доступности. Помощник не читает экран и не перехватывает кнопки. Пробуждение — пультом устройства.</string>
+    <string name="cc_sleep_unavailable">Для этой кнопки сна требуется Android 9 или новее. Используйте кнопку питания пульта.</string>
+    <string name="cc_network_status">%1$s\n%2$s</string>
+</resources>

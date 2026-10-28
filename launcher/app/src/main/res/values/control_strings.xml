@@ -1,0 +1,21 @@
+<resources>
+    <string name="cc_title">Control centre</string>
+    <string name="cc_sleep">Sleep</string>
+    <string name="cc_bluetooth">Bluetooth</string>
+    <string name="cc_clock">Clock</string>
+    <string name="cc_accessibility">Accessibility</string>
+    <string name="cc_vpn">VPN</string>
+    <string name="cc_vpn_app">VPN app</string>
+    <string name="cc_system_vpn">System VPN settings</string>
+    <string name="cc_network_settings">Network settings</string>
+    <string name="cc_online">Internet available</string>
+    <string name="cc_no_internet">No validated internet connection</string>
+    <string name="cc_vpn_connected">VPN connected</string>
+    <string name="cc_vpn_disconnected">VPN disconnected</string>
+    <string name="cc_vpn_client_hint">Open your VPN app to manage the connection.</string>
+    <string name="cc_standby_name">PeachOS TV · Sleep</string>
+    <string name="cc_standby_description">Allows the Sleep button to put the device in standby. Does not read screen content, listen to accessibility events or intercept remote keys.</string>
+    <string name="cc_standby_help">Enable “PeachOS TV · Sleep” in Accessibility to use standby. This helper does not read the screen or intercept buttons. Wake the device with its remote.</string>
+    <string name="cc_sleep_unavailable">Standby through this button requires Android 9 or newer. Use the remote power button on this device.</string>
+    <string name="cc_network_status">%1$s\n%2$s</string>
+</resources>
