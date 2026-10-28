@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -17,21 +18,25 @@ import android.view.View;
 final class ControlBackdrop extends Drawable {
     private final View tile;
     private final float density, radius, screenScale;
+    private final boolean hasBackdrop;
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG), rim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint focus = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
+    private final Path mask = new Path();
     private final Matrix matrix = new Matrix();
     private final int[] position = new int[2];
     private boolean focused;
 
-    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale) {
+    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone) {
         this.tile = tile; this.density = density;
         this.radius = radius; this.screenScale = screenScale;
-        background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+        hasBackdrop = backdrop != null;
+        if (hasBackdrop) background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+        else background.setColor(0xff29262f);
         rim.setStyle(Paint.Style.STROKE); rim.setStrokeWidth(.4f * density);
         rim.setColor(0x1cffffff);
-        tint.setColor(0x70322e36);
+        tint.setColor(tone);
         focus.setColor(0x20ffffff);
     }
 
@@ -98,18 +103,20 @@ final class ControlBackdrop extends Drawable {
     }
     @Override protected void onBoundsChange(Rect area) {
         bounds.set(area); bounds.inset(density, density);
-        if (bounds.isEmpty()) return;
+        ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
     }
     @Override public void draw(Canvas canvas) {
         if (bounds.isEmpty()) return;
-        tile.getLocationOnScreen(position);
-        matrix.setScale(screenScale, screenScale);
-        matrix.postTranslate(-position[0], -position[1]);
-        background.getShader().setLocalMatrix(matrix);
-        canvas.drawRoundRect(bounds, radius, radius, background);
-        canvas.drawRoundRect(bounds, radius, radius, tint);
-        if (focused) canvas.drawRoundRect(bounds, radius, radius, focus);
-        canvas.drawRoundRect(bounds, radius, radius, rim);
+        if (hasBackdrop) {
+            tile.getLocationOnScreen(position);
+            matrix.setScale(screenScale, screenScale);
+            matrix.postTranslate(-position[0], -position[1]);
+            background.getShader().setLocalMatrix(matrix);
+        }
+        canvas.drawPath(mask, background);
+        canvas.drawPath(mask, tint);
+        if (focused) canvas.drawPath(mask, focus);
+        canvas.drawPath(mask, rim);
     }
     @Override public void setAlpha(int value) { background.setAlpha(value); tint.setAlpha(value); rim.setAlpha(value); focus.setAlpha(value); invalidateSelf(); }
     @Override public void setColorFilter(ColorFilter value) { background.setColorFilter(value); invalidateSelf(); }

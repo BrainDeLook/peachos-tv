@@ -11,7 +11,6 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Outline;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -23,7 +22,6 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewOutlineProvider;
 import android.view.animation.DecelerateInterpolator;
 
 import android.widget.FrameLayout;
@@ -875,9 +873,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return Color.HSVToColor(hsv);
     }
 
-    /** Corner radius for a tile of this width: 16dp at the design width, proportionally less when smaller. */
+    /** Continuous-corner footprint, scaled with the tile so the curvature stays consistent. */
     static float cornerRadius(int tileWidthPx, float density) {
-        return 16f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density));
+        return 26f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density));
     }
 
     static final class Holder extends RecyclerView.ViewHolder {
@@ -906,8 +904,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             label = v.findViewById(R.id.label);
             name = v.findViewById(R.id.name);
             sheen = new View(v.getContext());
-            sheen.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    new int[]{0x12FFFFFF, 0x03FFFFFF, 0x00FFFFFF}));
+            sheen.setBackground(new AppTile.Edge(v.getResources().getDisplayMetrics().density));
             sheen.setAlpha(0f);
             sheen.forceHasOverlappingRendering(false);
             sheen.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -918,15 +915,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.restNameAlpha = restNameAlpha;
 
             final float density = v.getResources().getDisplayMetrics().density;
-            card.setOutlineProvider(new ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, Outline outline) {
-                    // 16dp at the design width, scaled down with the tile so small tiles keep the same shape.
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerRadius(view.getWidth(), density));
-                }
-            });
-            card.setClipToOutline(true);
-
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN

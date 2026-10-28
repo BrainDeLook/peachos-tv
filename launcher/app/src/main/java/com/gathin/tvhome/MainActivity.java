@@ -265,6 +265,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
     private ControlCenter controlCenter;
+    private boolean controlFocusPending;
     private boolean dashboardHasInputs;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
@@ -939,6 +940,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (controlCenter != null) { controlCenter.close(); return; }
         if (openPopup != null) openPopup.dismiss();
         if (stopped) {
             tileRefresh.onHomeAgain();
@@ -1180,6 +1182,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        controlFocusPending = false;
+        if (controlCenter != null) controlCenter.dismissImmediately();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
         root.removeCallbacks(showIdleClock);
@@ -1238,6 +1242,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            if (controlFocusPending) {
+                controlFocusPending = false;
+                findViewById(R.id.btnSettings).requestFocusFromTouch();
+            }
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
@@ -3028,9 +3036,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         controlCenter.show();
     }
 
-    void controlCenterDismissed(ControlCenter center) {
+    void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
         if (controlCenter == center) controlCenter = null;
         if (openPopup == center.popup) openPopup = null;
+        if (returnToGear) {
+            controlFocusPending = true;
+            View gear = findViewById(R.id.btnSettings);
+            gear.requestFocusFromTouch();
+            gear.post(() -> {
+                if (controlFocusPending && hasWindowFocus()) {
+                    controlFocusPending = false;
+                    gear.requestFocus();
+                }
+            });
+        }
     }
 
     void controlOpen(Intent intent) { open(intent); }
@@ -3280,8 +3299,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             dot.setVisibility(View.GONE);
         }
         row.setOnClickListener(v -> {
-            popup.dismiss();
-            action.run();
+            if (controlCenter != null && popup == controlCenter.popup) controlCenter.closeThen(action);
+            else { popup.dismiss(); action.run(); }
         });
         rows.addView(row);
     }

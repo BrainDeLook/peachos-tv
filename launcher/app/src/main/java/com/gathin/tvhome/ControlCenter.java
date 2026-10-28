@@ -57,6 +57,8 @@ final class ControlCenter {
     private final Map<String, Intent> vpnApps = new LinkedHashMap<>();
     private SpringAnimation spring;
     private volatile boolean closing;
+    private boolean dismissReady, returnToGear;
+    private Runnable afterClose;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>());
     private String selected = "";
@@ -114,8 +116,10 @@ final class ControlCenter {
         panel.setClipChildren(false); panel.setClipToPadding(false);
         panel.setOnClickListener(v -> { });
         panel.setFocusable(false);
-        FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(dp(224), -2, Gravity.TOP | Gravity.END);
-        panelLp.topMargin = dp(26); panelLp.setMarginEnd(dp(32));
+        panel.setPadding(dp(10), dp(10), dp(10), dp(10));
+        panel.setBackground(material(panel, 28));
+        FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(dp(244), -2, Gravity.TOP | Gravity.END);
+        panelLp.topMargin = dp(16); panelLp.setMarginEnd(dp(22));
         root.addView(panel, panelLp);
 
         LinearLayout header = new LinearLayout(host);
@@ -151,7 +155,12 @@ final class ControlCenter {
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, -2);
         scrollLp.topMargin = dp(8); panel.addView(scroll, scrollLp);
         body = new FrameLayout(host); body.setClipChildren(false); scroll.addView(body);
-        popup = new PopupWindow(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true);
+        popup = new PopupWindow(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true) {
+            @Override public void dismiss() {
+                // PopupDecorView intercepts Back before the content view. Route that path through the fold too.
+                if (dismissReady) super.dismiss(); else close();
+            }
+        };
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setAnimationStyle(0); popup.setElevation(0); popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
         popup.setOnDismissListener(() -> {
@@ -159,8 +168,9 @@ final class ControlCenter {
             if (spring != null) spring.cancel();
             panel.animate().cancel(); scrim.animate().cancel();
             host.findViewById(R.id.topButtons).setVisibility(View.VISIBLE);
-            host.controlCenterDismissed(this);
-            if (host.hasWindowFocus()) anchor.requestFocus();
+            host.controlCenterDismissed(this, returnToGear);
+            Runnable action = afterClose; afterClose = null;
+            if (action != null) action.run();
         });
         select("overview");
     }
@@ -179,7 +189,7 @@ final class ControlCenter {
                 panel.animate().alpha(1f).setDuration(reduced ? 90 : 130).start();
                 scrim.animate().alpha(1f).setDuration(reduced ? 90 : 180).start();
                 if (!reduced) {
-                    panel.setScaleX(.78f); panel.setScaleY(.78f);
+                    panel.setScaleX(.35f); panel.setScaleY(.35f);
                     spring = new SpringAnimation(panel, OPEN_SCALE);
                     spring.setSpring(new SpringForce(1f).setStiffness(700f).setDampingRatio(.66f));
                     spring.setMinimumVisibleChange(.001f); spring.start();
@@ -196,14 +206,31 @@ final class ControlCenter {
         });
     }
 
-    void close() {
+    void close() { closeThen(null); }
+
+    void closeThen(Runnable action) {
         if (closing) return;
+        closing = true; returnToGear = action == null; afterClose = action;
+        if (spring != null) spring.cancel();
+        panel.animate().cancel(); scrim.animate().cancel();
+        if (!animate || reduced) { finishDismiss(); return; }
+        scrim.animate().alpha(0f).setDuration(190).start();
+        panel.animate().alpha(0f).scaleX(.28f).scaleY(.28f).setDuration(210)
+                .setInterpolator(new android.view.animation.PathInterpolator(.3f, 0f, .65f, 1f))
+                .withEndAction(this::finishDismiss).start();
+    }
+
+    private void finishDismiss() {
+        dismissReady = true;
+        popup.dismiss();
+    }
+
+    void dismissImmediately() {
+        returnToGear = false; afterClose = null;
         closing = true;
         if (spring != null) spring.cancel();
-        if (!animate || reduced) { popup.dismiss(); return; }
-        scrim.animate().alpha(0f).setDuration(130).start();
-        panel.animate().alpha(0f).scaleX(.82f).scaleY(.82f).setDuration(130)
-                .setInterpolator(new DecelerateInterpolator()).withEndAction(popup::dismiss).start();
+        panel.animate().cancel(); scrim.animate().cancel();
+        finishDismiss();
     }
 
     private void addTab(String key, int icon, int title) {
@@ -332,17 +359,17 @@ final class ControlCenter {
     }
 
     private void sleep() {
-        popup.dismiss();
+        closeThen(() -> {
         if (Build.VERSION.SDK_INT >= 28 && StandbyService.sleep()) return;
         new AlertDialog.Builder(host).setTitle(R.string.cc_sleep)
                 .setMessage(Build.VERSION.SDK_INT >= 28 ? R.string.cc_standby_help : R.string.cc_sleep_unavailable)
                 .setPositiveButton(R.string.settings, (d, w) -> host.controlOpen(SystemSettings.intent(host, Settings.ACTION_ACCESSIBILITY_SETTINGS)))
                 .setNegativeButton(android.R.string.cancel, null).show();
+        });
     }
 
     private void launch(Intent intent) {
-        popup.dismiss();
-        host.controlOpen(intent);
+        closeThen(() -> host.controlOpen(intent));
     }
 
     private TextView info(LinearLayout column, int icon, int title) {
@@ -395,15 +422,8 @@ final class ControlCenter {
     }
 
     private Drawable material(View tile, float radius) {
-        if (backdrop != null) return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale);
-        GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xf03a343f, 0xf0272d38}); base.setCornerRadius(dp(radius));
-        GradientDrawable focus = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xff5a5865, 0xff3e4759});
-        focus.setCornerRadius(dp(radius)); focus.setStroke(dp(.65f), 0x80ffffff);
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_focused}, focus); states.addState(new int[]{}, base);
-        return states;
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale,
+                tile == panel ? 0xa5222029 : 0x70322e36);
     }
 
     private TextView text(String value, float size, int color) {
