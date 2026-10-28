@@ -128,6 +128,7 @@ final class ControlCenter {
         panel.addView(header, new LinearLayout.LayoutParams(-1, dp(30)));
         TextClock clock = new TextClock(host);
         clock.setFormat12Hour("h:mm"); clock.setFormat24Hour("HH:mm");
+        clock.setFontFeatureSettings("tnum");
         clock.setTypeface(medium); clock.setTextSize(12.5f); clock.setTextColor(0xbfffffff);
         clock.setIncludeFontPadding(false);
         clock.setGravity(Gravity.CENTER);
