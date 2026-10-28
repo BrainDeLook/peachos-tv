@@ -131,6 +131,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private AppAdapter adapter;
     private NavigationSound navigationSound;
+    // Some firmware uses separate launcher-entry and HOME tasks. Share only the two sound flags.
+    private static final AppSoundState appSoundState = new AppSoundState();
     private final Rect navigationFocusRect = new Rect();
     private RecyclerView grid;
     private FrameLayout root;
@@ -447,6 +449,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             @Override public void header() { findViewById(R.id.btnSettings).requestFocus(); }
             @Override public void fallback(float top) { showHero(lastFocused, top); }
             @Override public boolean settling() { return grid != null && grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE; }
+            @Override public void appLaunched() { onAppLaunched(); }
         }, cfg.animations && !cfg.reducedMotion);
         cinematic = cfg.cinematicHome;
         glowStyle = cfg.glowStyle;
@@ -962,6 +965,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        boolean playAppReturn = appSoundState.resumed();
         if (metadataBackdrop != null) metadataBackdrop.resume();
         if (topShelf != null) topShelf.resume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
@@ -993,6 +997,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 break;
         }
         if (openLiveTvAfterBoot()) return;
+        if (playAppReturn && navigationSound != null) navigationSound.playReturn();
         updateGreeting();
         updateRace();
         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
@@ -1175,7 +1180,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
-        if (navigationSound != null) navigationSound.stop();
+        boolean openingApp = appSoundState.paused();
+        if (!openingApp && navigationSound != null) navigationSound.stop();
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -2299,6 +2305,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     // ---- navigation ------------------------------------------------------------------------------
+
+    @Override public void onAppLaunched() {
+        appSoundState.launched();
+        if (navigationSound != null) navigationSound.playOpen();
+    }
 
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {

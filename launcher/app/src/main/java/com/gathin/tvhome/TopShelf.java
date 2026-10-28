@@ -31,7 +31,7 @@ final class TopShelf {
         @Override public Integer get(ImageView image) { return image.getImageAlpha(); }
         @Override public void setValue(ImageView image, int alpha) { image.setImageAlpha(alpha); }
     };
-    interface Navigation { void dock(); void header(); void fallback(float top); boolean settling(); }
+    interface Navigation { void dock(); void header(); void fallback(float top); boolean settling(); void appLaunched(); }
     private final Activity activity;
     private final View hero;
     private final View dim;
@@ -409,6 +409,7 @@ final class TopShelf {
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             if (intent.getAction() == null) intent.setAction(Intent.ACTION_VIEW);
             activity.startActivity(intent);
+            if (!activity.getPackageName().equals(pkg)) navigation.appLaunched();
         } catch (Exception e) {
             Toast.makeText(activity, R.string.shelf_open_failed, Toast.LENGTH_LONG).show();
         }

@@ -17,7 +17,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 - **Artwork for the focused app.** Choose a source for each app: all Android TV cards, continue watching, Lampa history, or a specific published channel.
 - **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
 - **A quiet dock.** Responsive spring focus, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
-- **Soft navigation sound.** A short, preloaded tick when switching app tiles. Turn it off in Launcher settings → App navigation sound.
+- **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
 - **Lightweight glass.** Restrained translucent materials with no live background capture or blur buffers. Glass can be turned off.
 - **Your layout.** Rearrange apps and choose which ones belong in the dock.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
@@ -93,7 +93,7 @@ Release APKs currently use the project's original local debug signing certificat
 - **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
 - **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
 
-239 existing unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device.
+245 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device.
 
 ## Credits and license
 
