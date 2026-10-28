@@ -356,7 +356,17 @@ final class TopShelf {
     boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
     private void position() {
         // Keep a calm gap above the dock, including room for a focused poster's caption and zoom.
-        if (panel.getVisibility() == View.VISIBLE) panel.setY(dockTop - panel.getHeight() - dp(38));
+        if (panel.getVisibility() != View.VISIBLE) return;
+        panel.setY(dockTop - panel.getHeight() - dp(38));
+        // Landscape artwork remains vertically centred; its section label follows the actual row edge.
+        // A mixed row uses the highest visible poster so the label never crosses a portrait neighbour.
+        int offset = Integer.MAX_VALUE;
+        for (Binding binding : bindings) {
+            if (!inWindow(binding, 0)) continue;
+            FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
+            offset = Math.min(offset, artwork.topMargin - dp(3));
+        }
+        heading.setTranslationY(offset == Integer.MAX_VALUE ? 0 : offset);
     }
     private void setDim(boolean enabled) {
         float target = enabled ? 1f : 0f;
@@ -440,6 +450,7 @@ final class TopShelf {
         caption.width = dimensions[0];
         caption.topMargin = artwork.topMargin + dimensions[1] + Math.round(dimensions[1] * .0225f) + dp(7);
         binding.tile.requestLayout();
+        position();
     }
     private boolean inWindow(Binding b, int spare) {
         if (b.tile.getWidth() == 0) return false; // before layout every unmeasured tile has left/right == 0
@@ -454,6 +465,7 @@ final class TopShelf {
     }
     private void updateVisible() {
         if (!active || awaitingRow || rowExiting || panel.getVisibility() != View.VISIBLE || scroll.getWidth() == 0) return;
+        position();
         panel.removeCallbacks(refreshImages);
         if (navigation.settling()) { refreshQueued = true; panel.postDelayed(refreshImages, 32); return; }
         panel.removeCallbacks(releaseImages);
