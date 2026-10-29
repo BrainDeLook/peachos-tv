@@ -538,7 +538,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean dockKind = dockRow && (singleRow || position < dockSize);
         h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
         boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
-        h.sheen.setAlpha(focused ? 1f : .25f);
+        h.sheen.setAlpha(focused ? .92f : .50f);
         h.name.setAlpha(focused ? 1f : restNameAlpha);
         h.card.setScaleX(focused ? focusScale() : 1f);
         h.card.setScaleY(focused ? focusScale() : 1f);
@@ -1004,7 +1004,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     cancelFocusSpring();
                     view.setScaleX(target); view.setScaleY(target);
                     applyFocusTone(focused ? 1f : 0f);
-                    sheen.setAlpha(focused ? 1f : .25f);
+                    sheen.setAlpha(focused ? .92f : .50f);
                 } else {
                     if (reducedMotion) {
                         cancelFocusSpring();
@@ -1012,7 +1012,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                         view.animate().scaleX(target).scaleY(target)
                                 .setDuration(Motion.REDUCED_MS).setInterpolator(FOCUS_EASING).start();
                     } else animateFocusScale(target, focused);
-                    sheen.animate().alpha(focused ? 1f : .25f)
+                    sheen.animate().alpha(focused ? .92f : .50f)
                             .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
                             .setInterpolator(FOCUS_EASING).start();
                 }

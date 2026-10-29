@@ -18,8 +18,19 @@ import android.widget.FrameLayout;
 /** Shared continuous mask for banners and square Android app icons. No per-frame geometry or buffers. */
 public final class AppTile extends FrameLayout {
     private final Path mask = new Path();
+    private final Paint[] lift = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
+    private final float shadowOffset;
     public AppTile(Context context, AttributeSet attrs) {
         super(context, attrs);
+        float density = getResources().getDisplayMetrics().density;
+        shadowOffset = 2f * density;
+        float[] widths = {2f, 5f, 9f};
+        int[] opacity = {18, 10, 4};
+        for (int i = 0; i < lift.length; i++) {
+            lift[i].setStyle(Paint.Style.STROKE);
+            lift[i].setStrokeWidth(widths[i] * density);
+            lift[i].setColor(opacity[i] << 24);
+        }
         // Opaque banners remove the background; keep draw() active so the shared mask still clips children.
         setWillNotDraw(false);
     }
@@ -30,6 +41,10 @@ public final class AppTile extends FrameLayout {
     }
     @Override public void draw(Canvas canvas) {
         int save = canvas.save();
+        canvas.translate(0, shadowOffset);
+        for (int i = lift.length - 1; i >= 0; i--) canvas.drawPath(mask, lift[i]);
+        canvas.restoreToCount(save);
+        save = canvas.save();
         canvas.clipPath(mask);
         super.draw(canvas);
         canvas.restoreToCount(save);

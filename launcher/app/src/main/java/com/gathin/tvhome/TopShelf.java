@@ -51,6 +51,7 @@ final class TopShelf {
     private final SpringAnimation scrollSpring;
     private int scrollTarget;
     private int scrollHeadingTarget = Integer.MIN_VALUE;
+    private final ShelfHeadingHold headingHold = new ShelfHeadingHold();
     private boolean rowFocused;
     private final ViewTreeObserver.OnGlobalFocusChangeListener rowFocusChanged;
     private final List<View> targets = new ArrayList<>();
@@ -169,6 +170,7 @@ final class TopShelf {
         scrollSpring.addEndListener((animation, canceled, value, velocity) -> {
             if (!canceled) {
                 scrollHeadingTarget = Integer.MIN_VALUE;
+                headingHold.settled();
                 position();
             }
         });
@@ -202,6 +204,7 @@ final class TopShelf {
             boolean focused = scroll.hasFocus();
             if (rowFocused == focused) return;
             rowFocused = focused;
+            if (!focused) headingHold.reset();
             position();
         };
         panel.getViewTreeObserver().addOnGlobalFocusChangeListener(rowFocusChanged);
@@ -324,6 +327,7 @@ final class TopShelf {
         headingTextWidth = heading.getPaint().measureText(headingText);
         headingSpring.cancel(); headingTarget = Float.NaN;
         scrollSpring.cancel(); scrollTarget = 0; scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
+        headingHold.reset();
         cards.removeAllViews(); targets.clear(); bindings.clear(); selected = 0;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
@@ -403,8 +407,15 @@ final class TopShelf {
                 }
                 if (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT) {
                     if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                        if (event.getRepeatCount() > 0) {
+                            headingHold.repeat();
+                            position();
+                        }
                         int next = index + (key == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
                         if (next >= 0 && next < targets.size()) targets.get(next).requestFocus();
+                    } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                        headingHold.release(scrollSpring.isRunning());
+                        position();
                     }
                     return true;
                 }
@@ -470,6 +481,7 @@ final class TopShelf {
         int artworkTop = headingTopBetween(scroll.getScrollX(),
                 scrollHeadingTarget == Integer.MIN_VALUE ? scroll.getScrollX() : scrollHeadingTarget);
         if (artworkTop == Integer.MAX_VALUE) return;
+        artworkTop = headingHold.top(artworkTop);
         // Leave a small gap for the lower rebound instead of letting the label hit the artwork.
         float offset = artworkTop - dp(rowFocused ? 10 : 7);
         if (headingTarget == offset) return;
@@ -530,6 +542,7 @@ final class TopShelf {
     void hide() {
         if (suspended) return;
         scrollSpring.cancel(); scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
+        headingHold.reset();
         headingSpring.cancel(); headingTarget = Float.NaN;
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
@@ -566,6 +579,7 @@ final class TopShelf {
     }
     private void clear() {
         scrollSpring.cancel(); scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
+        headingHold.reset();
         headingSpring.cancel(); headingTarget = Float.NaN;
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;
