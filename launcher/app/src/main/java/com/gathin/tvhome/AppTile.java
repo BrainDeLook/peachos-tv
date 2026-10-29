@@ -13,6 +13,7 @@ import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.view.View;
 import android.widget.FrameLayout;
 
 /** Shared continuous mask for banners and square Android app icons. No per-frame geometry or buffers. */
@@ -33,6 +34,9 @@ public final class AppTile extends FrameLayout {
         }
         // Opaque banners remove the background; keep draw() active so the shared mask still clips children.
         setWillNotDraw(false);
+        // Static tiles otherwise replay their continuous mask and eight lighting/shadow paths
+        // on every frame of a neighbouring tile's animation. Keep only attached tile textures.
+        setLayerType(View.LAYER_TYPE_HARDWARE, null);
     }
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {

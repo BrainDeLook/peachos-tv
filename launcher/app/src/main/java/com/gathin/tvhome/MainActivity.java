@@ -599,11 +599,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             @Override
             public void onChildViewAttachedToWindow(@NonNull View v) {
                 v.setAlpha(tileAlpha(grid.getChildAdapterPosition(v)));
-                if (grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE) {
-                    RecyclerView.ViewHolder holder = grid.getChildViewHolder(v);
-                    if (holder instanceof AppAdapter.Holder)
-                        ((AppAdapter.Holder) holder).card.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                }
+                RecyclerView.ViewHolder holder = grid.getChildViewHolder(v);
+                if (holder instanceof AppAdapter.Holder)
+                    ((AppAdapter.Holder) holder).card.setLayerType(View.LAYER_TYPE_HARDWARE, null);
             }
 
             @Override
@@ -681,16 +679,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         // Keep the glass glued to its tile while the grid scrolls.
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override public void onScrollStateChanged(@NonNull RecyclerView rv, int state) {
-                // Cache each visible tile's continuous clip only while moving. Scrolling then composites
-                // a small texture instead of replaying the path mask and its children on every frame.
-                int layer = state == RecyclerView.SCROLL_STATE_IDLE ? View.LAYER_TYPE_NONE : View.LAYER_TYPE_HARDWARE;
-                for (int i = 0; i < rv.getChildCount(); i++) {
-                    RecyclerView.ViewHolder holder = rv.getChildViewHolder(rv.getChildAt(i));
-                    if (holder instanceof AppAdapter.Holder)
-                        ((AppAdapter.Holder) holder).card.setLayerType(layer, null);
-                }
-            }
             @Override
             public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                 if (!glassShown) return;
@@ -1330,7 +1318,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (diya != null) diya.stop();
         cancelPendingFocusScroll();
         // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
-        grid.stopScroll(); // also releases the temporary tile layers when an app opens during a scroll
+        grid.stopScroll();
         if (cardPrompt != null) cardPrompt.dismiss();
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();

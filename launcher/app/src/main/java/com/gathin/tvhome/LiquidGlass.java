@@ -25,6 +25,7 @@ final class LiquidGlass extends Drawable {
     private final float density;
     private final boolean cacheBase;
     private Bitmap base;
+    private Canvas recording;
     private boolean baseDirty = true;
     private float radius, focus = .25f;
     private int opacity = 255;
@@ -35,6 +36,7 @@ final class LiquidGlass extends Drawable {
     LiquidGlass(float density, float radius, boolean cacheBase) {
         this.density = density; this.radius = radius;
         this.cacheBase = cacheBase;
+        if (cacheBase) focus = .5f;
         edge.setStyle(Paint.Style.STROKE); edge.setStrokeWidth(.55f * density);
     }
     void radius(float value) {
@@ -44,8 +46,11 @@ final class LiquidGlass extends Drawable {
         updateShape();
     }
     void focus(float value) {
+        // The broad dock light is ambient. Moving it between app centres would repaint and
+        // upload the whole band for every key press; selected tiles supply their own light.
+        if (cacheBase) return;
         if (Math.abs(focus - value) < .001f) return;
-        focus = value; lighting();
+        focus = value; lighting(); baseDirty = true;
     }
     private void lighting() {
         if (area.isEmpty()) return;
@@ -78,21 +83,31 @@ final class LiquidGlass extends Drawable {
         canvas.translate(getBounds().left, getBounds().top);
         if (cacheBase) {
             if (baseDirty) {
-                // Only the smooth fill and soft shadows are downsampled. The light and sharp rim stay native.
-                base = Bitmap.createBitmap((int) Math.ceil(cachedBounds.width() * .5f),
-                        (int) Math.ceil(cachedBounds.height() * .5f), Bitmap.Config.ARGB_8888);
-                Canvas recording = new Canvas(base);
+                // Preserve a crisp rim at 1080p; bound the cache on native 4K launchers too.
+                float rasterScale = Math.min(1f, 2048f / cachedBounds.width());
+                int bitmapWidth = (int) Math.ceil(cachedBounds.width() * rasterScale);
+                int bitmapHeight = (int) Math.ceil(cachedBounds.height() * rasterScale);
+                if (base == null || base.getWidth() != bitmapWidth || base.getHeight() != bitmapHeight) {
+                    base = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
+                    recording = new Canvas(base);
+                } else base.eraseColor(0);
+                // Include the long continuous rim and illumination: rasterizing them under
+                // a changing end-tile transform otherwise creates a fresh path mask each frame.
+                int cacheSave = recording.save();
                 recording.scale(base.getWidth() / cachedBounds.width(), base.getHeight() / cachedBounds.height());
                 recording.translate(-cachedBounds.left, -cachedBounds.top);
                 drawBase(recording);
+                recording.drawPath(shape, light);
+                recording.drawPath(shape, edge);
+                recording.restoreToCount(cacheSave);
                 baseDirty = false;
-                android.util.Log.d("PeachRender", "Dock base cache " + base.getWidth() + "x"
-                        + base.getHeight() + ", " + base.getAllocationByteCount() + " bytes");
             }
             canvas.drawBitmap(base, null, cachedBounds, cachedPaint);
-        } else drawBase(canvas);
-        canvas.drawPath(shape, light);
-        canvas.drawPath(shape, edge);
+        } else {
+            drawBase(canvas);
+            canvas.drawPath(shape, light);
+            canvas.drawPath(shape, edge);
+        }
         canvas.restoreToCount(save);
     }
     private void updateShape() {
