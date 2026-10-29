@@ -1,5 +1,6 @@
 package com.gathin.tvhome;
 
+import android.animation.ValueAnimator;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -11,8 +12,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.LayerDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -34,6 +33,7 @@ import android.widget.TextView;
 import androidx.dynamicanimation.animation.FloatPropertyCompat;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
+import androidx.core.graphics.ColorUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -194,6 +194,7 @@ final class ControlCenter {
             closing = true;
             if (spring != null) spring.cancel();
             capsule.animate().cancel();
+            for (View tab : tabViews) tab.getBackground().jumpToCurrentState();
             sourceClock.setAlpha(1f); anchor.setAlpha(1f);
             capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
             host.controlCenterDismissed(this, returnToGear);
@@ -299,18 +300,10 @@ final class ControlCenter {
 
     private void addTab(String key, int icon, int title) {
         ImageView tab = new ImageView(host);
-        tab.setId(View.generateViewId()); tab.setImageResource(icon); tab.setImageTintList(new android.content.res.ColorStateList(
-                new int[][]{new int[]{android.R.attr.state_focused}, new int[]{android.R.attr.state_selected}, new int[]{}},
-                new int[]{0xff29272d, 0xe6ffffff, 0xbfffffff}));
+        tab.setId(View.generateViewId()); tab.setImageResource(icon);
         tab.setPadding(dp(6), dp(6), dp(6), dp(6));
         tab.setContentDescription(host.getString(title)); tab.setFocusable(true); tab.setClickable(true);
-        StateListDrawable bg = new StateListDrawable();
-        GradientDrawable focused = new GradientDrawable(); focused.setShape(GradientDrawable.OVAL); focused.setColor(0xf2ffffff);
-        bg.addState(new int[]{android.R.attr.state_focused}, focused);
-        GradientDrawable active = new GradientDrawable(); active.setShape(GradientDrawable.OVAL); active.setColor(0x35ffffff);
-        bg.addState(new int[]{android.R.attr.state_selected}, active);
-        bg.addState(new int[]{}, new ColorDrawable(Color.TRANSPARENT));
-        tab.setBackground(bg); tab.setTag(key);
+        tab.setBackground(new TabStyle(tab, animate && !reduced)); tab.setTag(key);
         tabs.addView(tab, new LinearLayout.LayoutParams(dp(28), dp(28))); tabViews.add(tab);
         tab.setOnFocusChangeListener((v, focus) -> { if (focus) select(key); });
         tab.setOnClickListener(v -> {
@@ -318,6 +311,54 @@ final class ControlCenter {
             View first = body.findViewWithTag("firstControl");
             if (first != null) first.requestFocus();
         });
+    }
+
+    /** One reusable color animator per tab; interrupted transitions continue from the displayed colors. */
+    private static final class TabStyle extends GradientDrawable {
+        private final ImageView tab;
+        private final Drawable icon;
+        private final boolean smooth;
+        private final ValueAnimator transition = ValueAnimator.ofFloat(0f, 1f);
+        private int backgroundColor, iconColor = 0xbfffffff;
+        private int fromBackground, toBackground, fromIcon = 0xbfffffff, toIcon = 0xbfffffff;
+
+        TabStyle(ImageView tab, boolean smooth) {
+            this.tab = tab; this.smooth = smooth;
+            icon = tab.getDrawable().mutate(); icon.setTint(iconColor);
+            setShape(OVAL); setColor(Color.TRANSPARENT);
+            transition.setDuration(140);
+            transition.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0f, .2f, 1f));
+            transition.addUpdateListener(animation -> blend(animation.getAnimatedFraction()));
+        }
+
+        @Override public boolean isStateful() { return true; }
+
+        @Override protected boolean onStateChange(int[] states) {
+            boolean focused = false, selected = false;
+            for (int state : states) {
+                if (state == android.R.attr.state_focused) focused = true;
+                if (state == android.R.attr.state_selected) selected = true;
+            }
+            int background = focused ? 0xf2ffffff : selected ? 0x35ffffff : 0x00ffffff;
+            int foreground = focused ? 0xff29272d : selected ? 0xe6ffffff : 0xbfffffff;
+            if (background == toBackground && foreground == toIcon) return false;
+            transition.cancel();
+            fromBackground = backgroundColor; fromIcon = iconColor;
+            toBackground = background; toIcon = foreground;
+            if (smooth && tab.isLaidOut() && tab.isAttachedToWindow()) transition.start();
+            else blend(1f);
+            return true;
+        }
+
+        private void blend(float fraction) {
+            backgroundColor = ColorUtils.blendARGB(fromBackground, toBackground, fraction);
+            iconColor = ColorUtils.blendARGB(fromIcon, toIcon, fraction);
+            setColor(backgroundColor); icon.setTint(iconColor);
+        }
+
+        @Override public void jumpToCurrentState() {
+            transition.cancel(); blend(1f);
+        }
     }
 
     private void select(String page) {
