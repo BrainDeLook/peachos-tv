@@ -193,6 +193,7 @@ final class ControlCenter {
         popup.setOnDismissListener(() -> {
             closing = true;
             if (spring != null) spring.cancel();
+            capsule.animate().cancel();
             sourceClock.setAlpha(1f); anchor.setAlpha(1f);
             capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
             host.controlCenterDismissed(this, returnToGear);
@@ -217,8 +218,6 @@ final class ControlCenter {
             gearScale = anchor.getWidth() / (float) overviewTab.getWidth();
             body.setPivotX(body.getWidth() * .5f); body.setPivotY(body.getHeight() * .5f);
             revealed = true;
-            // Transfer the glyphs to the popup in the same frame, instead of crossfading two moving clocks.
-            sourceClock.setAlpha(0f); anchor.setAlpha(0f);
             applyReveal(animate ? 0f : 1f);
             panel.setAlpha(1f);
             if (animate && !reduced) {
@@ -251,6 +250,12 @@ final class ControlCenter {
         float visible = Math.max(0f, Math.min(1f, value));
         float headerAlpha = Math.min(1f, visible * 4f);
         capsule.setAlpha(1f - headerAlpha);
+        // Dissolve the separate clock material before it joins the original capsule.
+        // Transfer glyphs only within the last few pixels, so popup dismissal changes no visible pixels.
+        clock.getBackground().setAlpha(Math.round(headerAlpha * 255));
+        float handoff = Math.min(1f, visible / .04f);
+        clock.setAlpha(handoff); overviewTab.setAlpha(handoff);
+        sourceClock.setAlpha(1f - handoff); anchor.setAlpha(1f - handoff);
         clock.setTranslationX(clockDx * (1f - value)); clock.setTranslationY(clockDy * (1f - value));
         overviewTab.setTranslationX(gearDx * (1f - value)); overviewTab.setTranslationY(gearDy * (1f - value));
         float scale = gearScale + (1f - gearScale) * value;
@@ -268,7 +273,9 @@ final class ControlCenter {
         if (!revealed || !animate) { finishDismiss(); return; }
         if (reduced) {
             panel.animate().cancel();
-            capsule.setAlpha(1f);
+            sourceClock.setAlpha(1f); anchor.setAlpha(1f);
+            capsule.setAlpha(0f);
+            capsule.animate().alpha(1f).setDuration(100).start();
             panel.animate().alpha(0f).setDuration(100).withEndAction(this::finishDismiss).start();
             return;
         }
