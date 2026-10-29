@@ -16,6 +16,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -41,6 +43,8 @@ final class TopShelf {
     private final Navigation navigation;
     private final LinearLayout panel, cards;
     private final TextView heading;
+    private final SpringAnimation headingSpring;
+    private float headingTarget = Float.NaN;
     private final HorizontalScrollView scroll;
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
@@ -125,6 +129,7 @@ final class TopShelf {
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setClipChildren(false);
+        panel.setClipToPadding(false);
         // Cards, captions and heading occupy separate areas; fade their existing render nodes directly.
         panel.forceHasOverlappingRendering(false);
         panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> position());
@@ -135,6 +140,11 @@ final class TopShelf {
         heading.setIncludeFontPadding(false);
         heading.setSingleLine(true); heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
         heading.setPadding(dp(45), 0, dp(45), 0);
+        // Keep moving glyphs intact while a taller neighbour scrolls beneath their rebound.
+        heading.setTranslationZ(dp(12)); // Focused artwork uses 8dp of translationZ.
+        headingSpring = new SpringAnimation(heading, SpringAnimation.TRANSLATION_Y);
+        headingSpring.setSpring(new SpringForce().setStiffness(520f).setDampingRatio(.62f));
+        headingSpring.setMinimumVisibleChange(.25f);
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
@@ -273,6 +283,7 @@ final class TopShelf {
             if (source.equals("channel:" + channel.id)) section = channel.name;
         }
         heading.setText(ShelfSelection.AUTO.equals(source) ? label : section);
+        headingSpring.cancel(); headingTarget = Float.NaN;
         cards.removeAllViews(); targets.clear(); bindings.clear(); selected = 0;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
@@ -332,7 +343,11 @@ final class TopShelf {
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xf2ffffff : 0xb3ffffff);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
-                if (focus) { selected = index; scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0); }
+                if (focus) {
+                    selected = index;
+                    position();
+                    scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0);
+                }
             });
             tile.setOnKeyListener((v, key, event) -> {
                 if (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_BACK) {
@@ -389,15 +404,25 @@ final class TopShelf {
         // Keep a calm gap above the dock, including room for a focused poster's caption and zoom.
         if (panel.getVisibility() != View.VISIBLE) return;
         panel.setY(dockTop - panel.getHeight() - dp(38));
-        // Landscape artwork remains vertically centred; its section label follows the actual row edge.
-        // A mixed row uses the highest visible poster so the label never crosses a portrait neighbour.
-        int offset = Integer.MAX_VALUE;
-        for (Binding binding : bindings) {
-            if (!inWindow(binding, 0)) continue;
-            FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
-            offset = Math.min(offset, artwork.topMargin - dp(3));
+        if (bindings.isEmpty()) return;
+        // Follow the selected artwork, including an aspect corrected after decoding.
+        FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) bindings.get(selected).image.getLayoutParams();
+        // Leave a small gap for the lower rebound instead of letting the label hit the artwork.
+        float offset = artwork.topMargin - dp(7);
+        if (headingTarget == offset) return;
+        boolean firstPosition = Float.isNaN(headingTarget);
+        headingTarget = offset;
+        if (!animateRows || firstPosition || panel.getAlpha() == 0f) {
+            headingSpring.cancel();
+            heading.setTranslationY(offset);
+        } else {
+            // Retarget the same spring so rapid opposite moves retain position and velocity.
+            // Bound residual momentum too: repeated reversals must not throw text outside its gap.
+            float current = heading.getTranslationY();
+            headingSpring.setMinValue(Math.min(current, offset) - dp(2));
+            headingSpring.setMaxValue(Math.max(current, offset) + dp(2));
+            headingSpring.animateToFinalPosition(offset);
         }
-        heading.setTranslationY(offset == Integer.MAX_VALUE ? 0 : offset);
     }
     private void setDim(boolean enabled) {
         float target = enabled ? 1f : 0f;
@@ -422,6 +447,7 @@ final class TopShelf {
 
     void hide() {
         if (suspended) return;
+        headingSpring.cancel(); headingTarget = Float.NaN;
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
         downloads.getQueue().clear();
@@ -453,6 +479,7 @@ final class TopShelf {
         }
     }
     private void clear() {
+        headingSpring.cancel(); headingTarget = Float.NaN;
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
