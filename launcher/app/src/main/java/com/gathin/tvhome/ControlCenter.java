@@ -170,7 +170,7 @@ final class ControlCenter {
         tabs.setClipChildren(false); tabs.setClipToPadding(false);
         header.addView(tabs);
         if (hasVpn() || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
-        addTab("overview", R.drawable.cc_controls, R.string.cc_title);
+        addTab("overview", R.drawable.ic_settings, R.string.cc_title);
         overviewTab = tabViews.get(tabViews.size() - 1);
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
         addTab("network", R.drawable.ic_wifi, R.string.quick_network);
