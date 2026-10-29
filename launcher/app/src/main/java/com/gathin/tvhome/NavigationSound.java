@@ -11,10 +11,12 @@ final class NavigationSound implements AutoCloseable {
     private SoundPool pool;
     private int sample;
     private int openSample;
+    private int sourceSample;
     private int returnSample;
     private int stream;
     private boolean ready;
     private boolean openReady;
+    private boolean sourceReady;
     private boolean returnReady;
     private long lastPlayed;
     private long returnRequestedAt;
@@ -30,6 +32,7 @@ final class NavigationSound implements AutoCloseable {
             if (pool != loadedPool) return;
             if (id == sample) ready = status == 0;
             else if (id == openSample) openReady = status == 0;
+            else if (id == sourceSample) sourceReady = status == 0;
             else if (id == returnSample) {
                 returnReady = status == 0;
                 // HOME can create another Activity in the same process. Let its freshly loaded
@@ -43,6 +46,7 @@ final class NavigationSound implements AutoCloseable {
         });
         sample = pool.load(context, R.raw.navigation_tick, 1);
         openSample = pool.load(context, R.raw.app_open, 1);
+        sourceSample = pool.load(context, R.raw.source_open, 1);
         returnSample = pool.load(context, R.raw.app_return, 1);
     }
 
@@ -57,6 +61,11 @@ final class NavigationSound implements AutoCloseable {
     void playOpen() {
         returnRequestedAt = 0;
         if (pool != null && openReady) playSample(openSample);
+    }
+
+    void playSourceOpen() {
+        returnRequestedAt = 0;
+        if (pool != null && sourceReady) playSample(sourceSample);
     }
 
     void playReturn() {
@@ -83,6 +92,7 @@ final class NavigationSound implements AutoCloseable {
         }
         ready = false;
         openReady = false;
+        sourceReady = false;
         returnReady = false;
     }
 }

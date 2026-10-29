@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 — 2026-10-29
+
+- Play the existing navigation tick when D-pad focus moves between control-center tabs and buttons. Opening the panel or pressing against a focus boundary does not add a tick.
+- Add a distinct, synthesized two-note sound for selecting TV sources, using the existing sound toggle and SoundPool. App-opening, Home-return and navigation sound files remain unchanged from 1.5.0.
+- Give control-center buttons soft directional lighting, lower-edge shading and a small elevation shadow. Focus lighting transitions smoothly; paths and gradients are cached without additional blur buffers.
+- Match the source buttons' corner radii to the other horizontal control-center buttons. The material mask and shadow follow the same outline.
+
+Package ID and signing certificate are unchanged. Install over the previous version to retain settings.
+
 ## 1.5.0 — 2026-10-29
 
 - Add a compact control center with quick settings, network status, TV inputs where available, and detected VPN clients. Press the gear to open it; hold OK for the launcher menu.

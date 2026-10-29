@@ -1,16 +1,19 @@
 package com.gathin.tvhome;
 
+import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.view.View;
@@ -21,36 +24,40 @@ final class ControlBackdrop extends Drawable {
     private final View tile;
     private final float density, radius, screenScale;
     private final boolean hasBackdrop;
+    private final boolean animate;
     private final int tintAlpha;
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint surface = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint[] edge = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
-    private static final int[] EDGE_ALPHA = {90, 44, 20};
+    private static final int[] EDGE_ALPHA = {112, 52, 24};
     private final Paint focus = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
     private final Path mask = new Path();
     private final Matrix matrix = new Matrix();
     private final int[] position = new int[2];
     private boolean focused;
+    private float focusAmount;
+    private ValueAnimator focusAnimator;
     private boolean positionFrozen;
     private int alpha = 255;
 
-    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone) {
+    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone, boolean animate) {
         this.tile = tile; this.density = density;
+        this.animate = animate;
         this.radius = radius; this.screenScale = screenScale;
         hasBackdrop = backdrop != null;
         if (hasBackdrop) background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
         else background.setColor(0xff29262f);
         // All light bands use the material's exact path. Clipping keeps the feather inside it.
-        float[] widths = {1.2f, 3.6f, 8f};
+        float[] widths = {1.0f, 3.0f, 7f};
         for (int i = 0; i < edge.length; i++) {
             edge[i].setStyle(Paint.Style.STROKE);
             edge[i].setStrokeWidth(widths[i] * density);
         }
         tint.setColor(tone);
         tintAlpha = tone >>> 24;
-        focus.setColor(0x14ffffff);
     }
 
     /** Preserve the sampled screen region before a fading page moves into a visual overlay. */
@@ -120,15 +127,55 @@ final class ControlBackdrop extends Drawable {
         boolean next = false;
         for (int state : states) if (state == android.R.attr.state_focused) next = true;
         if (focused == next) return false;
-        focused = next; invalidateSelf(); return true;
+        focused = next;
+        if (!animate || !tile.isAttachedToWindow()) {
+            jumpToCurrentState();
+        } else {
+            if (focusAnimator == null) {
+                focusAnimator = new ValueAnimator();
+                focusAnimator.setDuration(140);
+                focusAnimator.addUpdateListener(value -> {
+                    focusAmount = (float) value.getAnimatedValue();
+                    tile.setTranslationZ(focusAmount * 3 * density);
+                    invalidateSelf();
+                });
+            }
+            focusAnimator.cancel();
+            focusAnimator.setFloatValues(focusAmount, focused ? 1f : 0f);
+            focusAnimator.start();
+        }
+        return true;
+    }
+    @Override public void jumpToCurrentState() {
+        if (focusAnimator != null) focusAnimator.cancel();
+        focusAmount = focused ? 1f : 0f;
+        tile.setTranslationZ(focusAmount * 3 * density);
+        invalidateSelf();
+    }
+    @Override public boolean setVisible(boolean visible, boolean restart) {
+        if (!visible) jumpToCurrentState();
+        return super.setVisible(visible, restart);
+    }
+    @Override public void getOutline(Outline outline) {
+        if (mask.isEmpty()) { outline.setEmpty(); return; }
+        outline.setConvexPath(mask);
+        outline.setAlpha(.28f * alpha / 255);
     }
     @Override protected void onBoundsChange(Rect area) {
         bounds.set(area); bounds.inset(density, density);
         ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
         surface.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
-                new int[]{0x18ffffff, 0x03ffffff, 0x09ffffff}, new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
+                new int[]{0x20ffffff, 0x07ffffff, 0x02ffffff, 0x08000000},
+                new float[]{0, .32f, .68f, 1}, Shader.TileMode.CLAMP));
+        // Broad light and lower-edge shade suggest a curved surface, without a glossy stripe.
+        focus.setShader(new RadialGradient(bounds.left + bounds.width() * .26f,
+                bounds.top + bounds.height() * .08f, Math.max(bounds.width() * .85f, bounds.height()),
+                new int[]{0x30ffffff, 0x0cffffff, 0x00ffffff}, new float[]{0, .48f, 1}, Shader.TileMode.CLAMP));
+        shade.setShader(new LinearGradient(bounds.left, bounds.top, bounds.left, bounds.bottom,
+                new int[]{0x00000000, 0x03000000, 0x28000000},
+                new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
         Shader light = new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
-                new int[]{0x90ffffff, 0x18ffffff, 0x08ffffff, 0x50ffffff},
+                new int[]{0xa8ffffff, 0x22ffffff, 0x06ffffff, 0x60ffffff},
                 new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
         for (Paint paint : edge) paint.setShader(light);
     }
@@ -143,11 +190,14 @@ final class ControlBackdrop extends Drawable {
         canvas.drawPath(mask, background);
         canvas.drawPath(mask, tint);
         canvas.drawPath(mask, surface);
-        if (focused) canvas.drawPath(mask, focus);
+        focus.setAlpha(Math.round(alpha * (.35f + .65f * focusAmount)));
+        shade.setAlpha(Math.round(alpha * (.55f + .45f * focusAmount)));
+        canvas.drawPath(mask, focus);
+        canvas.drawPath(mask, shade);
         int save = canvas.save();
         canvas.clipPath(mask);
         for (int i = edge.length - 1; i >= 0; i--) {
-            edge[i].setAlpha(alpha * EDGE_ALPHA[i] / 255 * (focused ? 100 : 42) / 100);
+            edge[i].setAlpha(Math.round(alpha * EDGE_ALPHA[i] / 255f * (.42f + .58f * focusAmount)));
             canvas.drawPath(mask, edge[i]);
         }
         canvas.restoreToCount(save);
@@ -155,7 +205,7 @@ final class ControlBackdrop extends Drawable {
     @Override public void setAlpha(int value) {
         alpha = value;
         background.setAlpha(value); tint.setAlpha(value * tintAlpha / 255);
-        surface.setAlpha(value); focus.setAlpha(value * 0x14 / 255);
+        surface.setAlpha(value);
         invalidateSelf();
     }
     @Override public void setColorFilter(ColorFilter value) { background.setColorFilter(value); invalidateSelf(); }

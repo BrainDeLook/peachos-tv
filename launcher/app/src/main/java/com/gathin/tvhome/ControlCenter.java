@@ -477,7 +477,7 @@ final class ControlCenter {
                 View row = column.getChildAt(i);
                 if (row.findViewById(R.id.title) == null) continue;
                 row.getLayoutParams().height = dp(44);
-                row.setBackground(material(row, 18));
+                row.setBackground(material(row, 23));
             }
             if (column.getChildCount() > 0) column.getChildAt(0).setTag("firstControl");
             return;
@@ -648,7 +648,8 @@ final class ControlCenter {
     }
 
     private Drawable material(View tile, float radius) {
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25);
+        if (tile != clock) tile.setElevation(dp(2));
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25, animate && !reduced);
     }
 
     private TextView text(String value, float size, int color) {

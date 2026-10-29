@@ -1434,10 +1434,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        int code = event.getKeyCode();
+        int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
+                : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
+                : code == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP
+                : code == KeyEvent.KEYCODE_DPAD_DOWN ? View.FOCUS_DOWN : 0;
         if (controlCenter != null && controlCenter.isShowing()) {
-            int code = event.getKeyCode();
             if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
                 return controlCenter.dispatchKeyEvent(event);
+            }
+            if (direction != 0 && event.getAction() == KeyEvent.ACTION_DOWN
+                    && !event.isCanceled() && getCurrentFocus() != null) {
+                return dispatchFocusNavigation(event, direction, false);
             }
             return super.dispatchKeyEvent(event);
         }
@@ -1454,21 +1462,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         if (!reordering) {
-            int code = event.getKeyCode();
-            int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
-                    : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
-                    : code == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP
-                    : code == KeyEvent.KEYCODE_DPAD_DOWN ? View.FOCUS_DOWN : 0;
             if (direction != 0 && event.getAction() == KeyEvent.ACTION_DOWN
                     && !event.isCanceled() && openPopup == null && cardPrompt == null
                     && focusedTilePosition() >= 0) {
-                return dispatchAppNavigation(event, direction);
+                return dispatchFocusNavigation(event, direction, true);
             }
             return super.dispatchKeyEvent(event);
         }
         if (dockEditing) return dispatchDockEdit(event);
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
-        int code = event.getKeyCode();
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
                 || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
         boolean back = code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE;
@@ -1513,7 +1515,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Keep the normal key listeners and focus search, but replace ViewRoot's stock navigation click.
      * Consuming a successful move here prevents a second system sound underneath our own tick. */
-    private boolean dispatchAppNavigation(KeyEvent event, int direction) {
+    private boolean dispatchFocusNavigation(KeyEvent event, int direction, boolean appTilesOnly) {
         View before = getCurrentFocus();
         boolean handled = super.dispatchKeyEvent(event);
         if (!handled && getCurrentFocus() == before) {
@@ -1527,7 +1529,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         View after = getCurrentFocus();
-        if (after != before && focusedTilePosition() >= 0 && navigationSound != null) {
+        if (after != before && after != null && (!appTilesOnly || focusedTilePosition() >= 0)
+                && navigationSound != null) {
             navigationSound.play();
         }
         return handled || after != before;
@@ -3206,6 +3209,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void populateInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate, List<CoocaaSources.Source> coocaa) {
+        // Start the cue after the panel closes; preserve its tail through the input player's onPause.
+        java.util.function.Consumer<Runnable> switchSource = action -> activate.accept(() -> {
+            appSoundState.launched();
+            if (navigationSound != null) navigationSound.playSourceOpen();
+            action.run();
+        });
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         boolean sawNonHdmi = false;
         String tunerId = null;
@@ -3298,7 +3307,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                                 && tim.getInputState(info.getId()) == TvInputManager.INPUT_STATE_CONNECTED) {
                             state = TvInputManager.INPUT_STATE_CONNECTED;
                         }
-                        addInputRow(rows, activate, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
+                        addInputRow(rows, switchSource, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
                     }
                     continue;
                 }
@@ -3308,7 +3317,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // Analog AV jacks have no hotplug detection, and some TVs report them as always connected
                 // (TCL Smart TV Pro G03 says "Connected" with nothing plugged in), so AV rows show no state.
                 int state = !hdmi || hdmiStateBogus ? -1 : tim.getInputState(id);
-                addInputRow(rows, activate, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
+                addInputRow(rows, switchSource, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
                         () -> openInput(id));
             }
         }
@@ -3317,7 +3326,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             for (CoocaaSources.Source s : coocaa) {
                 int icon = "HDMI".equals(s.name) ? R.drawable.ic_input
                         : "VOD".equals(s.name) ? R.drawable.ic_livetv : R.drawable.ic_av;
-                addInputRow(rows, activate, icon, s.label, -1, () -> {
+                addInputRow(rows, switchSource, icon, s.label, -1, () -> {
                     if (!CoocaaSources.open(this, s)) {
                         Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
                     }
@@ -3349,7 +3358,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (liveTv != null) {
             if (rows.getChildCount() > 0) addSeparator(rows);
             final Intent liveTvIntent = liveTv;
-            addInputRow(rows, activate, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
+            addInputRow(rows, switchSource, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
         }
     }
 

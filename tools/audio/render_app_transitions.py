@@ -2,7 +2,8 @@
 
 Opening: soft ~243/203/365 Hz chord with a lingering bright tail.
 Return: lower ~216/180/324 Hz chord, with the high voice fading before the low one.
-Rendered offline; Android only preloads and plays the two small mono PCM resources.
+Source: two overlapping rising notes with a soft bright overtone.
+Rendered offline; Android only preloads and plays the small mono PCM resources.
 """
 import math
 from pathlib import Path
@@ -13,12 +14,20 @@ RATE = 44100
 TARGET = Path(__file__).resolve().parents[2] / 'launcher/app/src/main/res/raw'
 
 
-def render(name, returning):
+def render(name, returning, source=False):
     duration = .66 if returning else .80
     base = 108 if returning else 121.5
     voices = [(2.0, .72, 0, .135), (5 / 3, .30, .010, .115),
               (3.0, .24, .025 if not returning else 0, .18 if not returning else .085)]
     phases = [0.0, .45, 1.1]
+    attack_time = .045
+    if source:
+        duration = .70
+        base = 132
+        voices = [(2.0, .68, 0, .125), (3.0, .48, .075, .16),
+                  (4.0, .13, .090, .11), (5 / 3, .16, 0, .10)]
+        phases = [0.0, .45, 1.1, .7]
+        attack_time = .018
     samples = []
     for i in range(round(duration * RATE)):
         t = i / RATE
@@ -30,7 +39,7 @@ def render(name, returning):
             # Tiny opposite pitch settles and staggered voices give the two cues their direction.
             bend = (-.006 if returning else .006) * math.exp(-u / .055)
             phases[j] += 2 * math.pi * base * ratio * (1 + bend) / RATE
-            attack = (1 - math.exp(-u / .045)) ** 3
+            attack = (1 - math.exp(-u / attack_time)) ** 3
             envelope = attack * math.exp(-u / decay)
             value += gain * envelope * math.sin(phases[j])
         fade = min(1, (duration - t) / .035)
@@ -49,3 +58,4 @@ def render(name, returning):
 
 render('app_open.wav', False)
 render('app_return.wav', True)
+render('source_open.wav', False, source=True)
