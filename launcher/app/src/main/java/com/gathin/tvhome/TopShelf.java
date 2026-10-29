@@ -46,9 +46,11 @@ final class TopShelf {
     private final TextView heading;
     private final SpringAnimation headingSpring;
     private float headingTarget = Float.NaN;
+    private float headingTextWidth;
     private final HorizontalScrollView scroll;
     private final SpringAnimation scrollSpring;
     private int scrollTarget;
+    private int scrollHeadingTarget = Integer.MIN_VALUE;
     private boolean rowFocused;
     private final ViewTreeObserver.OnGlobalFocusChangeListener rowFocusChanged;
     private final List<View> targets = new ArrayList<>();
@@ -164,6 +166,12 @@ final class TopShelf {
         scrollSpring = new SpringAnimation(scroll, SpringAnimation.SCROLL_X);
         scrollSpring.setSpring(new SpringForce().setStiffness(700f).setDampingRatio(1f));
         scrollSpring.setMinimumVisibleChange(1f);
+        scrollSpring.addEndListener((animation, canceled, value, velocity) -> {
+            if (!canceled) {
+                scrollHeadingTarget = Integer.MIN_VALUE;
+                position();
+            }
+        });
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
         scroll.forceHasOverlappingRendering(false);
         // Focus zoom extends above the inner cards row into the scroll view's existing padding.
@@ -311,9 +319,11 @@ final class TopShelf {
         if (source.startsWith("channel:")) for (ShelfRepository.Channel channel : result.channels) {
             if (source.equals("channel:" + channel.id)) section = channel.name;
         }
-        heading.setText(ShelfSelection.AUTO.equals(source) ? label : section);
+        String headingText = ShelfSelection.AUTO.equals(source) ? label : section;
+        heading.setText(headingText);
+        headingTextWidth = heading.getPaint().measureText(headingText);
         headingSpring.cancel(); headingTarget = Float.NaN;
-        scrollSpring.cancel(); scrollTarget = 0; rowFocused = false;
+        scrollSpring.cancel(); scrollTarget = 0; scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
         cards.removeAllViews(); targets.clear(); bindings.clear(); selected = 0;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
@@ -442,6 +452,11 @@ final class TopShelf {
         scrollTarget = target;
         if (!animateRows) scroll.scrollTo(target, 0);
         else if (target != scroll.getScrollX() || scrollSpring.isRunning()) {
+            // Raise the label before taller artwork reaches its text, rather than after it has arrived.
+            // Recompute the remaining sweep on every frame: release tall artwork as soon as it
+            // leaves the text, rather than holding its height until the whole scroll settles.
+            scrollHeadingTarget = target;
+            position();
             scrollSpring.setMinValue(0);
             scrollSpring.setMaxValue(Math.max(0, cards.getWidth() - scroll.getWidth()));
             scrollSpring.animateToFinalPosition(target);
@@ -452,23 +467,11 @@ final class TopShelf {
         if (panel.getVisibility() != View.VISIBLE) return;
         panel.setY(dockTop - panel.getHeight() - dp(38));
         if (bindings.isEmpty()) return;
-        // The label stays at the viewport's leading edge while focus moves through visible cards.
-        // Follow the artwork under its text origin, not the focused item elsewhere in the row.
-        int anchor = scroll.getScrollX() + heading.getLeft() + heading.getPaddingLeft()
-                - scroll.getLeft() - cards.getLeft();
-        FrameLayout.LayoutParams artwork = null;
-        int nearest = Integer.MAX_VALUE;
-        for (Binding binding : bindings) {
-            if (binding.tile.getWidth() == 0) continue; // Wait for the first measured row.
-            FrameLayout.LayoutParams image = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
-            int left = binding.tile.getLeft() + (binding.tile.getWidth() - image.width) / 2;
-            int distance = Math.max(0, Math.max(left - anchor, anchor - left - image.width));
-            if (distance < nearest) { nearest = distance; artwork = image; }
-            if (distance == 0) break;
-        }
-        if (artwork == null) return;
+        int artworkTop = headingTopBetween(scroll.getScrollX(),
+                scrollHeadingTarget == Integer.MIN_VALUE ? scroll.getScrollX() : scrollHeadingTarget);
+        if (artworkTop == Integer.MAX_VALUE) return;
         // Leave a small gap for the lower rebound instead of letting the label hit the artwork.
-        float offset = artwork.topMargin - dp(rowFocused ? 10 : 7);
+        float offset = artworkTop - dp(rowFocused ? 10 : 7);
         if (headingTarget == offset) return;
         boolean firstPosition = Float.isNaN(headingTarget);
         headingTarget = offset;
@@ -483,6 +486,25 @@ final class TopShelf {
             headingSpring.setMaxValue(Math.max(current, offset) + dp(2));
             headingSpring.animateToFinalPosition(offset);
         }
+    }
+    /** Artwork below the text's current footprint, or swept footprint before a pending scroll. */
+    private int headingTopBetween(int fromScroll, int toScroll) {
+        int textLeft = heading.getLeft() + heading.getPaddingLeft() - scroll.getLeft() - cards.getLeft();
+        float textWidth = Math.min(headingTextWidth, Math.max(0,
+                heading.getWidth() - heading.getPaddingLeft() - heading.getPaddingRight()));
+        float from = Math.min(fromScroll, toScroll) + textLeft;
+        float to = Math.max(fromScroll, toScroll) + textLeft + textWidth + dp(3);
+        int top = Integer.MAX_VALUE, nearestTop = Integer.MAX_VALUE;
+        float nearest = Float.MAX_VALUE;
+        for (Binding binding : bindings) {
+            if (binding.tile.getWidth() == 0) continue; // Wait for the first measured row.
+            FrameLayout.LayoutParams image = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
+            int left = binding.tile.getLeft() + (binding.tile.getWidth() - image.width) / 2;
+            float distance = Math.max(0, Math.max(left - from, from - left - image.width));
+            if (distance < nearest) { nearest = distance; nearestTop = image.topMargin; }
+            if (left <= to && left + image.width >= from) top = Math.min(top, image.topMargin);
+        }
+        return top == Integer.MAX_VALUE ? nearestTop : top;
     }
     private void setDim(boolean enabled) {
         float target = enabled ? 1f : 0f;
@@ -507,7 +529,7 @@ final class TopShelf {
 
     void hide() {
         if (suspended) return;
-        scrollSpring.cancel(); rowFocused = false;
+        scrollSpring.cancel(); scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
         headingSpring.cancel(); headingTarget = Float.NaN;
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
@@ -543,7 +565,7 @@ final class TopShelf {
         }
     }
     private void clear() {
-        scrollSpring.cancel(); rowFocused = false;
+        scrollSpring.cancel(); scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
         headingSpring.cancel(); headingTarget = Float.NaN;
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;

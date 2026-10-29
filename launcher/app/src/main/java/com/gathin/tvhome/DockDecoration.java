@@ -111,10 +111,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             }
         }
         if (!any) return;
-        float pad = 20 * density;
+        float pad = 20.5f * density;
         // Extra paint room at the row ends keeps a zoomed first/last icon inset from the band.
         // The wrapper's wider viewport is balanced by grid padding, so tile positions stay fixed.
-        float sidePad = 25 * density;
+        float sidePad = 20 * density;
         float side = Math.max(0f, Math.min(sidePad, Math.min(rect.left, parent.getWidth() - rect.right) - density));
         float radius = AppAdapter.cornerRadius(cardWidth, density);
         if (evenPadding) {

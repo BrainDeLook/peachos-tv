@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
@@ -17,6 +18,8 @@ final class LiquidGlass extends Drawable {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint light = new Paint(Paint.ANTI_ALIAS_FLAG), shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF area = new RectF(), shadeArea = new RectF();
+    private final Path shape = new Path();
+    private final Path[] shadowShapes = {new Path(), new Path(), new Path()};
     private final RectF cachedBounds = new RectF();
     private final Paint cachedPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final float density;
@@ -38,6 +41,7 @@ final class LiquidGlass extends Drawable {
         if (radius == value) return;
         radius = value;
         baseDirty = true;
+        updateShape();
     }
     void focus(float value) {
         if (Math.abs(focus - value) < .001f) return;
@@ -58,6 +62,7 @@ final class LiquidGlass extends Drawable {
         cachedBounds.set(-padding, -padding, width + padding, height + padding);
         area.set(0, 0, width, height); area.inset(.6f * density, .6f * density);
         if (area.isEmpty()) return;
+        updateShape();
         // Low contrast through the centre; highlights live at the curved perimeter, not in a glossy top stripe.
         fill.setShader(new LinearGradient(0, area.top, 0, Math.max(area.top + 1, area.bottom),
                 new int[]{0x1CFFFFFF, 0x18FFFFFF, 0x12FFFFFF, 0x10FFFFFF},
@@ -86,19 +91,27 @@ final class LiquidGlass extends Drawable {
             }
             canvas.drawBitmap(base, null, cachedBounds, cachedPaint);
         } else drawBase(canvas);
-        canvas.drawRoundRect(area, radius, radius, light);
-        canvas.drawRoundRect(area, radius, radius, edge);
+        canvas.drawPath(shape, light);
+        canvas.drawPath(shape, edge);
         canvas.restoreToCount(save);
+    }
+    private void updateShape() {
+        if (area.isEmpty()) return;
+        ContinuousCorners.set(shape, area.left, area.top, area.right, area.bottom, radius);
+        for (int i = 1; i <= 3; i++) {
+            shadeArea.set(area); shadeArea.inset(-i * density, -i * density);
+            shadeArea.offset(0, 1.5f * density);
+            ContinuousCorners.set(shadowShapes[i - 1], shadeArea.left, shadeArea.top,
+                    shadeArea.right, shadeArea.bottom, radius + i * density);
+        }
     }
     private void drawBase(Canvas canvas) {
         // Three very faint, inset-free contours approximate a soft lift without allocating a blurred layer.
         for (int i = 3; i >= 1; i--) {
-            shadeArea.set(area); shadeArea.inset(-i * density, -i * density);
-            shadeArea.offset(0, 1.5f * density);
             shadow.setColor(android.graphics.Color.argb((4 - i) * 3 * opacity / 255, 0, 0, 0));
-            canvas.drawRoundRect(shadeArea, radius + i * density, radius + i * density, shadow);
+            canvas.drawPath(shadowShapes[i - 1], shadow);
         }
-        canvas.drawRoundRect(area, radius, radius, fill);
+        canvas.drawPath(shape, fill);
     }
     @Override public void setAlpha(int value) {
         opacity = value; fill.setAlpha(value); edge.setAlpha(value); light.setAlpha(value); invalidateSelf();

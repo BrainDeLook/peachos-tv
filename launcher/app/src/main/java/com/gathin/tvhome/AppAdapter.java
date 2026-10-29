@@ -11,6 +11,8 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -128,7 +130,23 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final float FOCUS_SCALE = 1.10f; // keep the existing layout clearance
-    private static final float SELECTED_SCALE = 1.23f;
+    private static final float SELECTED_SCALE = 1.22f;
+    // A shared finite palette: no ColorMatrix/ColorFilter allocations during focus animation.
+    private static final class FocusTones {
+        static final ColorMatrixColorFilter[] VALUES = new ColorMatrixColorFilter[16];
+        static {
+            for (int i = 1; i < VALUES.length; i++) {
+                float idle = i / (float) (VALUES.length - 1);
+                ColorMatrix tone = new ColorMatrix();
+                tone.setSaturation(1f - .02f * idle);
+                float contrast = 1f - .01f * idle;
+                tone.postConcat(new ColorMatrix(new float[]{
+                        contrast, 0, 0, 0, idle, 0, contrast, 0, 0, idle,
+                        0, 0, contrast, 0, idle, 0, 0, 0, 1, 0}));
+                VALUES[i] = new ColorMatrixColorFilter(tone);
+            }
+        }
+    }
     private static final DecelerateInterpolator FOCUS_EASING = new DecelerateInterpolator(1.5f);
     // One spring drives both scale axes. No extra view layer, bitmap or second physics solver.
     private static final FloatPropertyCompat<View> FOCUS_ZOOM = new FloatPropertyCompat<View>("focusZoom") {
@@ -136,7 +154,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         @Override public void setValue(View view, float value) { view.setScaleX(value); view.setScaleY(value); }
     };
     /** Design size of a tile (dp); tiles shrink from here when the columns don't fit, see tileWidthPx. */
-    static final float DESIGN_W_DP = 180f, DESIGN_H_DP = 101f, DOCK_H_DP = 108f;
+    static final float DESIGN_W_DP = 180f, DESIGN_H_DP = 101f, DOCK_H_DP = 108.5f;
 
     /**
      * Tile width for a grid of this inner width: the cell minus room for the focus zoom and the glass
@@ -520,7 +538,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean dockKind = dockRow && (singleRow || position < dockSize);
         h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
         boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
-        h.sheen.setAlpha(focused ? 1f : 0f);
+        h.sheen.setAlpha(focused ? 1f : .25f);
         h.name.setAlpha(focused ? 1f : restNameAlpha);
         h.card.setScaleX(focused ? focusScale() : 1f);
         h.card.setScaleY(focused ? focusScale() : 1f);
@@ -548,6 +566,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
+        h.toneStep = -1; // The rebound holder may now contain another banner or background.
+        h.applyFocusTone(focused ? 1f : 0f);
         h.card.setOnClickListener(v -> launch(e));
         h.card.setOnLongClickListener(v -> {
             if (tileMenu) {
@@ -572,6 +592,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.cancelFocusSpring();
             float scale = h.card.isFocused() ? SELECTED_SCALE : 1f;
             h.card.setScaleX(scale); h.card.setScaleY(scale);
+            h.applyFocusTone(h.card.isFocused() ? 1f : 0f);
         }
         super.onViewDetachedFromWindow(holder);
     }
@@ -938,6 +959,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         final boolean reducedMotion;
         private SpringAnimation focusSpring;
+        private int toneStep = -1;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
 
@@ -981,14 +1003,16 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 if (!animations) {
                     cancelFocusSpring();
                     view.setScaleX(target); view.setScaleY(target);
-                    sheen.setAlpha(focused ? 1f : 0f);
+                    applyFocusTone(focused ? 1f : 0f);
+                    sheen.setAlpha(focused ? 1f : .25f);
                 } else {
                     if (reducedMotion) {
                         cancelFocusSpring();
+                        applyFocusTone(focused ? 1f : 0f);
                         view.animate().scaleX(target).scaleY(target)
                                 .setDuration(Motion.REDUCED_MS).setInterpolator(FOCUS_EASING).start();
                     } else animateFocusScale(target, focused);
-                    sheen.animate().alpha(focused ? 1f : 0f)
+                    sheen.animate().alpha(focused ? 1f : .25f)
                             .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
                             .setInterpolator(FOCUS_EASING).start();
                 }
@@ -1010,6 +1034,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 focusSpring = new SpringAnimation(card, FOCUS_ZOOM);
                 focusSpring.setSpring(new SpringForce(target));
                 focusSpring.setMinimumVisibleChange(.001f); // well below one screen pixel
+                focusSpring.addUpdateListener((animation, value, velocity) ->
+                        applyFocusTone((value - 1f) / (SELECTED_SCALE - 1f)));
             }
             focusSpring.getSpring().setStiffness(focused ? 1500f : 1900f)
                     .setDampingRatio(focused ? .68f : SpringForce.DAMPING_RATIO_NO_BOUNCY);
@@ -1019,6 +1045,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         void cancelFocusSpring() {
             if (focusSpring != null) focusSpring.cancel();
+        }
+        void applyFocusTone(float focus) {
+            int step = Math.round((1f - Math.max(0f, Math.min(1f, focus))) * (FocusTones.VALUES.length - 1));
+            if (toneStep == step) return;
+            toneStep = step;
+            ColorMatrixColorFilter tone = FocusTones.VALUES[step];
+            banner.setColorFilter(tone); icon.setColorFilter(tone);
+            Drawable background = card.getBackground();
+            if (background != null) background.setColorFilter(tone);
         }
     }
 }

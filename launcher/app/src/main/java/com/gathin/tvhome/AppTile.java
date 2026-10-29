@@ -4,10 +4,12 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
@@ -33,8 +35,11 @@ public final class AppTile extends FrameLayout {
         canvas.restoreToCount(save);
     }
 
-    /** Three faint, overlapping light bands feather inward; no hard rim or dark bevel. */
+    /** Broad top illumination and feathered edges share the artwork's continuous mask. */
     static final class Edge extends Drawable {
+        private final Path surface = new Path();
+        private final Paint surfaceLight = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint surfaceShade = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path[] bands = {new Path(), new Path(), new Path()};
         private final Paint[] light = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
         private static final int[] STRENGTH = {45, 30, 16};
@@ -51,6 +56,20 @@ public final class AppTile extends FrameLayout {
         }
         @Override protected void onBoundsChange(Rect b) {
             float radius = fixedRadius > 0 ? fixedRadius : AppAdapter.cornerRadius(b.width(), density);
+            ContinuousCorners.set(surface, b.left, b.top, b.right, b.bottom, radius);
+            // A wide soft light above the face, not a hard gloss stripe. Shaders are rebuilt only
+            // on resize; focus fades the existing render node alongside its scale animation.
+            RadialGradient topLight = new RadialGradient(0, 0, 1,
+                    new int[]{0x24ffffff, 0x14ffffff, 0x00ffffff},
+                    new float[]{0, .42f, 1}, Shader.TileMode.CLAMP);
+            Matrix ellipse = new Matrix();
+            ellipse.setScale(b.width() * .85f, b.height() * 1.10f);
+            ellipse.postTranslate(b.exactCenterX(), b.top - b.height() * .22f);
+            topLight.setLocalMatrix(ellipse);
+            surfaceLight.setShader(topLight);
+            surfaceShade.setShader(new LinearGradient(0, b.top, 0, b.bottom,
+                    new int[]{0x00000000, 0x00000000, 0x0c000000},
+                    new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
             float[] insets = {.6f, 1.8f, 3f};
             Shader illumination = new LinearGradient(b.left, b.top, b.right, b.bottom,
                     new int[]{0x20ffffff, 0x06ffffff, 0x00ffffff, 0x12ffffff},
@@ -62,13 +81,19 @@ public final class AppTile extends FrameLayout {
             }
         }
         @Override public void draw(Canvas canvas) {
+            canvas.drawPath(surface, surfaceShade);
+            canvas.drawPath(surface, surfaceLight);
             for (int i = bands.length - 1; i >= 0; i--) canvas.drawPath(bands[i], light[i]);
         }
         @Override public void setAlpha(int alpha) {
+            surfaceLight.setAlpha(alpha);
+            surfaceShade.setAlpha(alpha);
             for (int i = 0; i < light.length; i++) light[i].setAlpha(alpha * STRENGTH[i] / 255);
             invalidateSelf();
         }
         @Override public void setColorFilter(ColorFilter filter) {
+            surfaceLight.setColorFilter(filter);
+            surfaceShade.setColorFilter(filter);
             for (Paint paint : light) paint.setColorFilter(filter);
             invalidateSelf();
         }

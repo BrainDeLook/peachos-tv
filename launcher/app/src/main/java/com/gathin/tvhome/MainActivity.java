@@ -650,7 +650,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
             if (!MainActivity.this.dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
             // Place the dock low while retaining a narrow glimpse of the next app row.
-            if (MainActivity.this.dockRow && !singleRow) want += (int) (9 * density);
+            if (MainActivity.this.dockRow && !singleRow) want += Math.round(9.5f * density);
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);

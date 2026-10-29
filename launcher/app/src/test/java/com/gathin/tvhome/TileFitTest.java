@@ -12,6 +12,14 @@ public class TileFitTest {
     private static final int INNER = 1696;          // grid width minus padding at 1920 px
     private static final int GRID_H = 846;          // grid height under the top bar
 
+    @Test public void sixColumnFootprintMatchesTheMeasuredReference() {
+        // 1920px framebuffer: 36px outer inset and 30px inner grid padding on each side.
+        int width = AppAdapter.tileWidthPx(1920 - 2 * 36 - 2 * 30, 6, D);
+        assertEquals(249, width); // 166px at the reference's 1280px width.
+        assertEquals(150, AppAdapter.tileHeightPx(width, true)); // 100px in the reference.
+        assertEquals(24f, AppAdapter.cornerRadius(width, D) / 1.5f, .1f);
+    }
+
     private static int height(int tileW, int rows, boolean title) {
         int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(tileW, true), D);
         return itemH * (rows + 1) + Math.round((AppAdapter.DOCK_EXTRA_DP + AppAdapter.BOTTOM_ROOM_DP
