@@ -50,6 +50,8 @@ final class ControlCenter {
     private final View scrim;
     private final LinearLayout panel, tabs;
     private final FrameLayout body;
+    private LinearLayout pageContent;
+    private View outgoingPage;
     private final float density;
     private final boolean animate, reduced;
     private final Typeface regular, medium;
@@ -194,6 +196,8 @@ final class ControlCenter {
             closing = true;
             if (spring != null) spring.cancel();
             capsule.animate().cancel();
+            clearOutgoingPage();
+            if (pageContent != null) pageContent.animate().cancel();
             for (View tab : tabViews) tab.getBackground().jumpToCurrentState();
             sourceClock.setAlpha(1f); anchor.setAlpha(1f);
             capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
@@ -371,8 +375,43 @@ final class ControlCenter {
         }
         overviewNetwork = null; networkStatus = null; vpnStatus = null;
         overviewNetworkIcon = null; networkStatusIcon = null;
+        clearOutgoingPage();
+        LinearLayout previous = pageContent;
+        boolean crossfade = previous != null && previous.isLaidOut() && revealed && animate && !reduced && !closing;
+        // A shorter destination must not clip the fading bottom rows of the previous page.
+        if (crossfade) body.setMinimumHeight(body.getHeight());
+        if (previous != null) previous.animate().cancel();
         body.removeAllViews();
-        LinearLayout column = column(); body.addView(column, new FrameLayout.LayoutParams(-1, -2));
+        LinearLayout column = column(); pageContent = column;
+        body.addView(column, new FrameLayout.LayoutParams(-1, -2));
+        populatePage(page, column);
+        if (!crossfade) return;
+        // A visual-only overlay cannot receive focus, clicks or accessibility traversal.
+        // Keep at most the previous and current pages, even when keys repeat during a transition.
+        outgoingPage = previous;
+        body.getOverlay().add(previous);
+        previous.animate().alpha(0f).setDuration(140)
+                .setInterpolator(new DecelerateInterpolator())
+                .withEndAction(() -> {
+                    body.getOverlay().remove(previous);
+                    if (outgoingPage == previous) {
+                        outgoingPage = null;
+                        body.setMinimumHeight(0);
+                    }
+                }).start();
+        column.setAlpha(0f);
+        column.animate().alpha(1f).setDuration(140).setInterpolator(new DecelerateInterpolator()).start();
+    }
+
+    private void clearOutgoingPage() {
+        if (outgoingPage == null) return;
+        outgoingPage.animate().cancel();
+        body.getOverlay().remove(outgoingPage);
+        outgoingPage = null;
+        body.setMinimumHeight(0);
+    }
+
+    private void populatePage(String page, LinearLayout column) {
         if ("inputs".equals(page)) {
             host.controlInputRows(column, popup);
             for (int i = 0; i < column.getChildCount(); i++) {
