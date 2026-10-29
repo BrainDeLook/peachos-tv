@@ -48,7 +48,8 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         this.dockSize = dockSize;
         this.singleRow = singleRow;
         this.bandAll = singleRow && bandAll;
-        this.liquid = liquidGlass ? new LiquidGlass(density, 26 * density) : null;
+        // This band's dimensions stay fixed while scrolling; sideways/variable-padding bands keep direct drawing.
+        this.liquid = liquidGlass ? new LiquidGlass(density, 26 * density, !singleRow && !evenPadding) : null;
         this.density = density;
         this.namesRoom = names ? 22 * density : 0;
         this.lightGlass = lightGlass;

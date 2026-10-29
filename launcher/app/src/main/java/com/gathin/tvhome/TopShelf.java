@@ -64,6 +64,7 @@ final class TopShelf {
     private static final class Binding {
         FrameLayout tile;
         ImageView image;
+        android.graphics.drawable.Drawable placeholder;
         TextView title;
         ShelfRepository.Item item;
         int rowHeight, maxWidth;
@@ -136,6 +137,7 @@ final class TopShelf {
         panel.addView(heading);
         scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
+        scroll.forceHasOverlappingRendering(false);
         // Focus zoom extends above the inner cards row into the scroll view's existing padding.
         // Do not clip to that child's bounds; the root still clips at the physical screen edges.
         scroll.setClipChildren(false);
@@ -145,6 +147,7 @@ final class TopShelf {
         scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> scheduleVisible());
         cards = new LinearLayout(activity);
         cards.setOrientation(LinearLayout.HORIZONTAL); cards.setClipChildren(false); cards.setClipToPadding(false);
+        cards.forceHasOverlappingRendering(false);
         // Content has an initial inset; the viewport itself reaches both physical screen edges.
         cards.setPadding(dp(40), 0, dp(40), 0);
         cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> scheduleVisible());
@@ -281,18 +284,27 @@ final class TopShelf {
                 - captionHeight - dp(14);
         int height = Math.max(dp(80), Math.min(Math.round((widthForFive - dp(10)) * 1.5f),
                 Math.min(dp(252), (int) (available / 1.0225f))));
+        android.view.ViewOutlineProvider posterOutline = new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(8));
+            }
+        };
         for (ShelfRepository.Item item : result.items) {
             FrameLayout tile = new FrameLayout(activity);
             tile.setClipChildren(false);
+            // Artwork and caption have separate bounds, including the artwork's focus zoom clearance.
+            tile.forceHasOverlappingRendering(false);
             tile.setFocusable(true); tile.setClickable(true);
             tile.setContentDescription(item.title);
             ImageView poster = new ImageView(activity);
             // Fill the rounded bounds even when a provider's aspect hint is slightly inaccurate.
             poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            GradientDrawable placeholder = new GradientDrawable();
-            placeholder.setColor(0xff25303d); placeholder.setCornerRadius(dp(8));
-            poster.setBackground(placeholder);
+            android.graphics.drawable.ColorDrawable placeholder = new android.graphics.drawable.ColorDrawable(0xff25303d);
+            poster.setImageDrawable(placeholder);
+            poster.setOutlineProvider(posterOutline);
             poster.setClipToOutline(true);
+            // A poster draws one image, rather than an overlapping placeholder background plus bitmap.
+            poster.forceHasOverlappingRendering(false);
             tile.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
             TextView title = new TextView(activity);
             title.setText(item.title); title.setTextSize(11); title.setTextColor(0xf2ffffff);
@@ -306,7 +318,7 @@ final class TopShelf {
                     height + captionHeight + dp(14) + Math.round(height * .0225f));
             lp.rightMargin = dp(20); cards.addView(tile, lp); targets.add(tile);
             Binding binding = new Binding();
-            binding.tile = tile; binding.image = poster; binding.title = title; binding.item = item;
+            binding.tile = tile; binding.image = poster; binding.placeholder = placeholder; binding.title = title; binding.item = item;
             binding.rowHeight = height; binding.maxWidth = Math.round(viewport * .35f);
             bindings.add(binding);
             size(binding, item.aspect);
@@ -527,7 +539,7 @@ final class TopShelf {
         for (Binding b : bindings) {
             if (b.loaded && !inWindow(b, scroll.getWidth())) {
                 if (b.reveal != null) b.reveal.cancel();
-                b.image.setImageDrawable(null); b.loaded = false;
+                b.image.setImageDrawable(b.placeholder); b.image.setImageAlpha(255); b.loaded = false;
             }
         }
     }
