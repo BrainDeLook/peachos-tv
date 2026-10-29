@@ -131,6 +131,9 @@ final class TopShelf {
                 new FrameLayout.LayoutParams(-1, -1));
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
+        // Keep the raised heading and its bounded rebound inside this child's own root-clipped bounds.
+        // position() offsets the added height, so the cards and dock retain their screen positions.
+        panel.setPadding(0, dp(12), 0, 0);
         panel.setClipChildren(false);
         panel.setClipToPadding(false);
         // Cards, captions and heading occupy separate areas; fade their existing render nodes directly.
@@ -439,8 +442,21 @@ final class TopShelf {
         if (panel.getVisibility() != View.VISIBLE) return;
         panel.setY(dockTop - panel.getHeight() - dp(38));
         if (bindings.isEmpty()) return;
-        // Follow the selected artwork, including an aspect corrected after decoding.
-        FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) bindings.get(selected).image.getLayoutParams();
+        // The label stays at the viewport's leading edge while focus moves through visible cards.
+        // Follow the artwork under its text origin, not the focused item elsewhere in the row.
+        int anchor = scroll.getScrollX() + heading.getLeft() + heading.getPaddingLeft()
+                - scroll.getLeft() - cards.getLeft();
+        FrameLayout.LayoutParams artwork = null;
+        int nearest = Integer.MAX_VALUE;
+        for (Binding binding : bindings) {
+            if (binding.tile.getWidth() == 0) continue; // Wait for the first measured row.
+            FrameLayout.LayoutParams image = (FrameLayout.LayoutParams) binding.image.getLayoutParams();
+            int left = binding.tile.getLeft() + (binding.tile.getWidth() - image.width) / 2;
+            int distance = Math.max(0, Math.max(left - anchor, anchor - left - image.width));
+            if (distance < nearest) { nearest = distance; artwork = image; }
+            if (distance == 0) break;
+        }
+        if (artwork == null) return;
         // Leave a small gap for the lower rebound instead of letting the label hit the artwork.
         float offset = artwork.topMargin - dp(rowFocused ? 10 : 7);
         if (headingTarget == offset) return;

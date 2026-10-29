@@ -11,7 +11,7 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 77
+        versionCode 79
         versionName '1.5.2-shelf-navigation-preview'
     }
 
