@@ -460,7 +460,7 @@ final class ControlCenter {
     }
 
     private Drawable material(View tile, float radius) {
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x4d211d25);
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25);
     }
 
     private TextView text(String value, float size, int color) {

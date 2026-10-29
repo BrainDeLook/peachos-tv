@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -19,15 +20,19 @@ final class ControlBackdrop extends Drawable {
     private final View tile;
     private final float density, radius, screenScale;
     private final boolean hasBackdrop;
+    private final int tintAlpha;
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final AppTile.Edge edge;
+    private final Paint surface = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint[] edge = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
+    private static final int[] EDGE_ALPHA = {90, 44, 20};
     private final Paint focus = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
     private final Path mask = new Path();
     private final Matrix matrix = new Matrix();
     private final int[] position = new int[2];
     private boolean focused;
+    private int alpha = 255;
 
     ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone) {
         this.tile = tile; this.density = density;
@@ -35,8 +40,14 @@ final class ControlBackdrop extends Drawable {
         hasBackdrop = backdrop != null;
         if (hasBackdrop) background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
         else background.setColor(0xff29262f);
-        edge = new AppTile.Edge(density, radius);
+        // All light bands use the material's exact path. Clipping keeps the feather inside it.
+        float[] widths = {1.2f, 3.6f, 8f};
+        for (int i = 0; i < edge.length; i++) {
+            edge[i].setStyle(Paint.Style.STROKE);
+            edge[i].setStrokeWidth(widths[i] * density);
+        }
         tint.setColor(tone);
+        tintAlpha = tone >>> 24;
         focus.setColor(0x14ffffff);
     }
 
@@ -104,7 +115,12 @@ final class ControlBackdrop extends Drawable {
     @Override protected void onBoundsChange(Rect area) {
         bounds.set(area); bounds.inset(density, density);
         ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
-        edge.setBounds(area);
+        surface.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
+                new int[]{0x18ffffff, 0x03ffffff, 0x09ffffff}, new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
+        Shader light = new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
+                new int[]{0x90ffffff, 0x18ffffff, 0x08ffffff, 0x50ffffff},
+                new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
+        for (Paint paint : edge) paint.setShader(light);
     }
     @Override public void draw(Canvas canvas) {
         if (bounds.isEmpty()) return;
@@ -116,10 +132,22 @@ final class ControlBackdrop extends Drawable {
         }
         canvas.drawPath(mask, background);
         canvas.drawPath(mask, tint);
+        canvas.drawPath(mask, surface);
         if (focused) canvas.drawPath(mask, focus);
-        if (focused) edge.draw(canvas);
+        int save = canvas.save();
+        canvas.clipPath(mask);
+        for (int i = edge.length - 1; i >= 0; i--) {
+            edge[i].setAlpha(alpha * EDGE_ALPHA[i] / 255 * (focused ? 100 : 42) / 100);
+            canvas.drawPath(mask, edge[i]);
+        }
+        canvas.restoreToCount(save);
     }
-    @Override public void setAlpha(int value) { background.setAlpha(value); tint.setAlpha(value); edge.setAlpha(value); focus.setAlpha(value); invalidateSelf(); }
+    @Override public void setAlpha(int value) {
+        alpha = value;
+        background.setAlpha(value); tint.setAlpha(value * tintAlpha / 255);
+        surface.setAlpha(value); focus.setAlpha(value * 0x14 / 255);
+        invalidateSelf();
+    }
     @Override public void setColorFilter(ColorFilter value) { background.setColorFilter(value); invalidateSelf(); }
     @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
 }
