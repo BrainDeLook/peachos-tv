@@ -18,7 +18,8 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 - **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
 - **A quiet dock.** Responsive spring focus, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
 - **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
-- **Lightweight glass.** Restrained translucent materials with no live background capture or blur buffers. Glass can be turned off.
+- **Lightweight glass.** Restrained translucent materials. The control center uses one small, blurred snapshot when opened, with no continuous screen capture. Glass can be turned off.
+- **A compact control center.** Press the gear for quick settings, network status, available TV inputs and detected VPN clients. It unfolds from the clock capsule and returns within the same window to avoid a flashing header.
 - **Your layout.** Rearrange apps and choose which ones belong in the dock.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
 
@@ -26,7 +27,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 
 ![Compact source picker with green connection indicators](docs/images/sources.png)
 
-On TVs with available inputs, a compact button next to settings opens the HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs keep the simpler header.
+On TVs with available inputs, open the gear and choose the **Inputs** tab for the compact HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs do not show that tab.
 
 CEC device names are preserved. On supported TCL firmware, a confirmed physical HDMI connection is used when its sole CEC child incorrectly reports standby. The remote's native Input button keeps its existing behaviour.
 
@@ -38,11 +39,14 @@ CEC device names are preserved. On supported TCL firmware, a confirmed physical 
 | Browse artwork | Left / Right |
 | Open a card in its app | OK |
 | Return from artwork to the dock | Down / Back |
+| Open the control center | Press OK on the settings gear |
 | Open the launcher menu | Hold OK on the settings gear |
 | Choose artwork sources | Launcher menu → Top shelf |
 | Rearrange apps / edit the dock | Launcher menu → Reorder / Edit dock |
 
 Apps must publish their cards through Android TV Preview / Watch Next. Lampa history uses Lampa's published history channel. Private app databases are not read, and root is not required. Availability and freshness depend on the publishing app; empty or temporarily refreshed channels can show no cards.
+
+The control center also provides shortcuts to system settings, apps, Bluetooth, accessibility, search when available, and the clock screen. VPN controls open the detected client or system VPN settings; the launcher cannot read another app's private VPN profiles. **Sleep** requires Android 9+ and the optional **PeachOS TV · Sleep** accessibility helper. This helper does not read screen content or intercept remote keys. The physical power button remains available without it.
 
 ## Install
 
@@ -93,7 +97,7 @@ Release APKs currently use the project's original local debug signing certificat
 - **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
 - **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
 
-245 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device.
+248 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
 
 ## Credits and license
 
