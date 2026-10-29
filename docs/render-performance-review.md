@@ -67,4 +67,5 @@ Existing poster RAM/disk limits and worker counts were not increased.
   exercised on hardware. No global display, animation, CPU, GPU or power settings were changed.
 - Source selection, audio assets, poster geometry/heading hold, and stored user settings are preserved.
 - Release unit suite: 258 tests. Release lint: 0 errors (existing warnings remain).
-- Builds are previews, not a newly published stable release.
+- Measurements above were taken on the named previews. Their final rendering fixes and subsequent
+  clock/icon polish are included in stable 1.5.2; the measurements are not new stable-build benchmarks.
