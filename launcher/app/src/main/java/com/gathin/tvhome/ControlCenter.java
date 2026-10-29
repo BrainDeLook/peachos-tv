@@ -296,9 +296,12 @@ final class ControlCenter {
         float headerAlpha = Math.min(1f, visible * 4f);
         capsule.setAlpha(1f - headerAlpha);
         // Dissolve the separate clock material before it joins the original capsule.
-        // Transfer glyphs only within the last few pixels, so popup dismissal changes no visible pixels.
+        // Keep a single set of glyphs while the header moves. Even the last 4% of travel can span
+        // several pixels: crossfading there shows two different clock positions during closing.
         clock.getBackground().setAlpha(Math.round(headerAlpha * 255));
-        float handoff = Math.min(1f, visible / .04f);
+        // During closing the popup keeps the glyphs through its final frame; onDismiss restores
+        // the original only after the moving header reaches the capsule, avoiding a blank handoff.
+        float handoff = closing || visible > 0f ? 1f : 0f;
         clock.setAlpha(handoff); overviewTab.setAlpha(handoff);
         sourceClock.setAlpha(1f - handoff); anchor.setAlpha(1f - handoff);
         clock.setTranslationX(clockDx * (1f - value)); clock.setTranslationY(clockDy * (1f - value));
@@ -318,6 +321,7 @@ final class ControlCenter {
         if (!revealed || !animate) { finishDismiss(); return; }
         if (reduced) {
             panel.animate().cancel();
+            clock.setAlpha(0f); overviewTab.setAlpha(0f);
             sourceClock.setAlpha(1f); anchor.setAlpha(1f);
             capsule.setAlpha(0f);
             capsule.animate().alpha(1f).setDuration(100).start();
