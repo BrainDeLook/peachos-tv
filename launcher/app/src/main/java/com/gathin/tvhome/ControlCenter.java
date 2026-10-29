@@ -10,7 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.text.TextUtils;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
@@ -31,7 +30,6 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextClock;
 import android.widget.TextView;
@@ -46,8 +44,12 @@ import java.util.Map;
 
 /** Compact controls with one shared frosted backdrop and a reversible capsule-to-header transition. */
 final class ControlCenter {
-    final PopupWindow popup;
     private final MainActivity host;
+    private final FrameLayout stage;
+    private final ViewGroup home;
+    private int homeFocusability, homeAccessibility;
+    private View homeFocus;
+    private boolean showing;
     private final View anchor;
     private final View capsule, sourceClock;
     private final TextClock clock;
@@ -69,7 +71,7 @@ final class ControlCenter {
     private View overviewTab;
     private boolean revealed;
     private volatile boolean closing;
-    private boolean dismissReady, returnToGear;
+    private boolean returnToGear;
     private Runnable afterClose;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(1),
@@ -90,6 +92,8 @@ final class ControlCenter {
 
     ControlCenter(MainActivity host, View anchor, boolean inputs, boolean animate, boolean reduced, String vpnApp) {
         this.host = host; this.anchor = anchor; this.animate = animate; this.reduced = reduced;
+        stage = host.findViewById(android.R.id.content);
+        home = host.findViewById(R.id.root);
         capsule = host.findViewById(R.id.topButtons);
         sourceClock = host.findViewById(R.id.compactClock);
         density = host.getResources().getDisplayMetrics().density;
@@ -188,43 +192,25 @@ final class ControlCenter {
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, -2);
         scrollLp.topMargin = dp(8); panel.addView(scroll, scrollLp);
         body = new FrameLayout(host); body.setClipChildren(false); scroll.addView(body);
-        popup = new PopupWindow(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true) {
-            @Override public void dismiss() {
-                // PopupDecorView intercepts Back before the content view. Route that path through the fold too.
-                if (dismissReady) super.dismiss(); else close();
-            }
-        };
-        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        popup.setAnimationStyle(0); popup.setElevation(0); popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-        popup.setOnDismissListener(() -> {
-            closing = true;
-            if (spring != null) spring.cancel();
-            body.setLayerType(View.LAYER_TYPE_NONE, null);
-            capsule.animate().cancel();
-            clearOutgoingPage();
-            if (pageContent != null) pageContent.animate().cancel();
-            for (View tab : tabViews) tab.getBackground().jumpToCurrentState();
-            sourceClock.setAlpha(1f); anchor.setAlpha(1f);
-            capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
-            host.controlCenterDismissed(this, returnToGear);
-            Runnable action = afterClose; afterClose = null;
-            if (action != null) action.run();
-        });
         select("overview");
     }
+
+    boolean isShowing() { return showing; }
+
+    boolean dispatchKeyEvent(KeyEvent event) { return root.dispatchKeyEvent(event); }
 
     void show() {
         panel.setAlpha(0f); scrim.setAlpha(0f);
         Runnable reveal = () -> {
-            if (!popup.isShowing() || closing) return;
+            if (!showing || closing) return;
             int[] from = new int[2], to = new int[2];
             sourceClock.getLocationOnScreen(from); clock.getLocationOnScreen(to);
             clockDx = from[0] + sourceClock.getWidth() * .5f - to[0] - clock.getWidth() * .5f;
             clockDy = from[1] + sourceClock.getHeight() * .5f - to[1] - clock.getHeight() * .5f;
             anchor.getLocationOnScreen(from); overviewTab.getLocationOnScreen(to);
-            gearDx = from[0] + anchor.getWidth() * .5f - to[0] - overviewTab.getWidth() * .5f;
-            gearDy = from[1] + anchor.getHeight() * .5f - to[1] - overviewTab.getHeight() * .5f;
-            gearScale = anchor.getWidth() / (float) overviewTab.getWidth();
+            gearDx = from[0] + anchor.getWidth() * anchor.getScaleX() * .5f - to[0] - overviewTab.getWidth() * .5f;
+            gearDy = from[1] + anchor.getHeight() * anchor.getScaleY() * .5f - to[1] - overviewTab.getHeight() * .5f;
+            gearScale = anchor.getWidth() * anchor.getScaleX() / overviewTab.getWidth();
             body.setPivotX(body.getWidth() * .5f); body.setPivotY(body.getHeight() * .5f);
             if (animate && !reduced) {
                 // Build the static controls once before the spring, rather than rasterizing all their
@@ -284,7 +270,15 @@ final class ControlCenter {
                 panel.post(reveal);
             }
         }
-        popup.showAtLocation(anchor, Gravity.TOP | Gravity.START, 0, 0);
+        // A sibling of Home in the same window: removing the panel and restoring the capsule now
+        // produce one render transaction, rather than racing two independently presented surfaces.
+        homeFocusability = home.getDescendantFocusability();
+        homeAccessibility = home.getImportantForAccessibility();
+        homeFocus = home.findFocus();
+        home.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        home.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        showing = true;
+        stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
         if (backdrop == null) panel.post(reveal);
     }
 
@@ -299,8 +293,8 @@ final class ControlCenter {
         // Keep a single set of glyphs while the header moves. Even the last 4% of travel can span
         // several pixels: crossfading there shows two different clock positions during closing.
         clock.getBackground().setAlpha(Math.round(headerAlpha * 255));
-        // During closing the popup keeps the glyphs through its final frame; onDismiss restores
-        // the original only after the moving header reaches the capsule, avoiding a blank handoff.
+        // The moving header keeps the glyphs through its final frame. finishDismiss restores the
+        // original and removes this overlay before the same window's next draw.
         float handoff = closing || visible > 0f ? 1f : 0f;
         clock.setAlpha(handoff); overviewTab.setAlpha(handoff);
         sourceClock.setAlpha(1f - handoff); anchor.setAlpha(1f - handoff);
@@ -318,6 +312,7 @@ final class ControlCenter {
     void closeThen(Runnable action) {
         if (closing) return;
         closing = true; returnToGear = action == null; afterClose = action;
+        if (returnToGear) overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
         if (!revealed || !animate) { finishDismiss(); return; }
         if (reduced) {
             panel.animate().cancel();
@@ -335,8 +330,24 @@ final class ControlCenter {
     }
 
     private void finishDismiss() {
-        dismissReady = true;
-        popup.dismiss();
+        if (!showing) return;
+        showing = false;
+        closing = true;
+        if (spring != null) spring.cancel();
+        body.setLayerType(View.LAYER_TYPE_NONE, null);
+        capsule.animate().cancel();
+        clearOutgoingPage();
+        if (pageContent != null) pageContent.animate().cancel();
+        for (View tab : tabViews) tab.getBackground().jumpToCurrentState();
+        home.setDescendantFocusability(homeFocusability);
+        home.setImportantForAccessibility(homeAccessibility);
+        sourceClock.setAlpha(1f); anchor.setAlpha(1f);
+        capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
+        if (!returnToGear && homeFocus != null) homeFocus.requestFocusFromTouch();
+        host.controlCenterDismissed(this, returnToGear);
+        stage.removeView(root);
+        Runnable action = afterClose; afterClose = null;
+        if (action != null) action.run();
     }
 
     void dismissImmediately() {
@@ -388,8 +399,8 @@ final class ControlCenter {
                 if (state == android.R.attr.state_focused) focused = true;
                 if (state == android.R.attr.state_selected) selected = true;
             }
-            int background = focused ? 0xf2ffffff : selected ? 0x35ffffff : 0x00ffffff;
-            int foreground = focused ? 0xff29272d : selected ? 0xe6ffffff : 0xbfffffff;
+            int background = focused ? 0xf5ffffff : selected ? 0x35ffffff : 0x00ffffff;
+            int foreground = focused ? 0xff111111 : selected ? 0xe6ffffff : 0xbfffffff;
             if (background == toBackground && foreground == toIcon) return false;
             transition.cancel();
             fromBackground = backgroundColor; fromIcon = iconColor;
@@ -461,7 +472,7 @@ final class ControlCenter {
 
     private void populatePage(String page, LinearLayout column) {
         if ("inputs".equals(page)) {
-            host.controlInputRows(column, popup);
+            host.controlInputRows(column, this::closeThen);
             for (int i = 0; i < column.getChildCount(); i++) {
                 View row = column.getChildAt(i);
                 if (row.findViewById(R.id.title) == null) continue;

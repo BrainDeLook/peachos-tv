@@ -281,7 +281,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
     private ControlCenter controlCenter;
-    private boolean controlFocusPending;
     private boolean dashboardHasInputs;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
@@ -1316,7 +1315,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
-        controlFocusPending = false;
         if (controlCenter != null) controlCenter.dismissImmediately();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
@@ -1378,10 +1376,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            if (controlFocusPending) {
-                controlFocusPending = false;
-                findViewById(R.id.btnSettings).requestFocusFromTouch();
-            }
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
@@ -1440,6 +1434,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (controlCenter != null && controlCenter.isShowing()) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
+                return controlCenter.dispatchKeyEvent(event);
+            }
+            return super.dispatchKeyEvent(event);
+        }
         if (handleSettingsKey(event)) return true;
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
@@ -1802,6 +1803,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onBackPressed() {
+        if (controlCenter != null) controlCenter.close();
         // Home screen: Back goes nowhere.
     }
 
@@ -3155,7 +3157,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int width = Math.max(anchor.getWidth(), (int) (150 * density));
         final PopupWindow popup = glassPopup(panel, width);
 
-        populateInputRows(rows, popup, coocaa);
+        populateInputRows(rows, action -> { popup.dismiss(); action.run(); }, coocaa);
         if (rows.getChildCount() == 0) {
             Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
             return;
@@ -3171,43 +3173,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void showControlCenter() {
-        if (controlCenter != null && controlCenter.popup.isShowing()) {
+        if (controlCenter != null && controlCenter.isShowing()) {
             controlCenter.close();
             return;
         }
         if (openPopup != null) openPopup.dismiss();
         updateInputsButton();
         controlCenter = new ControlCenter(this, findViewById(R.id.btnSettings), dashboardHasInputs, animations, reducedMotion, vpnApp);
-        openPopup = controlCenter.popup;
         controlCenter.show();
     }
 
     void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
         if (controlCenter == center) controlCenter = null;
-        if (openPopup == center.popup) openPopup = null;
         if (returnToGear) {
-            controlFocusPending = true;
             View gear = findViewById(R.id.btnSettings);
             gear.requestFocusFromTouch();
-            gear.post(() -> {
-                if (controlFocusPending && hasWindowFocus()) {
-                    controlFocusPending = false;
-                    gear.requestFocus();
-                }
-            });
+            // The panel now shares Home's window: settle the selected button in this same frame,
+            // without a second focus/scale change after the closing header has disappeared.
+            gear.animate().cancel();
+            gear.setScaleX(advancedEffects ? 1.04f : 1f);
+            gear.setScaleY(advancedEffects ? 1.04f : 1f);
         }
     }
 
     void controlOpen(Intent intent) { open(intent); }
 
-    void controlInputRows(LinearLayout rows, PopupWindow popup) {
-        populateInputRows(rows, popup, coocaaSources ? CoocaaSources.list(this) : Collections.emptyList());
+    void controlInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate) {
+        populateInputRows(rows, activate, coocaaSources ? CoocaaSources.list(this) : Collections.emptyList());
         styleSourcePicker(rows, rows);
         rows.setBackground(null);
         rows.setPadding(0, 0, 0, 0);
     }
 
-    private void populateInputRows(LinearLayout rows, PopupWindow popup, List<CoocaaSources.Source> coocaa) {
+    private void populateInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate, List<CoocaaSources.Source> coocaa) {
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         boolean sawNonHdmi = false;
         String tunerId = null;
@@ -3300,7 +3298,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                                 && tim.getInputState(info.getId()) == TvInputManager.INPUT_STATE_CONNECTED) {
                             state = TvInputManager.INPUT_STATE_CONNECTED;
                         }
-                        addInputRow(rows, popup, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
+                        addInputRow(rows, activate, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
                     }
                     continue;
                 }
@@ -3310,7 +3308,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // Analog AV jacks have no hotplug detection, and some TVs report them as always connected
                 // (TCL Smart TV Pro G03 says "Connected" with nothing plugged in), so AV rows show no state.
                 int state = !hdmi || hdmiStateBogus ? -1 : tim.getInputState(id);
-                addInputRow(rows, popup, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
+                addInputRow(rows, activate, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
                         () -> openInput(id));
             }
         }
@@ -3319,7 +3317,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             for (CoocaaSources.Source s : coocaa) {
                 int icon = "HDMI".equals(s.name) ? R.drawable.ic_input
                         : "VOD".equals(s.name) ? R.drawable.ic_livetv : R.drawable.ic_av;
-                addInputRow(rows, popup, icon, s.label, -1, () -> {
+                addInputRow(rows, activate, icon, s.label, -1, () -> {
                     if (!CoocaaSources.open(this, s)) {
                         Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
                     }
@@ -3328,7 +3326,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         // Nothing to list where there is no TvInputManager: the TV's own source panel switches inputs.
         if (rows.getChildCount() == 0 && !sourcePanelService.isEmpty()) {
-            addInputRow(rows, popup, R.drawable.ic_input, getString(R.string.inputs), -1, this::openSourcePanel);
+            addInputRow(rows, activate, R.drawable.ic_input, getString(R.string.inputs), -1, this::openSourcePanel);
         }
         Intent liveTv = liveTvIntent();
         if (liveTv != null && tunerId != null) {
@@ -3351,7 +3349,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (liveTv != null) {
             if (rows.getChildCount() > 0) addSeparator(rows);
             final Intent liveTvIntent = liveTv;
-            addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
+            addInputRow(rows, activate, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
         }
     }
 
@@ -3427,6 +3425,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addInputRow(LinearLayout rows, PopupWindow popup, int iconRes, String title, int state, Runnable action) {
+        addInputRow(rows, next -> { popup.dismiss(); next.run(); }, iconRes, title, state, action);
+    }
+
+    private void addInputRow(LinearLayout rows, java.util.function.Consumer<Runnable> activate,
+                             int iconRes, String title, int state, Runnable action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(iconRes);
         ((TextView) row.findViewById(R.id.title)).setText(title);
@@ -3444,10 +3447,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             status.setVisibility(View.GONE);
             dot.setVisibility(View.GONE);
         }
-        row.setOnClickListener(v -> {
-            if (controlCenter != null && popup == controlCenter.popup) controlCenter.closeThen(action);
-            else { popup.dismiss(); action.run(); }
-        });
+        row.setOnClickListener(v -> activate.accept(action));
         rows.addView(row);
     }
 
@@ -3603,7 +3603,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private void showCardPrompt() {
         if (!moduleCards || !tilesReady || promptsPaused || cardPrompt != null || !hasWindowFocus() || isFinishing()
-                || reordering) return;
+                || reordering || controlCenter != null) return;
         if (cards.isEmpty() || !CardFeature.working()) return;
         CardFeature.run(() -> {
             showCardPromptNow();
