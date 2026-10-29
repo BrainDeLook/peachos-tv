@@ -38,9 +38,10 @@ public final class AppTile extends FrameLayout {
         private final Path[] bands = {new Path(), new Path(), new Path()};
         private final Paint[] light = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
         private static final int[] STRENGTH = {45, 30, 16};
-        private final float density;
-        Edge(float density) {
-            this.density = density;
+        private final float density, fixedRadius;
+        Edge(float density) { this(density, 0); }
+        Edge(float density, float fixedRadius) {
+            this.density = density; this.fixedRadius = fixedRadius;
             float[] widths = {1.2f, 2.4f, 4.8f};
             for (int i = 0; i < light.length; i++) {
                 light[i].setStyle(Paint.Style.STROKE);
@@ -49,7 +50,7 @@ public final class AppTile extends FrameLayout {
             }
         }
         @Override protected void onBoundsChange(Rect b) {
-            float radius = AppAdapter.cornerRadius(b.width(), density);
+            float radius = fixedRadius > 0 ? fixedRadius : AppAdapter.cornerRadius(b.width(), density);
             float[] insets = {.6f, 1.8f, 3f};
             Shader illumination = new LinearGradient(b.left, b.top, b.right, b.bottom,
                     new int[]{0x20ffffff, 0x06ffffff, 0x00ffffff, 0x12ffffff},

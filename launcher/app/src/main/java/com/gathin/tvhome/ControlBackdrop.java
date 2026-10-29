@@ -20,7 +20,8 @@ final class ControlBackdrop extends Drawable {
     private final float density, radius, screenScale;
     private final boolean hasBackdrop;
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG), rim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final AppTile.Edge edge;
     private final Paint focus = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
     private final Path mask = new Path();
@@ -34,8 +35,7 @@ final class ControlBackdrop extends Drawable {
         hasBackdrop = backdrop != null;
         if (hasBackdrop) background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
         else background.setColor(0xff29262f);
-        rim.setStyle(Paint.Style.STROKE); rim.setStrokeWidth(.4f * density);
-        rim.setColor(0x1cffffff);
+        edge = new AppTile.Edge(density, radius);
         tint.setColor(tone);
         focus.setColor(0x20ffffff);
     }
@@ -104,6 +104,7 @@ final class ControlBackdrop extends Drawable {
     @Override protected void onBoundsChange(Rect area) {
         bounds.set(area); bounds.inset(density, density);
         ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
+        edge.setBounds(area);
     }
     @Override public void draw(Canvas canvas) {
         if (bounds.isEmpty()) return;
@@ -116,9 +117,9 @@ final class ControlBackdrop extends Drawable {
         canvas.drawPath(mask, background);
         canvas.drawPath(mask, tint);
         if (focused) canvas.drawPath(mask, focus);
-        canvas.drawPath(mask, rim);
+        if (focused) edge.draw(canvas);
     }
-    @Override public void setAlpha(int value) { background.setAlpha(value); tint.setAlpha(value); rim.setAlpha(value); focus.setAlpha(value); invalidateSelf(); }
+    @Override public void setAlpha(int value) { background.setAlpha(value); tint.setAlpha(value); edge.setAlpha(value); focus.setAlpha(value); invalidateSelf(); }
     @Override public void setColorFilter(ColorFilter value) { background.setColorFilter(value); invalidateSelf(); }
     @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
 }

@@ -62,6 +62,7 @@ final class ControlCenter {
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>());
     private String selected = "";
+    private View selectedTab;
     private TextView overviewNetwork, networkStatus, vpnStatus;
     private final ConnectivityManager connectivity;
 
@@ -99,6 +100,19 @@ final class ControlCenter {
         }
 
         root = new FrameLayout(host) {
+            @Override public View focusSearch(View focused, int direction) {
+                View next = super.focusSearch(focused, direction);
+                if (direction == View.FOCUS_UP && body.hasFocus()) {
+                    View candidate = next;
+                    while (candidate != null && candidate != body) {
+                        android.view.ViewParent parent = candidate.getParent();
+                        candidate = parent instanceof View ? (View) parent : null;
+                    }
+                    // Leaving the page upwards returns to its own tab, regardless of button width.
+                    if (candidate != body) return selectedTab;
+                }
+                return next;
+            }
             @Override public boolean dispatchKeyEvent(KeyEvent event) {
                 if (event.getKeyCode() == KeyEvent.KEYCODE_BACK || event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE) {
                     if (event.getAction() == KeyEvent.ACTION_UP) close();
@@ -117,7 +131,6 @@ final class ControlCenter {
         panel.setOnClickListener(v -> { });
         panel.setFocusable(false);
         panel.setPadding(dp(10), dp(10), dp(10), dp(10));
-        panel.setBackground(material(panel, 28));
         FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(dp(244), -2, Gravity.TOP | Gravity.END);
         panelLp.topMargin = dp(16); panelLp.setMarginEnd(dp(22));
         root.addView(panel, panelLp);
@@ -237,15 +250,15 @@ final class ControlCenter {
     private void addTab(String key, int icon, int title) {
         ImageView tab = new ImageView(host);
         tab.setId(View.generateViewId()); tab.setImageResource(icon); tab.setImageTintList(new android.content.res.ColorStateList(
-                new int[][]{new int[]{android.R.attr.state_selected}, new int[]{}},
-                new int[]{0xff29272d, 0xcfffffff}));
+                new int[][]{new int[]{android.R.attr.state_focused}, new int[]{android.R.attr.state_selected}, new int[]{}},
+                new int[]{0xff29272d, 0xe6ffffff, 0xbfffffff}));
         tab.setPadding(dp(6), dp(6), dp(6), dp(6));
         tab.setContentDescription(host.getString(title)); tab.setFocusable(true); tab.setClickable(true);
         StateListDrawable bg = new StateListDrawable();
-        GradientDrawable active = new GradientDrawable(); active.setShape(GradientDrawable.OVAL); active.setColor(0xf2ffffff);
-        bg.addState(new int[]{android.R.attr.state_selected}, active);
-        GradientDrawable focused = new GradientDrawable(); focused.setShape(GradientDrawable.OVAL); focused.setColor(0x30ffffff);
+        GradientDrawable focused = new GradientDrawable(); focused.setShape(GradientDrawable.OVAL); focused.setColor(0xf2ffffff);
         bg.addState(new int[]{android.R.attr.state_focused}, focused);
+        GradientDrawable active = new GradientDrawable(); active.setShape(GradientDrawable.OVAL); active.setColor(0x35ffffff);
+        bg.addState(new int[]{android.R.attr.state_selected}, active);
         bg.addState(new int[]{}, new ColorDrawable(Color.TRANSPARENT));
         tab.setBackground(bg); tab.setTag(key);
         tabs.addView(tab, new LinearLayout.LayoutParams(dp(28), dp(28))); tabViews.add(tab);
@@ -260,7 +273,11 @@ final class ControlCenter {
     private void select(String page) {
         if (page.equals(selected)) return;
         selected = page;
-        for (View tab : tabViews) tab.setSelected(page.equals(tab.getTag()));
+        for (View tab : tabViews) {
+            boolean active = page.equals(tab.getTag());
+            tab.setSelected(active);
+            if (active) selectedTab = tab;
+        }
         overviewNetwork = null; networkStatus = null; vpnStatus = null;
         body.removeAllViews();
         LinearLayout column = column(); body.addView(column, new FrameLayout.LayoutParams(-1, -2));
@@ -423,8 +440,7 @@ final class ControlCenter {
     }
 
     private Drawable material(View tile, float radius) {
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale,
-                tile == panel ? 0xa5222029 : 0x70322e36);
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x70322e36);
     }
 
     private TextView text(String value, float size, int color) {
