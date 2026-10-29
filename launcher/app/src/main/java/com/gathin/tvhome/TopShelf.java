@@ -46,6 +46,9 @@ final class TopShelf {
     private final SpringAnimation headingSpring;
     private float headingTarget = Float.NaN;
     private final HorizontalScrollView scroll;
+    private final SpringAnimation scrollSpring;
+    private int scrollTarget;
+    private boolean rowFocused;
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
     private final android.graphics.Typeface bodyFace;
@@ -146,7 +149,16 @@ final class TopShelf {
         headingSpring.setSpring(new SpringForce().setStiffness(520f).setDampingRatio(.62f));
         headingSpring.setMinimumVisibleChange(.25f);
         panel.addView(heading);
-        scroll = new HorizontalScrollView(activity);
+        scroll = new HorizontalScrollView(activity) {
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+                // One owner of focus scrolling: revealSelected() supplies the animated safe viewport.
+                // Suppress ScrollView's competing immediate focus/layout correction.
+                return 0;
+            }
+        };
+        scrollSpring = new SpringAnimation(scroll, SpringAnimation.SCROLL_X);
+        scrollSpring.setSpring(new SpringForce().setStiffness(700f).setDampingRatio(1f));
+        scrollSpring.setMinimumVisibleChange(1f);
         scroll.setHorizontalScrollBarEnabled(false); scroll.setClipToPadding(false);
         scroll.forceHasOverlappingRendering(false);
         // Focus zoom extends above the inner cards row into the scroll view's existing padding.
@@ -161,7 +173,10 @@ final class TopShelf {
         cards.forceHasOverlappingRendering(false);
         // Content has an initial inset; the viewport itself reaches both physical screen edges.
         cards.setPadding(dp(40), 0, dp(40), 0);
-        cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> scheduleVisible());
+        cards.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            scheduleVisible();
+            if (rowFocused) revealSelected();
+        });
         scroll.addView(cards);
         LinearLayout.LayoutParams scrollLayout = new LinearLayout.LayoutParams(-1, -2);
         scrollLayout.topMargin = -dp(6);
@@ -284,6 +299,7 @@ final class TopShelf {
         }
         heading.setText(ShelfSelection.AUTO.equals(source) ? label : section);
         headingSpring.cancel(); headingTarget = Float.NaN;
+        scrollSpring.cancel(); scrollTarget = 0; rowFocused = false;
         cards.removeAllViews(); targets.clear(); bindings.clear(); selected = 0;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
@@ -339,15 +355,16 @@ final class TopShelf {
             int index = targets.size() - 1;
             final int[] navigationKey = {-1};
             tile.setOnFocusChangeListener((v, focus) -> {
+                rowFocused = focus;
                 poster.animate().scaleX(focus ? 1.045f : 1f).scaleY(focus ? 1.045f : 1f)
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xf2ffffff : 0xb3ffffff);
                 title.animate().alpha(focus ? 1f : 0f).setDuration(140).start();
                 if (focus) {
                     selected = index;
-                    position();
-                    scroll.smoothScrollTo(Math.max(0, tile.getLeft() - dp(40)), 0);
+                    revealSelected();
                 }
+                position();
             });
             tile.setOnKeyListener((v, key, event) -> {
                 if (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_BACK) {
@@ -400,6 +417,23 @@ final class TopShelf {
     boolean hasFocus() { return panel.hasFocus(); }
     boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
     boolean coversBackdrop() { return dim.isShown() && dim.getAlpha() == 1f; }
+    private void revealSelected() {
+        if (bindings.isEmpty() || scroll.getWidth() == 0 || cards.getWidth() == 0) return;
+        Binding binding = bindings.get(selected);
+        // Include the artwork's existing focus zoom, including wide images that exceed the slot slightly.
+        int zoom = Math.max(0, Math.round(binding.image.getLayoutParams().width * .0225f) - dp(3));
+        int viewport = scrollSpring.isRunning() ? scrollTarget : scroll.getScrollX();
+        int target = ShelfGeometry.revealScroll(viewport, scroll.getWidth(), cards.getWidth(),
+                binding.tile.getLeft() - zoom, binding.tile.getRight() + zoom, dp(40));
+        if (scrollSpring.isRunning() && target == scrollTarget) return;
+        scrollTarget = target;
+        if (!animateRows) scroll.scrollTo(target, 0);
+        else if (target != scroll.getScrollX() || scrollSpring.isRunning()) {
+            scrollSpring.setMinValue(0);
+            scrollSpring.setMaxValue(Math.max(0, cards.getWidth() - scroll.getWidth()));
+            scrollSpring.animateToFinalPosition(target);
+        }
+    }
     private void position() {
         // Keep a calm gap above the dock, including room for a focused poster's caption and zoom.
         if (panel.getVisibility() != View.VISIBLE) return;
@@ -408,7 +442,7 @@ final class TopShelf {
         // Follow the selected artwork, including an aspect corrected after decoding.
         FrameLayout.LayoutParams artwork = (FrameLayout.LayoutParams) bindings.get(selected).image.getLayoutParams();
         // Leave a small gap for the lower rebound instead of letting the label hit the artwork.
-        float offset = artwork.topMargin - dp(7);
+        float offset = artwork.topMargin - dp(rowFocused ? 10 : 7);
         if (headingTarget == offset) return;
         boolean firstPosition = Float.isNaN(headingTarget);
         headingTarget = offset;
@@ -447,6 +481,7 @@ final class TopShelf {
 
     void hide() {
         if (suspended) return;
+        scrollSpring.cancel(); rowFocused = false;
         headingSpring.cancel(); headingTarget = Float.NaN;
         suspended = true; generation++;
         panel.animate().cancel(); rowExiting = false;
@@ -479,6 +514,7 @@ final class TopShelf {
         }
     }
     private void clear() {
+        scrollSpring.cancel(); rowFocused = false;
         headingSpring.cancel(); headingTarget = Float.NaN;
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;

@@ -18,5 +18,12 @@ final class ShelfGeometry {
         int width = Math.max(1, Math.min(maxWidth, Math.round(rowHeight * ratio)));
         return new int[]{width, Math.max(1, Math.round(width / ratio))};
     }
+    /** Keep visible cards stationary; reveal only the part crossing the viewport's safe edge. */
+    static int revealScroll(int scrollX, int viewportWidth, int contentWidth, int left, int right, int inset) {
+        int target = scrollX;
+        if (left < scrollX + inset) target = left - inset;
+        else if (right > scrollX + viewportWidth - inset) target = right - viewportWidth + inset;
+        return Math.max(0, Math.min(contentWidth - viewportWidth, target));
+    }
     private ShelfGeometry() { }
 }
