@@ -3,8 +3,11 @@ package com.gathin.tvhome;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -90,15 +93,27 @@ final class TopShelf {
         images = new ShelfImages(activity);
         bodyFace = activity.getResources().getFont(R.font.inter_regular);
         dim = new View(activity);
-        // A quiet, opaque shelf backdrop replaces app metadata without live blur or extra buffers.
+        // Flatten the static gradients once: scrolling and fades then draw one small texture.
+        android.util.DisplayMetrics screen = activity.getResources().getDisplayMetrics();
+        int backdropWidth = 320;
+        int backdropHeight = Math.round(backdropWidth * screen.heightPixels / (float) screen.widthPixels);
+        Bitmap backdrop = Bitmap.createBitmap(backdropWidth, backdropHeight, Bitmap.Config.ARGB_8888);
+        Canvas backdropCanvas = new Canvas(backdrop);
         GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{0xff2a232a, 0xff262027, 0xff18212d, 0xff20181b});
+        base.setBounds(0, 0, backdropWidth, backdropHeight);
+        base.draw(backdropCanvas);
         GradientDrawable warmth = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{0x2a7d3218, 0x007d3218});
         warmth.setGradientType(GradientDrawable.RADIAL_GRADIENT);
         warmth.setGradientCenter(.5f, .14f);
-        warmth.setGradientRadius(activity.getResources().getDisplayMetrics().widthPixels * .48f);
-        dim.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{base, warmth}));
+        warmth.setGradientRadius(backdropWidth * .48f);
+        warmth.setBounds(0, 0, backdropWidth, backdropHeight);
+        warmth.draw(backdropCanvas);
+        BitmapDrawable backdropDrawable = new BitmapDrawable(activity.getResources(), backdrop);
+        backdropDrawable.setGravity(Gravity.FILL);
+        backdropDrawable.setFilterBitmap(true);
+        dim.setBackground(backdropDrawable);
         dim.setVisibility(View.GONE);
         dim.setAlpha(0f);
         dim.forceHasOverlappingRendering(false);
@@ -354,6 +369,7 @@ final class TopShelf {
     }
     boolean hasFocus() { return panel.hasFocus(); }
     boolean replacesHero() { return (cardMode || rowExiting) && !suspended; }
+    boolean coversBackdrop() { return dim.isShown() && dim.getAlpha() == 1f; }
     private void position() {
         // Keep a calm gap above the dock, including room for a focused poster's caption and zoom.
         if (panel.getVisibility() != View.VISIBLE) return;
@@ -373,8 +389,15 @@ final class TopShelf {
         if (dimTarget == target) return;
         dimTarget = target;
         dim.animate().cancel();
+        if (!animateRows) {
+            dim.setAlpha(target);
+            dim.setVisibility(enabled ? View.VISIBLE : View.INVISIBLE);
+            return;
+        }
         dim.setVisibility(View.VISIBLE);
-        dim.animate().alpha(target).setDuration(320).start();
+        dim.animate().alpha(target).setDuration(320).withEndAction(() -> {
+            if (target == 0f && dimTarget == target) dim.setVisibility(View.INVISIBLE);
+        }).start();
     }
     private int topClearance() {
         View buttons = activity.findViewById(R.id.topButtons);

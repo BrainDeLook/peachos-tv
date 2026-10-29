@@ -1802,8 +1802,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             hero.animate().cancel(); hero.setAlpha(0f);
             heroShown = false;
             if (ambientGlow) {
-                if (animations && !reducedMotion) transitionAmbient(color);
-                else { setAmbient(color); ambient.setAlpha(1f); }
+                if (animations && !reducedMotion && !topShelf.coversBackdrop()) transitionAmbient(color);
+                else {
+                    stopAmbientAnimation(); ambient.animate().cancel();
+                    setAmbient(color); ambient.setAlpha(1f);
+                }
             }
             return;
         }
@@ -2078,6 +2081,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * name above the dock does not show (every grid tile has its name underneath).
      */
     private void showGlowOnly(int position) {
+        boolean covered = topShelf.coversBackdrop();
         topShelf.hide();
         metadataBackdrop.hide();
         int color = adapter.ambientColorAt(position);
@@ -2089,7 +2093,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroArt.setAlpha(0f);
         heroShown = false;
         if (!ambientGlow) return;
-        if (!animations || reducedMotion) {
+        if (!animations || reducedMotion || covered) {
+            // The opaque shelf conceals this change. Its existing fade reveals the final glow smoothly,
+            // without also repainting a second full-screen colour transition underneath the scrolling grid.
             setAmbient(color);
             ambient.setAlpha(1f);
             return;
