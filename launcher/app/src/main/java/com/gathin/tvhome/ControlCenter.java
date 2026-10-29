@@ -64,6 +64,7 @@ final class ControlCenter {
     private String selected = "";
     private View selectedTab;
     private TextView overviewNetwork, networkStatus, vpnStatus;
+    private ImageView overviewNetworkIcon, networkStatusIcon;
     private final ConnectivityManager connectivity;
 
     private static final FloatPropertyCompat<View> OPEN_SCALE = new FloatPropertyCompat<View>("controlScale") {
@@ -279,6 +280,7 @@ final class ControlCenter {
             if (active) selectedTab = tab;
         }
         overviewNetwork = null; networkStatus = null; vpnStatus = null;
+        overviewNetworkIcon = null; networkStatusIcon = null;
         body.removeAllViews();
         LinearLayout column = column(); body.addView(column, new FrameLayout.LayoutParams(-1, -2));
         if ("inputs".equals(page)) {
@@ -294,6 +296,7 @@ final class ControlCenter {
         }
         if ("network".equals(page)) {
             networkStatus = info(column, R.drawable.ic_wifi, R.string.quick_network);
+            networkStatusIcon = (ImageView) ((LinearLayout) networkStatus.getParent()).getChildAt(0);
             row(column, R.drawable.ic_wifi, R.string.cc_network_settings,
                     () -> launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS)));
             Intent vpn = new Intent(Settings.ACTION_VPN_SETTINGS);
@@ -323,8 +326,9 @@ final class ControlCenter {
         LinearLayout right = column(); addHalf(top, right, true);
         LinearLayout network = tile(R.drawable.ic_wifi, host.getString(R.string.quick_network), false, () -> selectAndFocus("network"));
         overviewNetwork = (TextView) network.getChildAt(1);
+        overviewNetworkIcon = (ImageView) network.getChildAt(0);
         right.addView(network, new LinearLayout.LayoutParams(-1, dp(48)));
-        LinearLayout settings = tile(R.drawable.ic_settings, host.getString(R.string.settings), false,
+        LinearLayout settings = tile(R.drawable.cc_settings, host.getString(R.string.settings), false,
                 () -> launch(SystemSettings.intent(host, Settings.ACTION_SETTINGS)));
         LinearLayout.LayoutParams settingsLp = new LinearLayout.LayoutParams(-1, dp(48)); settingsLp.topMargin = dp(8);
         right.addView(settings, settingsLp);
@@ -353,19 +357,31 @@ final class ControlCenter {
 
     void refreshNetwork() {
         String transport = host.getString(R.string.not_connected);
-        boolean online = false;
+        boolean online = false, ethernet = false;
         if (connectivity != null) for (Network network : connectivity.getAllNetworks()) {
             NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
             if (caps == null || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
             if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) || caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                transport = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ? "Ethernet" : "Wi-Fi";
+                ethernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET);
+                transport = ethernet ? "Ethernet" : "Wi-Fi";
                 online = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
                 break;
             }
         }
         if (overviewNetwork != null) overviewNetwork.setText(transport);
+        if (overviewNetworkIcon != null) transportIcon(overviewNetworkIcon, ethernet, 20);
+        if (networkStatusIcon != null) transportIcon(networkStatusIcon, ethernet, 36);
         if (networkStatus != null) networkStatus.setText(host.getString(R.string.cc_network_status, transport, host.getString(online ? R.string.cc_online : R.string.cc_no_internet)));
         if (vpnStatus != null) vpnStatus.setText(host.getString(hasVpn() ? R.string.cc_vpn_connected : R.string.cc_vpn_disconnected));
+    }
+
+    private void transportIcon(ImageView image, boolean ethernet, int heightDp) {
+        image.setImageResource(ethernet ? R.drawable.cc_ethernet : R.drawable.ic_wifi);
+        int width = dp(ethernet ? heightDp * 28f / 24f : heightDp);
+        if (image.getLayoutParams().width != width) {
+            image.getLayoutParams().width = width;
+            image.requestLayout();
+        }
     }
 
     private boolean hasVpn() {
@@ -393,6 +409,8 @@ final class ControlCenter {
     private TextView info(LinearLayout column, int icon, int title) {
         LinearLayout card = tile(icon, host.getString(title), true, null);
         card.setFocusable(false); card.setClickable(false);
+        View image = card.getChildAt(0);
+        image.getLayoutParams().width = image.getLayoutParams().height = dp(36);
         column.addView(card, new LinearLayout.LayoutParams(-1, dp(96)));
         return (TextView) card.getChildAt(1);
     }
@@ -410,12 +428,12 @@ final class ControlCenter {
         tile.setId(View.generateViewId()); tile.setContentDescription(label);
         ImageView image = new ImageView(host); image.setImageResource(icon);
         image.setImageTintList(android.content.res.ColorStateList.valueOf(icon == R.drawable.ic_wifi ? 0xff58b2ff : 0xe6ffffff));
-        tile.addView(image, new LinearLayout.LayoutParams(dp(large ? 42 : 20), dp(large ? 42 : 20)));
-        TextView title = text(label, large ? 12 : 11, 0xe6ffffff);
+        tile.addView(image, new LinearLayout.LayoutParams(dp(large ? 64 : 20), dp(large ? 64 : 20)));
+        TextView title = text(label, 11, 0xe6ffffff);
         title.setGravity(Gravity.CENTER); title.setMaxLines(large ? 2 : 1); title.setEllipsize(TextUtils.TruncateAt.END);
         if (!large) title.setAutoSizeTextTypeUniformWithConfiguration(9, 11, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(large ? -1 : -2, -2);
-        if (large) titleLp.topMargin = dp(8); else titleLp.setMarginStart(dp(5));
+        if (large) titleLp.topMargin = dp(4); else titleLp.setMarginStart(dp(5));
         tile.addView(title, titleLp);
         if (action != null) tile.setOnClickListener(v -> action.run());
         tile.setOnFocusChangeListener((v, focus) -> {
@@ -428,11 +446,13 @@ final class ControlCenter {
 
     private void roundShortcut(LinearLayout parent, int icon, int label, Runnable action) {
         FrameLayout slot = new FrameLayout(host);
-        parent.addView(slot, new LinearLayout.LayoutParams(0, -1, 1));
+        LinearLayout.LayoutParams slotLp = new LinearLayout.LayoutParams(dp(48), -1);
+        if (parent.getChildCount() > 0) slotLp.setMarginStart(dp(8));
+        parent.addView(slot, slotLp);
         ImageView button = new ImageView(host); button.setImageResource(icon);
         button.setContentDescription(host.getString(label));
         button.setImageTintList(android.content.res.ColorStateList.valueOf(0xe6ffffff));
-        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setPadding(dp(13), dp(13), dp(13), dp(13));
         button.setFocusable(true); button.setClickable(true); button.setId(View.generateViewId());
         button.setBackground(material(button, 24));
         slot.addView(button, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
@@ -440,7 +460,7 @@ final class ControlCenter {
     }
 
     private Drawable material(View tile, float radius) {
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x70322e36);
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x4d211d25);
     }
 
     private TextView text(String value, float size, int color) {
@@ -454,7 +474,7 @@ final class ControlCenter {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1); if (gap) lp.setMarginStart(dp(8)); parent.addView(child, lp);
     }
     private void addRow(LinearLayout parent, View child, int height) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(height)); lp.topMargin = dp(6); parent.addView(child, lp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(height)); lp.topMargin = dp(7); parent.addView(child, lp);
     }
     private int dp(float value) { return Math.round(value * density); }
 }

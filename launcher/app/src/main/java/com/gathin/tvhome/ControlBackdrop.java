@@ -37,7 +37,7 @@ final class ControlBackdrop extends Drawable {
         else background.setColor(0xff29262f);
         edge = new AppTile.Edge(density, radius);
         tint.setColor(tone);
-        focus.setColor(0x20ffffff);
+        focus.setColor(0x14ffffff);
     }
 
     static Bitmap capture(View content) {

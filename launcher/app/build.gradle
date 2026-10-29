@@ -11,8 +11,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 46
-        versionName '1.5.0-tabs-preview'
+        versionCode 47
+        versionName '1.5.0-controls-refine-preview'
     }
 
     buildTypes {
