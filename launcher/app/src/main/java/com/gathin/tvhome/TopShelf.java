@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -49,6 +50,7 @@ final class TopShelf {
     private final SpringAnimation scrollSpring;
     private int scrollTarget;
     private boolean rowFocused;
+    private final ViewTreeObserver.OnGlobalFocusChangeListener rowFocusChanged;
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
     private final android.graphics.Typeface bodyFace;
@@ -186,6 +188,15 @@ final class TopShelf {
         panel.addView(scroll, scrollLayout);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
         root.addView(panel, lp);
+        rowFocusChanged = (previous, current) -> {
+            // Global focus is delivered after both the old card loses focus and the new one gains it.
+            // A card-to-card move must never briefly remove the row's heading lift.
+            boolean focused = scroll.hasFocus();
+            if (rowFocused == focused) return;
+            rowFocused = focused;
+            position();
+        };
+        panel.getViewTreeObserver().addOnGlobalFocusChangeListener(rowFocusChanged);
     }
 
     void resume() {
@@ -358,7 +369,6 @@ final class TopShelf {
             int index = targets.size() - 1;
             final int[] navigationKey = {-1};
             tile.setOnFocusChangeListener((v, focus) -> {
-                rowFocused = focus;
                 poster.animate().scaleX(focus ? 1.045f : 1f).scaleY(focus ? 1.045f : 1f)
                         .translationZ(focus ? dp(8) : 0).setDuration(140).start();
                 title.setTextColor(focus ? 0xf2ffffff : 0xb3ffffff);
@@ -522,7 +532,10 @@ final class TopShelf {
         lists.clear();
         images.stats();
     }
-    void close() { pause(); downloads.shutdownNow(); images.trim(); }
+    void close() {
+        panel.getViewTreeObserver().removeOnGlobalFocusChangeListener(rowFocusChanged);
+        pause(); downloads.shutdownNow(); images.trim();
+    }
     void trim(int level) {
         if (MemoryTrimPolicy.shouldRelease(level, false)) {
             images.trim();
