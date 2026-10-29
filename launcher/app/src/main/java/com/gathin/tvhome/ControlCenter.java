@@ -39,11 +39,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Compact controls with one shared frosted backdrop and a scale-only opening spring. */
+/** Compact controls with one shared frosted backdrop and a reversible capsule-to-header transition. */
 final class ControlCenter {
     final PopupWindow popup;
     private final MainActivity host;
     private final View anchor;
+    private final View capsule, sourceClock;
+    private final TextClock clock;
     private final FrameLayout root;
     private final View scrim;
     private final LinearLayout panel, tabs;
@@ -56,6 +58,9 @@ final class ControlCenter {
     private final List<View> tabViews = new ArrayList<>();
     private final Map<String, Intent> vpnApps = new LinkedHashMap<>();
     private SpringAnimation spring;
+    private float reveal, clockDx, clockDy, gearDx, gearDy, gearScale;
+    private View overviewTab;
+    private boolean revealed;
     private volatile boolean closing;
     private boolean dismissReady, returnToGear;
     private Runnable afterClose;
@@ -67,19 +72,23 @@ final class ControlCenter {
     private ImageView overviewNetworkIcon, networkStatusIcon;
     private final ConnectivityManager connectivity;
 
-    private static final FloatPropertyCompat<View> OPEN_SCALE = new FloatPropertyCompat<View>("controlScale") {
-        @Override public float getValue(View view) { return view.getScaleX(); }
-        @Override public void setValue(View view, float value) { view.setScaleX(value); view.setScaleY(value); }
+    private static final FloatPropertyCompat<ControlCenter> REVEAL = new FloatPropertyCompat<ControlCenter>("controlReveal") {
+        @Override public float getValue(ControlCenter center) { return center.reveal; }
+        @Override public void setValue(ControlCenter center, float value) { center.applyReveal(value); }
     };
 
     ControlCenter(MainActivity host, View anchor, boolean inputs, boolean animate, boolean reduced, String vpnApp) {
         this.host = host; this.anchor = anchor; this.animate = animate; this.reduced = reduced;
+        capsule = host.findViewById(R.id.topButtons);
+        sourceClock = host.findViewById(R.id.compactClock);
         density = host.getResources().getDisplayMetrics().density;
         View content = host.findViewById(android.R.id.content);
         boolean glass = host.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true);
-        host.findViewById(R.id.topButtons).setVisibility(View.INVISIBLE);
+        capsule.setVisibility(View.INVISIBLE);
         long captureStart = android.os.SystemClock.elapsedRealtime();
         backdrop = glass ? ControlBackdrop.capture(content) : null;
+        // Exclude the capsule from the snapshot, but keep it on screen until the new header is ready.
+        capsule.setVisibility(View.VISIBLE);
         backdropScale = backdrop == null ? 1f : content.getWidth() / (float) backdrop.getWidth();
         android.util.Log.d("PeachControls", "Snapshot prepared in " + (android.os.SystemClock.elapsedRealtime() - captureStart) + "ms");
         regular = host.getResources().getFont(R.font.inter_regular);
@@ -137,10 +146,11 @@ final class ControlCenter {
         root.addView(panel, panelLp);
 
         LinearLayout header = new LinearLayout(host);
+        header.setClipChildren(false); header.setClipToPadding(false);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(4), 0, dp(2), 0);
         panel.addView(header, new LinearLayout.LayoutParams(-1, dp(30)));
-        TextClock clock = new TextClock(host);
+        clock = new TextClock(host);
         clock.setFormat12Hour("h:mm"); clock.setFormat24Hour("HH:mm");
         clock.setFontFeatureSettings("tnum");
         clock.setTypeface(medium); clock.setTextSize(12.5f); clock.setTextColor(0xbfffffff);
@@ -151,11 +161,13 @@ final class ControlCenter {
         header.addView(clock, new LinearLayout.LayoutParams(-2, dp(28)));
         header.addView(new View(host), new LinearLayout.LayoutParams(0, 1, 1));
         tabs = new LinearLayout(host); tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setClipChildren(false); tabs.setClipToPadding(false);
         header.addView(tabs);
-        addTab("overview", R.drawable.cc_controls, R.string.cc_title);
-        addTab("network", R.drawable.ic_wifi, R.string.quick_network);
-        if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
         if (hasVpn() || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
+        addTab("overview", R.drawable.cc_controls, R.string.cc_title);
+        overviewTab = tabViews.get(tabViews.size() - 1);
+        if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
+        addTab("network", R.drawable.ic_wifi, R.string.quick_network);
 
         final int maxBodyHeight = Math.min(dp(320), host.getResources().getDisplayMetrics().heightPixels - dp(96));
         ScrollView scroll = new ScrollView(host) {
@@ -181,8 +193,8 @@ final class ControlCenter {
         popup.setOnDismissListener(() -> {
             closing = true;
             if (spring != null) spring.cancel();
-            panel.animate().cancel(); scrim.animate().cancel();
-            host.findViewById(R.id.topButtons).setVisibility(View.VISIBLE);
+            sourceClock.setAlpha(1f); anchor.setAlpha(1f);
+            capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
             host.controlCenterDismissed(this, returnToGear);
             Runnable action = afterClose; afterClose = null;
             if (action != null) action.run();
@@ -191,27 +203,38 @@ final class ControlCenter {
     }
 
     void show() {
-        int[] origin = new int[2]; anchor.getLocationOnScreen(origin);
         panel.setAlpha(0f); scrim.setAlpha(0f);
         popup.showAtLocation(anchor, Gravity.TOP | Gravity.START, 0, 0);
-        host.findViewById(R.id.topButtons).setVisibility(View.INVISIBLE);
         Runnable reveal = () -> {
             if (!popup.isShowing() || closing) return;
-            int[] location = new int[2]; panel.getLocationOnScreen(location);
-            panel.setPivotX(origin[0] + anchor.getWidth() * .5f - location[0]);
-            panel.setPivotY(origin[1] + anchor.getHeight() * .5f - location[1]);
-            if (animate) {
-                panel.animate().alpha(1f).setDuration(reduced ? 90 : 130).start();
-                scrim.animate().alpha(1f).setDuration(reduced ? 90 : 180).start();
-                if (!reduced) {
-                    panel.setScaleX(.35f); panel.setScaleY(.35f);
-                    spring = new SpringAnimation(panel, OPEN_SCALE);
-                    spring.setSpring(new SpringForce(1f).setStiffness(700f).setDampingRatio(.66f));
-                    spring.setMinimumVisibleChange(.001f); spring.start();
-                }
+            int[] from = new int[2], to = new int[2];
+            sourceClock.getLocationOnScreen(from); clock.getLocationOnScreen(to);
+            clockDx = from[0] + sourceClock.getWidth() * .5f - to[0] - clock.getWidth() * .5f;
+            clockDy = from[1] + sourceClock.getHeight() * .5f - to[1] - clock.getHeight() * .5f;
+            anchor.getLocationOnScreen(from); overviewTab.getLocationOnScreen(to);
+            gearDx = from[0] + anchor.getWidth() * .5f - to[0] - overviewTab.getWidth() * .5f;
+            gearDy = from[1] + anchor.getHeight() * .5f - to[1] - overviewTab.getHeight() * .5f;
+            gearScale = anchor.getWidth() / (float) overviewTab.getWidth();
+            body.setPivotX(body.getWidth() * .5f); body.setPivotY(body.getHeight() * .5f);
+            revealed = true;
+            // Transfer the glyphs to the popup in the same frame, instead of crossfading two moving clocks.
+            sourceClock.setAlpha(0f); anchor.setAlpha(0f);
+            applyReveal(animate ? 0f : 1f);
+            panel.setAlpha(1f);
+            if (animate && !reduced) {
+                spring = new SpringAnimation(this, REVEAL);
+                spring.setSpring(new SpringForce(1f).setStiffness(700f).setDampingRatio(.78f));
+                spring.setMinimumVisibleChange(.001f);
+                spring.addEndListener((animation, canceled, value, velocity) -> {
+                    if (closing && !canceled) finishDismiss();
+                });
+                spring.start();
+            } else if (animate) {
+                // Reduced motion keeps only the short opacity transition, without separation or zoom.
+                panel.setAlpha(0f); applyReveal(1f);
+                panel.animate().alpha(1f).setDuration(100).start();
             }
-            if (!animate) { panel.setAlpha(1f); scrim.setAlpha(1f); }
-            tabViews.get(0).requestFocusFromTouch();
+            overviewTab.requestFocusFromTouch();
         };
         if (backdrop == null) panel.post(reveal);
         else GLASS_WORK.execute(() -> {
@@ -223,16 +246,35 @@ final class ControlCenter {
 
     void close() { closeThen(null); }
 
+    private void applyReveal(float value) {
+        reveal = value;
+        float visible = Math.max(0f, Math.min(1f, value));
+        float headerAlpha = Math.min(1f, visible * 4f);
+        capsule.setAlpha(1f - headerAlpha);
+        clock.setTranslationX(clockDx * (1f - value)); clock.setTranslationY(clockDy * (1f - value));
+        overviewTab.setTranslationX(gearDx * (1f - value)); overviewTab.setTranslationY(gearDy * (1f - value));
+        float scale = gearScale + (1f - gearScale) * value;
+        overviewTab.setScaleX(scale); overviewTab.setScaleY(scale);
+        float blocks = Math.max(0f, Math.min(1f, (visible - .12f) / .88f));
+        for (View tab : tabViews) if (tab != overviewTab) tab.setAlpha(blocks);
+        body.setAlpha(blocks);
+        body.setScaleX(.78f + .22f * value); body.setScaleY(.78f + .22f * value);
+        scrim.setAlpha(visible);
+    }
+
     void closeThen(Runnable action) {
         if (closing) return;
         closing = true; returnToGear = action == null; afterClose = action;
-        if (spring != null) spring.cancel();
-        panel.animate().cancel(); scrim.animate().cancel();
-        if (!animate || reduced) { finishDismiss(); return; }
-        scrim.animate().alpha(0f).setDuration(190).start();
-        panel.animate().alpha(0f).scaleX(.28f).scaleY(.28f).setDuration(210)
-                .setInterpolator(new android.view.animation.PathInterpolator(.3f, 0f, .65f, 1f))
-                .withEndAction(this::finishDismiss).start();
+        if (!revealed || !animate) { finishDismiss(); return; }
+        if (reduced) {
+            panel.animate().cancel();
+            capsule.setAlpha(1f);
+            panel.animate().alpha(0f).setDuration(100).withEndAction(this::finishDismiss).start();
+            return;
+        }
+        // Retarget the running spring: Back during opening preserves both position and velocity.
+        spring.getSpring().setStiffness(900f).setDampingRatio(1f);
+        spring.animateToFinalPosition(0f);
     }
 
     private void finishDismiss() {
@@ -244,7 +286,7 @@ final class ControlCenter {
         returnToGear = false; afterClose = null;
         closing = true;
         if (spring != null) spring.cancel();
-        panel.animate().cancel(); scrim.animate().cancel();
+        panel.animate().cancel();
         finishDismiss();
     }
 
