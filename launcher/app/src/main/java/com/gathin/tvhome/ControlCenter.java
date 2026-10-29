@@ -97,7 +97,7 @@ final class ControlCenter {
         capsule = host.findViewById(R.id.topButtons);
         sourceClock = host.findViewById(R.id.compactClock);
         density = host.getResources().getDisplayMetrics().density;
-        View content = host.findViewById(android.R.id.content);
+        View content = stage;
         boolean glass = host.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true);
         backdrop = glass ? ControlBackdrop.snapshot(content) : null;
         backdropScale = backdrop == null ? 1f : content.getWidth() / (float) backdrop.getWidth();
@@ -240,7 +240,7 @@ final class ControlCenter {
             overviewTab.requestFocusFromTouch();
         };
         if (backdrop != null) {
-            View content = host.findViewById(android.R.id.content);
+            View content = stage;
             int[] location = new int[2];
             content.getLocationInWindow(location);
             Rect source = new Rect(location[0], location[1],
