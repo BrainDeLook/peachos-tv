@@ -828,11 +828,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setBackgroundResource(R.drawable.compact_settings_bg);
         btnSettings.getLayoutParams().width = Math.round(24 * density);
         btnSettings.getLayoutParams().height = Math.round(24 * density);
-        ((LinearLayout.LayoutParams) btnSettings.getLayoutParams()).setMarginStart(Math.round(5 * density));
+        ((LinearLayout.LayoutParams) btnSettings.getLayoutParams()).setMarginStart(Math.round(4 * density));
         btnSettings.setPaddingRelative(Math.round(4 * density), 0, Math.round(4 * density), 0);
-        if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)) {
-            findViewById(R.id.topButtons).setBackground(new LiquidGlass(density, 18 * density));
-        }
         btnSettings.setContentDescription(getString(R.string.cc_title));
         btnSettings.setOnClickListener(v -> showControlCenter());
         btnSettings.setOnLongClickListener(v -> {

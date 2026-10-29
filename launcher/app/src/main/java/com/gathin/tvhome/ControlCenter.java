@@ -51,7 +51,8 @@ final class ControlCenter {
     private View homeFocus;
     private boolean showing;
     private final View anchor;
-    private final View capsule, sourceClock;
+    private final View capsule;
+    private final TextClock sourceClock;
     private final TextClock clock;
     private final FrameLayout root;
     private final View scrim;
@@ -162,12 +163,16 @@ final class ControlCenter {
         panel.addView(header, new LinearLayout.LayoutParams(-1, dp(30)));
         clock = new TextClock(host);
         clock.setFormat12Hour("h:mm"); clock.setFormat24Hour("HH:mm");
-        clock.setFontFeatureSettings("tnum");
-        clock.setTypeface(medium); clock.setTextSize(12.5f); clock.setTextColor(0xbfffffff);
+        // Both sides of the capsule handoff use the same glyph metrics and colour.
+        clock.setFontFeatureSettings(sourceClock.getFontFeatureSettings());
+        clock.setTypeface(sourceClock.getTypeface());
+        clock.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sourceClock.getTextSize());
+        clock.setTextColor(sourceClock.getTextColors());
+        clock.setLetterSpacing(sourceClock.getLetterSpacing());
         clock.setIncludeFontPadding(false);
         clock.setGravity(Gravity.CENTER);
         clock.setPadding(dp(9), 0, dp(9), 0);
-        clock.setBackground(material(clock, 14));
+        clock.setBackgroundResource(R.drawable.compact_clock_bg);
         header.addView(clock, new LinearLayout.LayoutParams(-2, dp(28)));
         header.addView(new View(host), new LinearLayout.LayoutParams(0, 1, 1));
         tabs = new LinearLayout(host); tabs.setGravity(Gravity.CENTER_VERTICAL);
