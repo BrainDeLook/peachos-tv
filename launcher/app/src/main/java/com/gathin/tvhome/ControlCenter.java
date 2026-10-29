@@ -379,7 +379,10 @@ final class ControlCenter {
         LinearLayout previous = pageContent;
         boolean crossfade = previous != null && previous.isLaidOut() && revealed && animate && !reduced && !closing;
         // A shorter destination must not clip the fading bottom rows of the previous page.
-        if (crossfade) body.setMinimumHeight(body.getHeight());
+        if (crossfade) {
+            body.setMinimumHeight(body.getHeight());
+            ControlBackdrop.freezePositions(previous);
+        }
         if (previous != null) previous.animate().cancel();
         body.removeAllViews();
         LinearLayout column = column(); pageContent = column;

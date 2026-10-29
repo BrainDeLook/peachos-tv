@@ -14,6 +14,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.view.View;
+import android.view.ViewGroup;
 
 /** One small, blurred launcher snapshot shared by all control tiles. Never captures each frame. */
 final class ControlBackdrop extends Drawable {
@@ -32,6 +33,7 @@ final class ControlBackdrop extends Drawable {
     private final Matrix matrix = new Matrix();
     private final int[] position = new int[2];
     private boolean focused;
+    private boolean positionFrozen;
     private int alpha = 255;
 
     ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone) {
@@ -49,6 +51,17 @@ final class ControlBackdrop extends Drawable {
         tint.setColor(tone);
         tintAlpha = tone >>> 24;
         focus.setColor(0x14ffffff);
+    }
+
+    /** Preserve the sampled screen region before a fading page moves into a visual overlay. */
+    static void freezePositions(View view) {
+        if (view.getBackground() instanceof ControlBackdrop material) {
+            view.getLocationOnScreen(material.position);
+            material.positionFrozen = true;
+        }
+        if (view instanceof ViewGroup group) {
+            for (int i = 0; i < group.getChildCount(); i++) freezePositions(group.getChildAt(i));
+        }
     }
 
     static Bitmap capture(View content) {
@@ -125,7 +138,7 @@ final class ControlBackdrop extends Drawable {
     @Override public void draw(Canvas canvas) {
         if (bounds.isEmpty()) return;
         if (hasBackdrop) {
-            tile.getLocationOnScreen(position);
+            if (!positionFrozen) tile.getLocationOnScreen(position);
             matrix.setScale(screenScale, screenScale);
             matrix.postTranslate(-position[0], -position[1]);
             background.getShader().setLocalMatrix(matrix);
