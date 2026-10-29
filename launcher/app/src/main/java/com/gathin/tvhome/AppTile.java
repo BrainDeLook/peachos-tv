@@ -42,7 +42,7 @@ public final class AppTile extends FrameLayout {
         private final Paint surfaceShade = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path[] bands = {new Path(), new Path(), new Path()};
         private final Paint[] light = {new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG), new Paint(Paint.ANTI_ALIAS_FLAG)};
-        private static final int[] STRENGTH = {45, 30, 16};
+        private static final int[] STRENGTH = {70, 18, 5};
         private final float density, fixedRadius;
         Edge(float density) { this(density, 0); }
         Edge(float density, float fixedRadius) {
@@ -60,7 +60,7 @@ public final class AppTile extends FrameLayout {
             // A wide soft light above the face, not a hard gloss stripe. Shaders are rebuilt only
             // on resize; focus fades the existing render node alongside its scale animation.
             RadialGradient topLight = new RadialGradient(0, 0, 1,
-                    new int[]{0x24ffffff, 0x14ffffff, 0x00ffffff},
+                    new int[]{0x46ffffff, 0x28ffffff, 0x00ffffff},
                     new float[]{0, .42f, 1}, Shader.TileMode.CLAMP);
             Matrix ellipse = new Matrix();
             ellipse.setScale(b.width() * .85f, b.height() * 1.10f);
@@ -68,15 +68,15 @@ public final class AppTile extends FrameLayout {
             topLight.setLocalMatrix(ellipse);
             surfaceLight.setShader(topLight);
             surfaceShade.setShader(new LinearGradient(0, b.top, 0, b.bottom,
-                    new int[]{0x00000000, 0x00000000, 0x0c000000},
+                    new int[]{0x00000000, 0x00000000, 0x10000000},
                     new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
-            float[] insets = {.6f, 1.8f, 3f};
             Shader illumination = new LinearGradient(b.left, b.top, b.right, b.bottom,
-                    new int[]{0x20ffffff, 0x06ffffff, 0x00ffffff, 0x12ffffff},
+                    new int[]{0x80ffffff, 0x18ffffff, 0x00ffffff, 0x2dffffff},
                     new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
             for (int i = 0; i < bands.length; i++) {
-                float inset = insets[i] * density;
-                ContinuousCorners.set(bands[i], b.left + inset, b.top + inset, b.right - inset, b.bottom - inset, radius - inset);
+                // Coincident strokes feather from the same silhouette; inset contours read
+                // as several separate borders instead of a single softly lit curved edge.
+                ContinuousCorners.set(bands[i], b.left, b.top, b.right, b.bottom, radius);
                 light[i].setShader(illumination);
             }
         }

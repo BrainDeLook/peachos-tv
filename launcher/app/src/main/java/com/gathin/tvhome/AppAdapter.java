@@ -1034,8 +1034,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 focusSpring = new SpringAnimation(card, FOCUS_ZOOM);
                 focusSpring.setSpring(new SpringForce(target));
                 focusSpring.setMinimumVisibleChange(.001f); // well below one screen pixel
-                focusSpring.addUpdateListener((animation, value, velocity) ->
-                        applyFocusTone((value - 1f) / (SELECTED_SCALE - 1f)));
+                focusSpring.addUpdateListener((animation, value, velocity) -> {
+                    applyFocusTone((value - 1f) / (SELECTED_SCALE - 1f));
+                    // ItemDecoration follows the actual zoom, including the outgoing end tile.
+                    if (itemView.getParent() instanceof RecyclerView)
+                        ((RecyclerView) itemView.getParent()).invalidate();
+                });
             }
             focusSpring.getSpring().setStiffness(focused ? 1500f : 1900f)
                     .setDampingRatio(focused ? .68f : SpringForce.DAMPING_RATIO_NO_BOUNCY);

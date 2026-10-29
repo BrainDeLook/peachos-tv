@@ -89,6 +89,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     public void onDraw(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
         boolean any = false;
         float focusedCenter = Float.NaN;
+        float artworkLeft = Float.POSITIVE_INFINITY, artworkRight = Float.NEGATIVE_INFINITY;
         int cardWidth = 0;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
@@ -101,6 +102,9 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             float t = child.getTop() + card.getTop() + child.getTranslationY();
             float r = l + card.getWidth();
             float b = t + card.getHeight();
+            float zoom = Math.max(0f, card.getScaleX() - 1f) * card.getWidth() * .5f;
+            artworkLeft = Math.min(artworkLeft, l - zoom);
+            artworkRight = Math.max(artworkRight, r + zoom);
             if (card.hasFocus()) focusedCenter = (l + r) * .5f;
             cardWidth = card.getWidth();
             if (!any) {
@@ -137,13 +141,28 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             rect.right = Math.min(rect.right, parent.getWidth() - density);
         }
         rect.bottom += namesRoom;
+        // The reference keeps 12dp around enlarged end tiles, rather than squeezing them
+        // into the idle band's smaller end clearance. Follow the existing focus spring.
+        float drawLeft = rect.left, drawRight = rect.right;
+        if (!singleRow && !evenPadding) {
+            drawLeft = Math.min(drawLeft, artworkLeft - 12 * density);
+            drawRight = Math.max(drawRight, artworkRight + 12 * density);
+        }
         if (liquid != null) {
             liquid.radius(radius);
             liquid.setBounds(Math.round(rect.left), Math.round(rect.top), Math.round(rect.right), Math.round(rect.bottom));
             liquid.focus(Float.isNaN(focusedCenter) ? .25f : (focusedCenter - rect.left) / rect.width());
+            // Stretch the existing band by less than 1%: no bitmap resize/rebuild on each
+            // focus frame, and the icon positions and gaps remain untouched.
+            int save = c.save();
+            c.translate(drawLeft, 0);
+            c.scale((drawRight - drawLeft) / rect.width(), 1f);
+            c.translate(-rect.left, 0);
             liquid.draw(c);
+            c.restoreToCount(save);
             return;
         }
+        rect.left = drawLeft; rect.right = drawRight;
         if (lightGlass && (rect.top != shaderTop || rect.bottom != shaderBottom)) {
             // The pills' glass (pill_bg: white, 18% fading to 8%), a little fainter over this much larger area.
             band.setShader(new LinearGradient(0, rect.top, 0, rect.bottom, 0x24FFFFFF, 0x0DFFFFFF,
