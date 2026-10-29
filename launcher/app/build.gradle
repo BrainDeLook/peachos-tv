@@ -11,8 +11,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 91
-        versionName '1.5.2-clock-polish-preview'
+        versionCode 92
+        versionName '1.5.2-icon-contour-preview'
     }
 
     buildTypes {
