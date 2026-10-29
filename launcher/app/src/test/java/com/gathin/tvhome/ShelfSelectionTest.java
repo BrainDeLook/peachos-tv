@@ -31,4 +31,23 @@ public class ShelfSelectionTest {
         assertFalse(ShelfSelection.includes("channel:42", false, -1, true, 43, false));
         assertFalse(ShelfSelection.includes(ShelfSelection.OFF, false, -1, true, 42, true));
     }
+    @Test public void skippedTablesCannotContributeCardsToAnySource() {
+        for (String source : new String[]{ShelfSelection.AUTO, ShelfSelection.OFF,
+                ShelfSelection.CONTINUE, ShelfSelection.HISTORY, "channel:42", "unknown"}) {
+            for (boolean watch : new boolean[]{true, false}) {
+                boolean anyIncluded = false;
+                for (int type = -1; type <= 4; type++) {
+                    for (boolean browsable : new boolean[]{true, false}) {
+                        for (long channel : new long[]{-1, 42, 43}) {
+                            for (boolean history : new boolean[]{true, false}) {
+                                anyIncluded |= ShelfSelection.includes(source, watch, type, browsable, channel, history);
+                            }
+                        }
+                    }
+                }
+                assertEquals(source + " watchNext=" + watch, anyIncluded,
+                        watch ? ShelfSelection.usesWatchNext(source) : ShelfSelection.usesPreview(source));
+            }
+        }
+    }
 }

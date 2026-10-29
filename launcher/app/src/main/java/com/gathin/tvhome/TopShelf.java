@@ -79,6 +79,7 @@ final class TopShelf {
     private int selected;
     private volatile boolean active;
     private volatile boolean suspended;
+    private boolean releaseFinishedImages;
     private boolean cardMode;
     private boolean rowExiting, awaitingRow;
     private String renderedPkg;
@@ -162,6 +163,7 @@ final class TopShelf {
     void resume() {
         if (active) return;
         active = true;
+        releaseFinishedImages = false;
         queries = Executors.newSingleThreadExecutor(task -> new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             task.run();
@@ -216,6 +218,7 @@ final class TopShelf {
         panel.postDelayed(() -> {
             if (!valid(ticket, pkg)) return;
             queries.execute(() -> {
+                if (!valid(ticket, pkg)) return;
                 ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
                 activity.runOnUiThread(() -> {
                     if (valid(ticket, pkg)) {
@@ -437,12 +440,18 @@ final class TopShelf {
         dim.animate().cancel(); dimTarget = 0f; dim.setAlpha(0f); dim.setVisibility(View.GONE);
         if (queries != null) queries.shutdownNow();
         downloads.getQueue().clear();
-        images.trim();
+        // Keep only the existing 2 MiB LRU for a quick Home return; all poster views are released.
+        // Real background pressure and close() still release it, including an in-flight result.
         lists.clear();
         images.stats();
     }
-    void close() { pause(); downloads.shutdownNow(); }
-    void trim() { images.trim(); }
+    void close() { pause(); downloads.shutdownNow(); images.trim(); }
+    void trim(int level) {
+        if (MemoryTrimPolicy.shouldRelease(level, false)) {
+            images.trim();
+            if (!active) releaseFinishedImages = true;
+        }
+    }
     private void clear() {
         panel.animate().cancel(); rowExiting = false;
         refreshQueued = false;
@@ -528,7 +537,7 @@ final class TopShelf {
                 activity.runOnUiThread(() -> {
                     b.loading = false;
                     if (ready == null) b.failedAt = android.os.SystemClock.elapsedRealtime();
-                    if (!active) images.trim();
+                    if (releaseFinishedImages || downloads.isShutdown()) images.trim();
                     if (ready != null && valid(ticket, pkg) && inWindow(b, scroll.getWidth())) bind(b, ready);
                 });
             });

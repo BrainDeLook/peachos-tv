@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.text.TextUtils;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -17,9 +18,13 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.VpnService;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Process;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.PixelCopy;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -67,7 +72,11 @@ final class ControlCenter {
     private boolean dismissReady, returnToGear;
     private Runnable afterClose;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
-            0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>());
+            0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(1),
+            task -> new Thread(() -> {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+                task.run();
+            }, "PeachGlass"), new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
     private String selected = "";
     private View selectedTab;
     private TextView overviewNetwork, networkStatus, vpnStatus;
@@ -86,13 +95,8 @@ final class ControlCenter {
         density = host.getResources().getDisplayMetrics().density;
         View content = host.findViewById(android.R.id.content);
         boolean glass = host.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true);
-        capsule.setVisibility(View.INVISIBLE);
-        long captureStart = android.os.SystemClock.elapsedRealtime();
-        backdrop = glass ? ControlBackdrop.capture(content) : null;
-        // Exclude the capsule from the snapshot, but keep it on screen until the new header is ready.
-        capsule.setVisibility(View.VISIBLE);
+        backdrop = glass ? ControlBackdrop.snapshot(content) : null;
         backdropScale = backdrop == null ? 1f : content.getWidth() / (float) backdrop.getWidth();
-        android.util.Log.d("PeachControls", "Snapshot prepared in " + (android.os.SystemClock.elapsedRealtime() - captureStart) + "ms");
         regular = host.getResources().getFont(R.font.inter_regular);
         medium = host.getResources().getFont(R.font.inter_medium);
         connectivity = host.getSystemService(ConnectivityManager.class);
@@ -195,6 +199,7 @@ final class ControlCenter {
         popup.setOnDismissListener(() -> {
             closing = true;
             if (spring != null) spring.cancel();
+            body.setLayerType(View.LAYER_TYPE_NONE, null);
             capsule.animate().cancel();
             clearOutgoingPage();
             if (pageContent != null) pageContent.animate().cancel();
@@ -210,7 +215,6 @@ final class ControlCenter {
 
     void show() {
         panel.setAlpha(0f); scrim.setAlpha(0f);
-        popup.showAtLocation(anchor, Gravity.TOP | Gravity.START, 0, 0);
         Runnable reveal = () -> {
             if (!popup.isShowing() || closing) return;
             int[] from = new int[2], to = new int[2];
@@ -222,6 +226,12 @@ final class ControlCenter {
             gearDy = from[1] + anchor.getHeight() * .5f - to[1] - overviewTab.getHeight() * .5f;
             gearScale = anchor.getWidth() / (float) overviewTab.getWidth();
             body.setPivotX(body.getWidth() * .5f); body.setPivotY(body.getHeight() * .5f);
+            if (animate && !reduced) {
+                // Build the static controls once before the spring, rather than rasterizing all their
+                // clipped glass paths during every alpha/scale frame. Released as soon as motion ends.
+                body.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                body.buildLayer();
+            }
             revealed = true;
             applyReveal(animate ? 0f : 1f);
             panel.setAlpha(1f);
@@ -230,7 +240,10 @@ final class ControlCenter {
                 spring.setSpring(new SpringForce(1f).setStiffness(700f).setDampingRatio(.78f));
                 spring.setMinimumVisibleChange(.001f);
                 spring.addEndListener((animation, canceled, value, velocity) -> {
-                    if (closing && !canceled) finishDismiss();
+                    if (!canceled) {
+                        body.setLayerType(View.LAYER_TYPE_NONE, null);
+                        if (closing) finishDismiss();
+                    }
                 });
                 spring.start();
             } else if (animate) {
@@ -240,12 +253,39 @@ final class ControlCenter {
             }
             overviewTab.requestFocusFromTouch();
         };
+        if (backdrop != null) {
+            View content = host.findViewById(android.R.id.content);
+            int[] location = new int[2];
+            content.getLocationInWindow(location);
+            Rect source = new Rect(location[0], location[1],
+                    location[0] + content.getWidth(), location[1] + content.getHeight());
+            long copyStart = android.os.SystemClock.elapsedRealtime();
+            // Copy the existing window frame asynchronously. A software content.draw() traversed every
+            // view on the UI thread and could not draw a wallpaper held in a hardware bitmap.
+            try {
+                PixelCopy.request(host.getWindow(), source, backdrop, result -> {
+                    if (closing) return;
+                    android.util.Log.d("PeachControls", "Window copy " + result + " in "
+                            + (android.os.SystemClock.elapsedRealtime() - copyStart) + "ms");
+                    if (result != PixelCopy.SUCCESS) {
+                        backdrop.eraseColor(0xff29262f);
+                        panel.post(reveal);
+                        return;
+                    }
+                    GLASS_WORK.execute(() -> {
+                        if (closing) return;
+                        ControlBackdrop.blur(backdrop);
+                        panel.post(reveal);
+                    });
+                }, new Handler(Looper.getMainLooper()));
+            } catch (IllegalArgumentException noWindowFrame) {
+                // A window opened before its first draw may not have a backing surface yet.
+                android.util.Log.w("PeachControls", "Window has no readable frame yet; using matte controls");
+                panel.post(reveal);
+            }
+        }
+        popup.showAtLocation(anchor, Gravity.TOP | Gravity.START, 0, 0);
         if (backdrop == null) panel.post(reveal);
-        else GLASS_WORK.execute(() -> {
-            if (closing) return;
-            ControlBackdrop.blur(backdrop);
-            panel.post(reveal);
-        });
     }
 
     void close() { closeThen(null); }
@@ -285,6 +325,7 @@ final class ControlCenter {
             return;
         }
         // Retarget the running spring: Back during opening preserves both position and velocity.
+        body.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         spring.getSpring().setStiffness(900f).setDampingRatio(1f);
         spring.animateToFinalPosition(0f);
     }
@@ -393,7 +434,7 @@ final class ControlCenter {
         // Keep at most the previous and current pages, even when keys repeat during a transition.
         outgoingPage = previous;
         body.getOverlay().add(previous);
-        previous.animate().alpha(0f).setDuration(140)
+        previous.animate().alpha(0f).setDuration(140).withLayer()
                 .setInterpolator(new DecelerateInterpolator())
                 .withEndAction(() -> {
                     body.getOverlay().remove(previous);
@@ -403,7 +444,7 @@ final class ControlCenter {
                     }
                 }).start();
         column.setAlpha(0f);
-        column.animate().alpha(1f).setDuration(140).setInterpolator(new DecelerateInterpolator()).start();
+        column.animate().alpha(1f).setDuration(140).withLayer().setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void clearOutgoingPage() {

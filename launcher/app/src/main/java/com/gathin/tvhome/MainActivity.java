@@ -89,6 +89,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * tvOS style home: black, a pinned dock row, an app grid, and one glass highlight that springs between tiles.
@@ -262,6 +267,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private final TileRefresh tileRefresh = new TileRefresh();
     /** PackageManager's change counter at the last rebuild, to catch a package broadcast that never arrived. */
     private int packageSequence;
+    private final ThreadPoolExecutor catalogueWorker = new ThreadPoolExecutor(0, 1, 2, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(1), task -> new Thread(() -> {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                task.run();
+            }, "app-catalogue"), new ThreadPoolExecutor.DiscardOldestPolicy());
+    private Future<?> catalogueLoad;
+    private int catalogueGeneration;
+    private long interactionGeneration;
+    private boolean catalogueDrawReported;
+    private boolean homeRefocusPending;
+    private final Runnable initializeChannels = () -> ChannelSetup.start(getApplicationContext());
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
     private ControlCenter controlCenter;
@@ -968,6 +984,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         if (controlCenter != null) { controlCenter.close(); return; }
         if (openPopup != null) openPopup.dismiss();
+        if (catalogueLoad != null) {
+            homeRefocusPending = true;
+            return;
+        }
         if (stopped) {
             tileRefresh.onHomeAgain();
         } else {
@@ -1102,41 +1122,62 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         final boolean restoreLibrary = adapter.isLibraryAt(adapter.appCount()) && footer != null
                 && footer.itemView.findViewById(R.id.btnLibrary) != null
                 && footer.itemView.findViewById(R.id.btnLibrary).hasFocus();
-        // Capture the app before rebinding can move focus and overwrite its key.
-        final String returnKey = lastFocusedKey;
-        final int returnSlot = lastFocused;
         final boolean restoreFocus = appLibrary == null && (animate || grid.hasFocus());
-        if (restoreFocus) {
-            glassShown = false;
-            glass.setAlpha(0f);
-            heroShown = false;
-            hero.setAlpha(0f);
-            ambient.setAlpha(0f);
-            heroArt.animate().cancel();
-            heroArt.setAlpha(0f);
-        }
-        if (rebuild) reloadTiles();
-        if (animate && entrance && animations && !reducedMotion) {
-            grid.scheduleLayoutAnimation();
-            // A rebuild redraws the grid anyway; without one the entrance needs a draw to start.
-            if (!rebuild) grid.invalidate();
-        }
+        final long interactions = interactionGeneration;
+        Runnable complete = () -> {
+            // Loading can span user input: preserve the app focused now, rather than the one at request time.
+            final String returnKey = lastFocusedKey;
+            final int returnSlot = lastFocused;
+            boolean refocus = restoreFocus && started
+                    && (homeRefocusPending || interactionGeneration == interactions || grid.hasFocus());
+            homeRefocusPending = false;
+            if (refocus) {
+                glassShown = false;
+                glass.setAlpha(0f);
+                heroShown = false;
+                hero.setAlpha(0f);
+                ambient.setAlpha(0f);
+                heroArt.animate().cancel();
+                heroArt.setAlpha(0f);
+            }
+            if (animate && entrance && animations && !reducedMotion) {
+                grid.scheduleLayoutAnimation();
+                if (!rebuild) grid.invalidate();
+            }
 
-        if (restoreFocus) {
-            // Keep a focused footer at the end even when the app count changes.
-            if (restoreLibrary) grid.post(this::focusLibrary);
-            else restoreFocus();
-        } else {
-            // A package change must not steal focus from a top button or the Inputs popup.
-            int pos = adapter.positionOf(returnKey);
-            lastFocused = Math.max(0, Math.min(pos >= 0 ? pos : returnSlot, adapter.appCount() - 1));
-            lastFocusedKey = adapter.keyAt(lastFocused);
-            if (pos < 0) hideHero();
-            // A newly installed app may have brought a card with it.
-            tilesReady = true;
-            startPendingSettingsReorder();
-            showCardPrompt();
-        }
+            if (refocus) {
+                if (restoreLibrary && interactionGeneration == interactions) grid.post(this::focusLibrary);
+                else restoreFocus();
+            } else {
+                // A package change must not steal focus from a top button or the Inputs popup.
+                int pos = adapter.positionOf(returnKey);
+                lastFocused = Math.max(0, Math.min(pos >= 0 ? pos : returnSlot, adapter.appCount() - 1));
+                lastFocusedKey = adapter.keyAt(lastFocused);
+                if (pos < 0) hideHero();
+                tilesReady = true;
+                startPendingSettingsReorder();
+                showCardPrompt();
+            }
+            if (!catalogueDrawReported) {
+                catalogueDrawReported = true;
+                grid.getViewTreeObserver().addOnDrawListener(new ViewTreeObserver.OnDrawListener() {
+                    private boolean posted;
+                    @Override public void onDraw() {
+                        if (posted) return;
+                        posted = true;
+                        grid.post(() -> {
+                            if (grid.getViewTreeObserver().isAlive()) grid.getViewTreeObserver().removeOnDrawListener(this);
+                            if (!isDestroyed()) {
+                                reportFullyDrawn();
+                                root.postDelayed(initializeChannels, 1000);
+                            }
+                        });
+                    }
+                });
+            }
+        };
+        if (rebuild) reloadTilesAsync(complete);
+        else complete.run();
     }
 
     /** True when PackageManager reports apps changed since the last rebuild (one binder call). */
@@ -1157,22 +1198,87 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private void reloadTiles() {
         if (reordering) endReorder();   // an app installed or removed while reordering: keep the order so far
+        cancelCatalogueLoad();
+        applyCatalogue(loadCatalogue(adapter.reloadPlan(), packageSequence));
+    }
+
+    private static final class Catalogue {
+        final List<Cards.Card> cards;
+        final AppAdapter.Snapshot apps;
+        final int sequence;
+        Catalogue(List<Cards.Card> cards, AppAdapter.Snapshot apps, int sequence) {
+            this.cards = cards; this.apps = apps; this.sequence = sequence;
+        }
+    }
+
+    private Catalogue loadCatalogue(AppAdapter.ReloadPlan plan, int since) {
+        long begin = SystemClock.elapsedRealtime();
+        long cpuBegin = SystemClock.currentThreadTimeMillis();
+        // Capture the package boundary before scanning, so changes during loading remain detectable.
+        int sequence = currentPackageSequence(since);
+        List<ResolveInfo> leanback = getPackageManager().queryIntentActivities(
+                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
+        List<Cards.Card> none = Collections.emptyList();
+        Context application = getApplicationContext();
+        List<Cards.Card> discovered = moduleCards ? CardFeature.run(() -> Cards.discover(application, hiddenApps,
+                () -> Cards.load(Cards.storeFile(application)), leanback), none) : none;
+        AppAdapter.Snapshot apps = adapter.load(plan,
+                discovered.isEmpty() ? none : CardFeature.run(() -> Cards.shown(discovered), none), leanback);
+        android.util.Log.d("PeachStartup", "Catalogue loaded in " + (SystemClock.elapsedRealtime() - begin)
+                + "ms (CPU " + (SystemClock.currentThreadTimeMillis() - cpuBegin) + "ms)");
+        return new Catalogue(discovered, apps, sequence);
+    }
+
+    private void applyCatalogue(Catalogue result) {
         // Read these before reload(): rebinding can move focus to the first tile and overwrite them.
         final String returnKey = lastFocusedKey;
         final int returnSlot = lastFocused;
-        final List<Cards.Card> none = Collections.emptyList();
         // An updated app may bring new artwork; the backdrop is cheap to make again.
         heroArtCache.clear();
         heroArtKey = null;
-        // One LEANBACK query for both the tiles and the card checks.
-        final List<ResolveInfo> leanback = getPackageManager().queryIntentActivities(
-                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
-        cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps,
-                () -> Cards.load(Cards.storeFile(this)), leanback), none) : none;
-        adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), leanback);
+        cards = result.cards;
+        adapter.apply(result.apps);
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
-        packageSequence = currentPackageSequence(packageSequence);
+        packageSequence = result.sequence;
+    }
+
+    private void reloadTilesAsync(Runnable complete) {
+        if (reordering) endReorder();
+        cancelCatalogueLoad();
+        final int request = catalogueGeneration;
+        final int since = packageSequence;
+        final AppAdapter.ReloadPlan plan = adapter.reloadPlan();
+        final boolean initial = adapter.appCount() == 0;
+        catalogueLoad = catalogueWorker.submit(() -> {
+            // First content is critical work; later package refreshes yield to foreground playback and UI.
+            android.os.Process.setThreadPriority(initial ? android.os.Process.THREAD_PRIORITY_DEFAULT
+                    : android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            try {
+                Catalogue loaded = loadCatalogue(plan, since);
+                handler.post(() -> {
+                    if (request != catalogueGeneration || isDestroyed()) return;
+                    catalogueLoad = null;
+                    applyCatalogue(loaded);
+                    complete.run();
+                });
+            } catch (CancellationException ignored) {
+                // A newer package snapshot, memory pressure or activity destruction superseded this load.
+            } catch (RuntimeException failure) {
+                android.util.Log.e("PeachStartup", "Could not load app catalogue", failure);
+                handler.post(() -> {
+                    if (request != catalogueGeneration || isDestroyed()) return;
+                    catalogueLoad = null;
+                    tileRefresh.invalidate(); // keep existing tiles and allow the next Home to retry
+                });
+            }
+        });
+    }
+
+    private void cancelCatalogueLoad() {
+        catalogueGeneration++;
+        if (catalogueLoad != null) { catalogueLoad.cancel(true); catalogueLoad = null; }
+        catalogueWorker.getQueue().clear();
     }
 
     /**
@@ -1197,6 +1303,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onUserInteraction() {
         super.onUserInteraction();
+        interactionGeneration++;
+        homeRefocusPending = false;
         restartIdleClock();
     }
 
@@ -1250,10 +1358,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
-        if (topShelf != null) topShelf.trim();
+        if (topShelf != null) topShelf.trim(level);
         // RUNNING_LOW and CRITICAL also arrive while Home is visible when an accessibility service keeps the
         // process in the foreground; never blank the screen the owner is looking at.
         if (!MemoryTrimPolicy.shouldRelease(level, started)) return;
+        cancelCatalogueLoad();
         adapter.clear();
         // Detach the adapter too: with Home stopped no layout pass runs, so the tile views (and the bitmaps
         // they hold) would stay attached until Home comes back. setAdapter(null) recycles them now.
@@ -1282,6 +1391,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        cancelCatalogueLoad();
+        catalogueWorker.shutdownNow();
+        root.removeCallbacks(initializeChannels);
         if (navigationSound != null) navigationSound.close();
         if (metadataBackdrop != null) metadataBackdrop.pause();
         if (topShelf != null) topShelf.close();
@@ -1441,6 +1553,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The start shared by reorder and edit-dock mode. False when there is nothing to move. */
     private boolean beginReorder() {
         if (adapter.movableCount() < 2) return false;
+        cancelCatalogueLoad(); // a catalogue captured before editing must not replace the owner's new order
         // Before the reload below: once it has dropped the empty slots, the dock row also shows grid apps.
         dockInSession = new HashSet<>();
         dockedAtStart = adapter.dockFilled();

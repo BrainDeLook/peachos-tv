@@ -38,7 +38,10 @@ final class WallpaperPlayer {
     private final long interval;
     private final String order;
     private final SharedPreferences preferences;
-    private final ExecutorService decoder = Executors.newSingleThreadExecutor();
+    private final ExecutorService decoder = Executors.newSingleThreadExecutor(task -> new Thread(() -> {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        task.run();
+    }, "PeachWallpaper"));
     private final Random random = new Random();
     private final int width;
     /** config wallpaper_true_color: ARGB_8888 instead of RGB_565. */
@@ -46,10 +49,10 @@ final class WallpaperPlayer {
     private final int height;
     /** wallpaper_dim as an ARGB black, painted into each picture once instead of a full-screen shade view. */
     private final int dimColor;
-    /** The picture on screen, released once the next one has been drawn. */
+    /** The picture on screen; the renderer retains any older texture until its last queued frame completes. */
     private Bitmap current;
     private boolean active;
-    private boolean closed;
+    private volatile boolean closed;
     private boolean loading;
     private String displayed = "";
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
@@ -94,37 +97,6 @@ final class WallpaperPlayer {
         if (config.wallpaperEnabled && !files.isEmpty()) {
             root.addView(image, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            showFirst();
-        }
-    }
-
-    /**
-     * The picture Home opens with is decoded right here, on the main thread, as the single wallpaper always was:
-     * Home's first frame already has it instead of drawing the plain colour and the picture popping in later.
-     * Only the later changes of a rotation decode in the background.
-     */
-    private void showFirst() {
-        String previous = preferences.getString("image", "");
-        List<File> playable = playable();
-        File first = WallpaperRotation.find(playable, previous);
-        if (first == null) first = WallpaperRotation.pick(playable, previous, order, random);
-        while (first != null) {
-            Bitmap bitmap = decode(first);
-            if (bitmap != null) {
-                show(bitmap);
-                // The picture covers the whole screen: the root's plain colour under it is overdraw.
-                root.setBackground(null);
-                displayed = first.getName();
-                showCaption(false);
-                if (!displayed.equals(previous)) {
-                    preferences.edit().putString("image", displayed)
-                            .putLong("changed", System.currentTimeMillis()).apply();
-                }
-                return;
-            }
-            files.remove(first);   // unreadable or over 4K: try another, or keep the plain colour
-            playable = playable();
-            first = WallpaperRotation.pick(playable, previous, order, random);
         }
     }
 
@@ -180,6 +152,10 @@ final class WallpaperPlayer {
         loading = true;
         decoder.execute(() -> {
             Bitmap bitmap = decode(next);
+            if (closed) {
+                if (bitmap != null) bitmap.recycle();
+                return;
+            }
             root.post(() -> {
                 loading = false;
                 if (closed || !active) {
@@ -194,7 +170,7 @@ final class WallpaperPlayer {
                 }
                 show(bitmap);
                 displayed = next.getName();
-                showCaption(true);
+                showCaption();
                 if (!displayed.equals(previous) || changed == 0) {
                     preferences.edit().putString("image", displayed)
                             .putLong("changed", System.currentTimeMillis()).apply();
@@ -232,7 +208,7 @@ final class WallpaperPlayer {
     }
 
     /** The displayed picture's name, faded across a change; a picture without a name hides the caption. */
-    private void showCaption(boolean fade) {
+    private void showCaption() {
         if (caption == null) return;
         String name = names.get(displayed);
         caption.animate().cancel();
@@ -241,7 +217,7 @@ final class WallpaperPlayer {
             return;
         }
         caption.setContentDescription(name);
-        if (!fade || caption.getAlpha() == 0f) {
+        if (caption.getAlpha() == 0f) {
             caption.setText(name);
             caption.setAlpha(1f);
             return;
@@ -259,14 +235,14 @@ final class WallpaperPlayer {
         return key.toString();
     }
 
-    /** Puts a picture on screen and releases the previous one after a frame has drawn the new one. */
+    /** First and later pictures share the worker decode; Home can draw its fallback colour immediately. */
     private void show(Bitmap bitmap) {
-        Bitmap old = current;
         current = bitmap;
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
         image.setImageBitmap(bitmap);
-        if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        // No timer can prove that RenderThread has finished with the previous hardware bitmap.
+        // Dropping our reference lets Android release it when the final frame releases its own reference.
     }
 
     private Bitmap decode(File file) {

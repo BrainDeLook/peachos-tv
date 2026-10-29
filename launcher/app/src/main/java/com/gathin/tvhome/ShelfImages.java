@@ -39,7 +39,10 @@ final class ShelfImages {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inPreferredConfig = Bitmap.Config.RGB_565;
             bitmap = BitmapFactory.decodeByteArray(cached, 0, cached.length, options);
-            if (bitmap != null) { diskHits.incrementAndGet(); memory.put(url, bitmap); return bitmap; }
+            if (bitmap != null) {
+                bitmap.prepareToDraw();
+                diskHits.incrementAndGet(); memory.put(url, bitmap); return bitmap;
+            }
         }
         try {
             byte[] bytes;
@@ -70,6 +73,8 @@ final class ShelfImages {
             ByteArrayOutputStream encoded = new ByteArrayOutputStream();
             bitmap.compress(Bitmap.CompressFormat.JPEG, 88, encoded);
             disk.put(url, encoded.toByteArray(), System.currentTimeMillis());
+            // Schedule the first texture upload from this worker rather than the first visible frame.
+            bitmap.prepareToDraw();
             memory.put(url, bitmap);
             return bitmap;
         } catch (Exception e) {

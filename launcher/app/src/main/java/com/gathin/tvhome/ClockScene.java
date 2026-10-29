@@ -37,6 +37,7 @@ final class ClockScene {
     private final View content;
     private final View ambient;
     private final GradientDrawable glow;
+    private final Runnable reveal;
     private int colorIndex;
     private int glowColor;
     /** clock_wallpaper or clock_glow false: something else (a picture, or plain black) replaced the coloured glow. */
@@ -60,6 +61,10 @@ final class ClockScene {
     /** root is the inflated dream_clock layout. */
     ClockScene(View root) {
         content = root.findViewById(R.id.dreamContent);
+        reveal = () -> {
+            placeClock();
+            content.animate().alpha(1f).setDuration(1200).start();
+        };
         ambient = root.findViewById(R.id.dreamAmbient);
         glow = new GradientDrawable();
         glow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
@@ -72,10 +77,8 @@ final class ClockScene {
 
     void start() {
         content.setAlpha(0f);
-        content.post(() -> {
-            placeClock();
-            content.animate().alpha(1f).setDuration(1200).start();
-        });
+        content.removeCallbacks(reveal);
+        content.post(reveal);
         handler.removeCallbacks(tick);
         handler.postDelayed(tick, MOVE_MS);
         if (wallpaperFile != null && !wallpaperShown) loadWallpaper();
@@ -83,6 +86,7 @@ final class ClockScene {
 
     void stop() {
         handler.removeCallbacksAndMessages(null);   // the tick and any glow steps still queued
+        content.removeCallbacks(reveal);
         content.animate().cancel();
         wallpaperGeneration++;   // a decode still running must not attach its picture to a stopped scene
     }

@@ -172,20 +172,24 @@ final class Backdrops {
     private final File root, poolRoot;
     /** Showing a still: the one on screen goes to the front, ahead of anything else waiting. */
     private final LinkedBlockingDeque<Runnable> queue = new LinkedBlockingDeque<>();
-    private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, queue);
+    private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, queue,
+            task -> new Thread(() -> {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                task.run();
+            }, "backdrop-images"));
     /**
      * Filling the pools: every app's on this one thread, at low priority so it never slows down what's on
      * screen. The pools being built take turns a card at a time (see {@link #pump}).
      */
-    private final ExecutorService builder = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "BackdropPools");
-        t.setPriority(Thread.MIN_PRIORITY);
-        return t;
-    });
+    private final ExecutorService builder = Executors.newSingleThreadExecutor(task -> new Thread(() -> {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        task.run();
+    }, "BackdropPools"));
     private final ConcurrentLinkedQueue<Build> incoming = new ConcurrentLinkedQueue<>();
     private final List<Build> active = new ArrayList<>();   // pool thread only
     /** Bumped by reload: builds from before it are dropped, and put nothing into the new pools. */
     private final AtomicInteger generation = new AtomicInteger();
+    private final AtomicInteger loadGeneration = new AtomicInteger();
     private int turn;                                       // pool thread only
     private final FirstStillListener firstStill;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -222,8 +226,10 @@ final class Backdrops {
      * pools being built are dropped (the new instance builds them); their stills so far are kept.
      */
     void close() {
+        loadGeneration.incrementAndGet();
+        generation.incrementAndGet();
         worker.shutdownNow();
-        builder.shutdown();
+        builder.shutdownNow();
         plex.close();
     }
 
@@ -232,6 +238,7 @@ final class Backdrops {
      * backdrops): the next refresh of each app finds it with none. Builds under way are dropped.
      */
     void reload() {
+        loadGeneration.incrementAndGet();
         synchronized (this) {
             generation.incrementAndGet();
             pools.clear();
@@ -294,17 +301,23 @@ final class Backdrops {
      * Only ever reads the pool: filling it is the pool threads' job, so nothing here waits on the network.
      */
     void load(String pkg, Callback callback) {
+        int request = loadGeneration.incrementAndGet();
         if (BackdropPolicy.isStaticYouTube(pkg)) {
-            main.post(() -> callback.onBackdrop(pkg, null, null, null, null));
+            main.post(() -> {
+                if (!worker.isShutdown() && request == loadGeneration.get()) {
+                    callback.onBackdrop(pkg, null, null, null, null);
+                }
+            });
             return;
         }
         queue.offerFirst(() -> {
+            if (worker.isShutdown() || request != loadGeneration.get()) return;
             Bitmap bitmap = null, logo = null;
             String title = null, link = null;
             try {
                 Entry e = choose(pkg);
                 if (e != null) {
-                    bitmap = BitmapFactory.decodeFile(e.still.getPath());
+                    bitmap = decodeStill(e.still);
                     logo = e.logo != null ? decodeLogo(e.logo) : null;
                     title = e.title;
                     link = e.link;
@@ -320,7 +333,14 @@ final class Backdrops {
             }
             Bitmap b = bitmap, l = logo;
             String t = title, k = link;
-            main.post(() -> callback.onBackdrop(pkg, b, l, t, k));
+            if (worker.isShutdown() || request != loadGeneration.get()) return;
+            if (b != null) b.prepareToDraw();
+            if (l != null) l.prepareToDraw();
+            main.post(() -> {
+                if (!worker.isShutdown() && request == loadGeneration.get()) {
+                    callback.onBackdrop(pkg, b, l, t, k);
+                }
+            });
             refresh(pkg);
         });   // ahead of anything else: this is the one on screen
     }
@@ -1265,6 +1285,20 @@ final class Backdrops {
         while (o.outWidth / (o.inSampleSize * 2) >= targetWidth) o.inSampleSize *= 2;
         o.inMutable = true;   // darkened in place
         return BitmapFactory.decodeFile(file.getPath(), o);
+    }
+
+    /** A pool may have been created at a higher output resolution before the display mode changed. */
+    private Bitmap decodeStill(File file) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getPath(), options);
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = 1;
+        while (options.outWidth / (options.inSampleSize * 2) >= targetWidth
+                && options.outHeight / (options.inSampleSize * 2) >= targetHeight) {
+            options.inSampleSize *= 2;
+        }
+        return BitmapFactory.decodeFile(file.getPath(), options);
     }
 
     /**

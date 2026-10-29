@@ -6,6 +6,10 @@ final class ShelfSelection {
     static final String LAMPA = "top.rootu.lampa";
 
     static boolean usesBackdrop(String source) { return OFF.equals(source); }
+    static boolean usesWatchNext(String source) { return AUTO.equals(source) || CONTINUE.equals(source); }
+    static boolean usesPreview(String source) {
+        return AUTO.equals(source) || HISTORY.equals(source) || source.startsWith("channel:");
+    }
 
     static boolean isHistory(String pkg, String providerId, String data, String link, String name) {
         if (!LAMPA.equals(pkg)) return false;

@@ -21,7 +21,6 @@ final class MetadataBackdrop {
     MetadataBackdrop(Context context, ImageView image) {
         this.context = context;
         this.image = image;
-        ChannelSetup.run(context);
     }
 
     void resume() {

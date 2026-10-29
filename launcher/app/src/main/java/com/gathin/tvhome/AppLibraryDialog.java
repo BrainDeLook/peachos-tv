@@ -71,7 +71,7 @@ final class AppLibraryDialog {
     private final Map<String, Drawable> icons = new HashMap<>();
     private final Set<String> iconsLoading = new HashSet<>();
     private final Runnable dismissed;
-    private boolean closed;
+    private volatile boolean closed;
     /** Only the latest load fills the catalogue, and it shows the popup if an opening is waiting. */
     private final LibraryLoads loads = new LibraryLoads();
     private final Activity activity;
@@ -114,9 +114,12 @@ final class AppLibraryDialog {
         Rect rect = new Rect(0, 0, card.getWidth(), card.getHeight());
         shelf.offsetDescendantRectToMyCoords(card, rect);
         ViewGroup.LayoutParams lp = highlight.getLayoutParams();
-        lp.width = rect.width() + dp(12);
-        lp.height = rect.height() + dp(12);
-        highlight.setLayoutParams(lp);
+        int width = rect.width() + dp(12), height = rect.height() + dp(12);
+        if (lp.width != width || lp.height != height) {
+            lp.width = width;
+            lp.height = height;
+            highlight.setLayoutParams(lp);
+        }
         highlight.setTranslationY(rect.top - dp(6));
         float x = rect.left - dp(6) + scrollOffset;
         if (!highlightShown || !animate || !animations) {
@@ -218,10 +221,12 @@ final class AppLibraryDialog {
         PackageManager pm = activity.getPackageManager();
         String self = activity.getPackageName();
         LOADER.execute(() -> {
+            if (closed || !loads.isLatest(load)) return;
             Map<String, ResolveInfo> unique = new LinkedHashMap<>();
             Set<String> tv = new HashSet<>();
             // Prefer the TV entry when an app declares both categories.
             for (String category : new String[]{Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER}) {
+                if (closed || !loads.isLatest(load)) return;
                 for (ResolveInfo info : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(category), 0)) {
                     if (info.activityInfo == null || !info.activityInfo.exported) continue;
                     String pkg = info.activityInfo.packageName;
@@ -232,6 +237,7 @@ final class AppLibraryDialog {
             Map<String, String> names = new HashMap<>();
             Map<String, Long> installed = new HashMap<>();
             for (Map.Entry<String, ResolveInfo> entry : unique.entrySet()) {
+                if (closed || !loads.isLatest(load)) return;
                 String pkg = entry.getKey();
                 long updated = 0;
                 try {
@@ -310,6 +316,7 @@ final class AppLibraryDialog {
         if (cached != null || !iconsLoading.add(pkg)) return;
         PackageManager pm = activity.getPackageManager();
         LOADER.execute(() -> {
+            if (closed) return;
             Drawable loaded;
             try { loaded = app.loadIcon(pm); }
             catch (RuntimeException unavailable) { loaded = null; }

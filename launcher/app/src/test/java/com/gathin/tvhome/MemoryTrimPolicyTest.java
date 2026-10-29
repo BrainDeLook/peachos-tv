@@ -11,6 +11,7 @@ public class MemoryTrimPolicyTest {
     @Test
     public void ordinaryBackgroundTransitionKeepsWarmResources() {
         assertFalse(MemoryTrimPolicy.shouldRelease(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN, false));
+        assertFalse(MemoryTrimPolicy.shouldRelease(ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE, false));
         assertFalse(MemoryTrimPolicy.shouldRelease(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND, true));
     }
 

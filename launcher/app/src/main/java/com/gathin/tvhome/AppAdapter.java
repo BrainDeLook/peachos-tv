@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.provider.Settings;
@@ -43,6 +44,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 
 /**
  * App tiles. The first {@link MainActivity#COLUMNS} positions are the pinned dock (favourites, fixed order,
@@ -95,6 +97,33 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.icon = icon;
             this.name = caption == null ? label : label + " \u00B7 " + caption;
             this.ambient = accent;
+        }
+    }
+
+    /** Mutable owner choices captured on the UI thread before a catalogue load begins. */
+    static final class ReloadPlan {
+        final Map<String, Integer> ranks;
+        final int docked;
+        final boolean reordering;
+
+        ReloadPlan(Map<String, Integer> ranks, int docked, boolean reordering) {
+            this.ranks = Collections.unmodifiableMap(new HashMap<>(ranks));
+            this.docked = docked;
+            this.reordering = reordering;
+        }
+    }
+
+    /** A fully loaded catalogue. Building it never changes the adapter currently on screen. */
+    static final class Snapshot {
+        final List<Entry> entries;
+        final Set<String> leanbackPackages;
+        final int docked, emptySlots;
+
+        Snapshot(List<Entry> entries, Set<String> leanbackPackages, int docked, int emptySlots) {
+            this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
+            this.leanbackPackages = Collections.unmodifiableSet(new HashSet<>(leanbackPackages));
+            this.docked = docked;
+            this.emptySlots = emptySlots;
         }
     }
 
@@ -260,14 +289,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * Rebuilds the tiles. A shown module card stands in for every tile of its package (same component,
      * so focus follows it); hidden_apps wins over a card, and a card's package in dock_apps takes that slot.
      */
-    void reload(List<Cards.Card> cards, List<ResolveInfo> leanback) {
+    ReloadPlan reloadPlan() {
+        return new ReloadPlan(savedRanks, savedDocked, reordering);
+    }
+
+    /** Package resources and shortcut files are read on the catalogue worker, never during a frame. */
+    Snapshot load(ReloadPlan plan, List<Cards.Card> cards, List<ResolveInfo> leanback) {
         PackageManager pm = ctx.getPackageManager();
         // The LEANBACK query is shared with the module-card check (MainActivity); copy it before adding
         // library apps so the caller's list stays as it was.
         List<ResolveInfo> found = new ArrayList<>(leanback);
         Set<String> tvPackages = new HashSet<>();
         for (ResolveInfo ri : found) if (ri.activityInfo != null) tvPackages.add(ri.activityInfo.packageName);
-        leanbackPackages = tvPackages;
         // Copy before merging: LibraryApps.load() may return an immutable empty set (#419).
         Set<String> added = new HashSet<>(LibraryApps.load(ctx));
         added.addAll(libraryPreload);
@@ -287,6 +320,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // BRAVIA VU31), which would show as two identical tiles: keep the first per package and label.
         Set<String> seen = new HashSet<>();
         for (ResolveInfo ri : found) {
+            if (Thread.currentThread().isInterrupted()) throw new CancellationException();
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
             if (pkg.equals(ctx.getPackageName()) || !ri.activityInfo.exported
@@ -316,7 +350,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
-            int saved = Order.compare(savedRanks, a.component.flattenToShortString(), b.component.flattenToShortString());
+            int saved = Order.compare(plan.ranks, a.component.flattenToShortString(), b.component.flattenToShortString());
             if (saved != 0) return saved;
             int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
             if (fa >= 0 || fb >= 0) {
@@ -336,15 +370,38 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     new ComponentName(ctx, HomeSettingsActivity.class), null,
                     ctx.getDrawable(R.drawable.ic_home_settings), null, 0));
         }
-        docked = 0;
-        while (docked < fresh.size() && isDocked(fresh.get(docked))) docked++;
-        emptySlots = dockRow && !reordering ? DockSlots.empty(docked, dockSize, fresh.size(), fillDock) : 0;
+        int docked = 0;
+        while (docked < fresh.size()) {
+            Entry entry = fresh.get(docked);
+            Integer rank = plan.ranks.get(entry.component.flattenToShortString());
+            boolean pinned = plan.docked < 0 ? favourites.contains(entry.pkg) : rank != null && rank < plan.docked;
+            if (!pinned) break;
+            docked++;
+        }
+        int emptySlots = dockRow && !plan.reordering ? DockSlots.empty(docked, dockSize, fresh.size(), fillDock) : 0;
         for (int i = 0; i < emptySlots; i++) {
             fresh.add(docked + i, new Entry(Entry.EMPTY, "", new ComponentName(ctx, "empty-dock-slot-" + i),
                     null, null, null, 0));
         }
+        // These rows are already visible in the first grid frame. Upload their existing bitmaps ahead
+        // of binding; leave all other apps untouched so preparation does not grow the GPU working set.
+        int visible = Math.min(fresh.size(), dockSize * (rowsBelowDock + 1));
+        for (int i = 0; i < visible; i++) {
+            if (Thread.currentThread().isInterrupted()) throw new CancellationException();
+            Entry entry = fresh.get(i);
+            Drawable art = entry.banner != null ? entry.banner : entry.icon;
+            if (art instanceof BitmapDrawable bitmap) bitmap.getBitmap().prepareToDraw();
+        }
+        return new Snapshot(fresh, tvPackages, docked, emptySlots);
+    }
+
+    /** Commits one completed load on the UI thread; callers discard obsolete generations first. */
+    void apply(Snapshot snapshot) {
+        leanbackPackages = snapshot.leanbackPackages;
+        docked = snapshot.docked;
+        emptySlots = snapshot.emptySlots;
         items.clear();
-        items.addAll(fresh);
+        items.addAll(snapshot.entries);
         notifyDataSetChanged();
     }
 
@@ -582,16 +639,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     void setSavedOrder(Map<String, Integer> ranks, int docked) {
         savedRanks = ranks;
         savedDocked = docked;
-    }
-
-    /**
-     * A tile in the dock: one of the first savedDocked tiles of the saved order when one was recorded, so an app
-     * the owner moved into the dock stays there (#499); else a dock_apps entry.
-     */
-    private boolean isDocked(Entry e) {
-        if (savedDocked < 0) return favourites.contains(e.pkg);
-        Integer rank = savedRanks.get(e.component.flattenToShortString());
-        return rank != null && rank < savedDocked;
     }
 
     /** Reorder mode on or off; takes effect at the next reload() (empty dock slots are left out while on). */

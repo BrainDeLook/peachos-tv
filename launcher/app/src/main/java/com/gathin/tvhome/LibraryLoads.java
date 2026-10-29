@@ -7,7 +7,7 @@ package com.gathin.tvhome;
  * one the opening started. Without that a package change in the middle of an opening left the popup unshown.
  */
 final class LibraryLoads {
-    private int latest;
+    private volatile int latest;
     private boolean revealPending;
 
     /** Starts a load, from opening the library when reveal is true. Returns its number. */

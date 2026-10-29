@@ -14,37 +14,51 @@ import android.graphics.drawable.Drawable;
 
 /** A quiet, TV-sized YouTube brand card, drawn locally without thumbnails or downloads. */
 final class YouTubeBackdrop extends Drawable {
+    private static final Typeface LOGO_FONT = Typeface.create("sans-serif", Typeface.BOLD);
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path play = new Path();
+    private Shader glow;
+    private float left, top, width, height, radius, textX, textY;
     private int alpha = 255;
 
-    @Override public void draw(Canvas canvas) {
-        Rect b = getBounds();
+    YouTubeBackdrop() {
+        paint.setTypeface(LOGO_FONT);
+    }
+
+    @Override protected void onBoundsChange(Rect b) {
+        if (b.isEmpty()) return;
         float unit = b.width() / 1920f;
-        paint.setShader(null);
-        paint.setColor(Color.BLACK);
-        paint.setAlpha(alpha);
-        canvas.drawRect(b, paint);
-        paint.setShader(new RadialGradient(b.width() * .55f, b.height() * .40f,
+        glow = new RadialGradient(b.left + b.width() * .55f, b.top + b.height() * .40f,
                 b.width() * .57f, new int[]{0xFF330A0D, 0xFF110305, Color.BLACK},
-                new float[]{0f, .60f, 1f}, Shader.TileMode.CLAMP));
-        canvas.drawRect(b, paint);
-        paint.setShader(null);
-        float left = b.width() * .43f, top = b.height() * .35f;
-        float width = 210f * unit, height = 146f * unit;
-        paint.setColor(0xFFFF0033);
-        paint.setAlpha(alpha);
-        canvas.drawRoundRect(left, top, left + width, top + height, 37f * unit, 37f * unit, paint);
-        Path play = new Path();
+                new float[]{0f, .60f, 1f}, Shader.TileMode.CLAMP);
+        left = b.left + b.width() * .43f; top = b.top + b.height() * .35f;
+        width = 210f * unit; height = 146f * unit; radius = 37f * unit;
+        play.rewind();
         play.moveTo(left + width * .42f, top + height * .27f);
         play.lineTo(left + width * .42f, top + height * .73f);
         play.lineTo(left + width * .72f, top + height * .50f);
         play.close();
+        paint.setTextSize(115f * unit);
+        textX = left + width + 30f * unit; textY = top + height * .78f;
+    }
+
+    @Override public void draw(Canvas canvas) {
+        Rect b = getBounds();
+        if (b.isEmpty()) return;
+        paint.setShader(null);
+        paint.setColor(Color.BLACK);
+        paint.setAlpha(alpha);
+        canvas.drawRect(b, paint);
+        paint.setShader(glow);
+        canvas.drawRect(b, paint);
+        paint.setShader(null);
+        paint.setColor(0xFFFF0033);
+        paint.setAlpha(alpha);
+        canvas.drawRoundRect(left, top, left + width, top + height, radius, radius, paint);
         paint.setColor(Color.WHITE);
         paint.setAlpha(alpha);
         canvas.drawPath(play, paint);
-        paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        paint.setTextSize(115f * unit);
-        canvas.drawText("YouTube", left + width + 30f * unit, top + height * .78f, paint);
+        canvas.drawText("YouTube", textX, textY, paint);
     }
 
     @Override public void setAlpha(int value) { alpha = value; invalidateSelf(); }

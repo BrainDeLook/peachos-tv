@@ -9,6 +9,7 @@ import android.media.tv.TvContract;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Asks apps to publish their home screen cards. Some (Prime Video) only create their channel when the
@@ -19,12 +20,27 @@ import java.util.Set;
 final class ChannelSetup {
 
     private static final String FILE = "channel_setup";
+    private static final AtomicBoolean running = new AtomicBoolean();
 
     private ChannelSetup() {
     }
 
+    /** Package and preference reads must not delay Home's first layout after boot. */
+    static void start(Context context) {
+        if (!running.compareAndSet(false, true)) return;
+        Context app = context.getApplicationContext();
+        new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            try {
+                run(app);
+            } finally {
+                running.set(false);
+            }
+        }, "channel-setup").start();
+    }
+
     /** Sends the broadcast to each app that listens for it and hasn't had it since it was installed or updated. */
-    static void run(Context context) {
+    private static void run(Context context) {
         PackageManager pm = context.getPackageManager();
         SharedPreferences sent = context.getSharedPreferences(FILE, Context.MODE_PRIVATE);
         SharedPreferences.Editor edit = sent.edit();

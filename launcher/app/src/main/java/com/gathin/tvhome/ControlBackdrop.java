@@ -64,14 +64,11 @@ final class ControlBackdrop extends Drawable {
         }
     }
 
-    static Bitmap capture(View content) {
+    static Bitmap snapshot(View content) {
         int width = 160, height = Math.max(1, Math.round(content.getHeight() * (160f / content.getWidth())));
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        canvas.scale(width / (float) content.getWidth(), height / (float) content.getHeight());
-        long drawStart = android.os.SystemClock.elapsedRealtime();
-        content.draw(canvas);
-        android.util.Log.d("PeachControls", "Capture " + (android.os.SystemClock.elapsedRealtime() - drawStart) + "ms");
+        // Also serves as the matte fallback when the window has no readable frame yet.
+        bitmap.eraseColor(0xff29262f);
         return bitmap;
     }
 
