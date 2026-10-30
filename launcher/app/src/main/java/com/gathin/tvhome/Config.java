@@ -556,6 +556,15 @@ final class Config {
         // A theme push or reset invalidates choices made on the TV. On first use, remember the
         // current theme without clearing choices from an older launcher version.
         SharedPreferences choices = ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE);
+        // Decide once, before syncThemeChoices records its first signature. Existing installations
+        // retain their original dock key, so upgrading does not invalidate a saved custom order.
+        if (!choices.contains("generic_dock_defaults")) {
+            boolean previouslyUsed = choices.contains(THEME_SIGNATURE_KEY) || Order.file(ctx).isFile();
+            choices.edit().putBoolean("generic_dock_defaults", !previouslyUsed).apply();
+        }
+        if (!choices.getBoolean("generic_dock_defaults", true) && (json == null || !json.has("dock_apps"))) {
+            dock = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.legacy_dock_apps)));
+        }
         // Unmounted storage looks like a theme reset; compare only once the file is readable.
         if (mounted) syncThemeChoices(choices, dir, file);
         int chosenColumns = choices.getInt("columns", columns);

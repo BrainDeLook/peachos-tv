@@ -15,8 +15,10 @@
         <item>com.amazon.tv.launcher/com.amazon.tv.launcher.ui.MainSettingsActivity</item>
     </string-array>
 
-    <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
-    <string-array name="dock_apps">
+    <!-- Fresh installs use the first six apps in catalogue order; no product-specific favourites. -->
+    <string-array name="dock_apps" />
+    <!-- Retained only for installations made before the generic first-run defaults. -->
+    <string-array name="legacy_dock_apps">
         <item>org.smarttube.stable</item>
         <item>ru.kinopoisk.tv</item>
         <item>org.jellyfin.androidtv</item>

@@ -67,6 +67,8 @@ Support depends on firmware and the remote keycode; some devices reserve Setting
 
 ## Install
 
+Fresh installs use six dock slots filled by the first available apps in catalogue order, without a fixed SmartTube/Kinopoisk favourites list. Existing on-TV choices and saved app order survive an upgrade.
+
 Requires **Android TV / Google TV 8.0+ (API 26)**. This APK is not for Samsung Tizen or LG webOS.
 
 1. Download `PeachOS-TV.apk` from [Releases](https://github.com/BrainDeLook/peachos-tv/releases/latest).
@@ -87,6 +89,12 @@ adb -s <device> shell cmd package set-home-activity com.gathin.tvhome.backdrops/
 These commands do not debloat the device or disable its original launcher. Firmware may restrict Home replacement. Keep the original launcher available so you can switch back in system settings.
 
 **Updating:** install the newer signed APK over the existing one. Do not uninstall first if you want to preserve settings. The package remains `com.gathin.tvhome.backdrops`, including for older CleanYourTV + Art installations. The original `com.gathin.tvhome` can remain installed alongside it.
+
+## Optional PC setup wizard
+
+The separate [Windows wizard](tools/pc-setup/README.ru.md) installs the APK over ADB and offers selective, reversible package disabling. Cleanup is off by default. The normal APK remains independent. The wizard provides categories, retained features, search, reusable selections, a reviewed plan, and restoration from a local journal.
+
+Its initial catalogue includes common candidates and verified MiTV-AESP0 / Android 9 and TCL G10 / Android 12 profiles. Unknown system packages remain read-only. Analytics, advertising, apps and optional features are separate; combined updater/analytics dependencies are shown explicitly. See the wizard guide for supported profiles and limits.
 
 ## Data and network access
 

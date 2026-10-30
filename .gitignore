@@ -11,3 +11,5 @@
 *.pem
 adbkey*
 .env*
+**/__pycache__/
+tools/pc-setup/dist/
