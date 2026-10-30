@@ -181,8 +181,8 @@ final class ControlCenter {
         if (hasVpn() || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
         addTab("overview", R.drawable.ic_settings, R.string.cc_title);
         overviewTab = tabViews.get(tabViews.size() - 1);
-        if (host.remoteSettingsHoldEnabled()) overviewTab.setOnLongClickListener(v -> {
-            host.remoteSettingsHeld();
+        overviewTab.setOnLongClickListener(v -> {
+            host.settingsGearHeld();
             return true;
         });
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);

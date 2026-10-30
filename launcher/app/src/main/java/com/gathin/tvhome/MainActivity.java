@@ -109,6 +109,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean controlCenterRequested;
     private SettingsButton remoteSettingsButton;
     private boolean remoteSettingsHoldMode;
+    private boolean gearHoldLauncherSettings;
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
     private boolean rtlAppGrid;
@@ -414,6 +415,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         settingsKeycodes = cfg.settingsKeycodes;
         settingsKeyPanel = cfg.settingsKeyPanel;
         remoteSettingsHoldMode = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(SettingsButton.KEY, false);
+        gearHoldLauncherSettings = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getBoolean(LauncherSettingsActivity.GEAR_HOLD_SETTINGS_KEY, true);
         remoteSettingsButton = new SettingsButton(this::remoteSettingsHeld);
         COLUMNS = cfg.columns;
         animations = cfg.animations;
@@ -841,7 +844,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setContentDescription(getString(R.string.cc_title));
         btnSettings.setOnClickListener(v -> showControlCenter());
         btnSettings.setOnLongClickListener(v -> {
-            showSettingsMenu();
+            settingsGearHeld();
             return true;
         });
         btnSettings.setFocusable(!remoteSettingsHoldMode);
@@ -3203,9 +3206,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     void remoteSettingsHeld() {
         if (controlCenter == null) showControlCenter();
         else if (remoteSettingsHoldMode && controlCenter.isShowing()) {
-            controlCenter.closeThen(() -> startActivityForResult(
-                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+            settingsGearHeld();
         }
+    }
+
+    void settingsGearHeld() {
+        if (!gearHoldLauncherSettings) return;
+        Runnable openSettings = () -> startActivityForResult(
+                new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
+        if (controlCenter != null && controlCenter.isShowing()) controlCenter.closeThen(openSettings);
+        else openSettings.run();
     }
 
     private void showControlCenter() {

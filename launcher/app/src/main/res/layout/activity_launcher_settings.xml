@@ -47,6 +47,12 @@
             android:text="@string/navigation_sound" />
 
         <TextView
+            android:id="@+id/gearHoldChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp"
+            android:text="@string/gear_hold_settings_title" />
+
+        <TextView
             android:id="@+id/settingsHoldChoice"
             style="@style/SettingsRow"
             android:layout_marginTop="10dp"

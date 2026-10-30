@@ -150,7 +150,7 @@
     <string name="last_opened">Last opened %1$s</string>
     <string name="settings_hold_title">Hold Settings for Control Center</string>
     <string name="settings_hold_state">Hold Settings for Control Center: %1$s</string>
-    <string name="settings_hold_help">Hold Settings to open Control Center; hold again inside it for launcher settings. A short press does nothing. Directional navigation skips the top gear; Back restores the selected app. For use inside other apps, enable “PeachOS TV · Remote buttons”. Press here to open Accessibility settings.</string>
+    <string name="settings_hold_help">Hold Settings to open Control Center. Holding again opens launcher settings when Hold gear for launcher settings is enabled. A short press does nothing. Directional navigation skips the top gear; Back restores the selected app. For use inside other apps, enable “PeachOS TV · Remote buttons”. Press here to open Accessibility settings.</string>
     <string name="settings_key_choose">Set remote Settings button</string>
     <string name="settings_key_state">Settings button: %1$s</string>
     <string name="settings_key_auto">Default / device configuration</string>
@@ -162,4 +162,6 @@
     <string name="settings_key_service_on">PeachOS TV · Remote buttons is enabled</string>
     <string name="settings_key_filter_off">Helper enabled; key filtering is off</string>
     <string name="settings_key_status">Remote button service: %1$s</string>
+    <string name="gear_hold_settings_title">Hold gear for launcher settings</string>
+    <string name="gear_hold_settings_state">Hold gear for launcher settings: %1$s</string>
 </resources>

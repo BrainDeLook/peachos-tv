@@ -40,7 +40,7 @@ CEC device names are preserved. On supported TCL firmware, a confirmed physical 
 | Open a card in its app | OK |
 | Return from artwork to the dock | Down / Back |
 | Open the control center | Press OK on the settings gear |
-| Open the launcher menu | Hold OK on the settings gear |
+| Open launcher settings | Dedicated control center button; hold gear when enabled |
 | Choose artwork sources | Launcher menu → Top shelf |
 | Rearrange apps / edit the dock | Launcher menu → Reorder / Edit dock |
 
@@ -57,9 +57,11 @@ Starting with **1.5.3**, holding the physical Settings button can open our contr
 3. If the button is not recognized, select **Settings button** and press your remote Settings key within 15 seconds. The launcher saves its code; **Use default** clears the assignment. Navigation, volume, power and Home cannot be assigned.
 4. Check Settings and held-volume behavior with your remote.
 
-When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The top gear is excluded from directional navigation; Back from the panel restores the last selected app icon. Holding Settings again while the panel is open launches launcher settings. Holding OK on the gear tab inside the panel does the same.
+When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The top gear is excluded from directional navigation; Back from the panel restores the last selected app icon.
 
-The option is off by default. Disabling it restores the previous controls: directional navigation reaches the top gear, OK opens the panel, holding OK opens the launcher menu, and Back from the panel restores gear focus.
+The option is off by default. Disabling it lets directional navigation reach the top gear; OK opens the panel and Back restores gear focus.
+
+The separate **Hold gear for launcher settings** option controls holding OK on either the top gear or the gear tab inside the panel, as well as holding Settings again while the panel is open. It is on by default. When off, these holds do nothing; the dedicated launcher settings button in the panel stays available.
 
 Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some TCL firmware, filtering can break held-volume repeat; disable the helper and use the on-screen gear if this happens. The sleep helper is a separate service and is not required for this feature.
 
