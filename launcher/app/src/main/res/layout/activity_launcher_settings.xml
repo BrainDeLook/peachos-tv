@@ -47,6 +47,22 @@
             android:text="@string/navigation_sound" />
 
         <TextView
+            android:id="@+id/settingsHoldChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp"
+            android:text="@string/settings_hold_title" />
+
+        <TextView
+            android:id="@+id/settingsHoldHelp"
+            style="@style/SettingsRow"
+            android:layout_height="wrap_content"
+            android:minHeight="64dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textSize="14sp"
+            android:text="@string/settings_hold_help" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"

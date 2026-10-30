@@ -48,6 +48,8 @@ Apps must publish their cards through Android TV Preview / Watch Next. Lampa his
 
 The control center also provides shortcuts to system settings, apps, Bluetooth, accessibility, search when available, and the clock screen. VPN controls open the detected client or system VPN settings; the launcher cannot read another app's private VPN profiles. **Sleep** requires Android 9+ and the optional **PeachOS TV · Sleep** accessibility helper. This helper does not read screen content or intercept remote keys. The physical power button remains available without it.
 
+The optional **Hold Settings for Control Center** setting changes the physical remote Settings key: a short press does nothing, and holding opens the control center once. It is off by default. To use it inside other apps, enable the **Home button** accessibility helper and keep key filtering enabled in the device configuration. Firmware may reserve this key; check remote and held-volume behavior after enabling the helper. The on-screen gear keeps its existing controls.
+
 ## Install
 
 Requires **Android TV / Google TV 8.0+ (API 26)**. This APK is not for Samsung Tizen or LG webOS.

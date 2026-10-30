@@ -46,6 +46,7 @@ public class HomeKeyService extends AccessibilityService {
     private int[] settingsScancodes = new int[0];
     private int[] settingsKeycodes = new int[0];
     private boolean settingsPanel;
+    private SettingsButton settingsButton;
     /** consume_volume_keys: Volume Up/Down go to VolumeKeys instead of on to the firmware. */
     private boolean consumeVolumeKeys;
     /** app_keys, the same maps InputKeyService reads, for setups that run only this service. */
@@ -65,6 +66,8 @@ public class HomeKeyService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
+        settingsButton = new SettingsButton(() -> startActivity(new Intent(this, MainActivity.class)
+                .setAction(MainActivity.ACTION_CONTROL_CENTER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
         // unlock. Config.load reads credential-protected storage, so wait for the unlock before reading it.
@@ -96,6 +99,7 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        if (settingsButton != null) settingsButton.cancel();
         stopWaitingForUnlock();
         if (gamepads != null) gamepads.stop();
         if (consumeVolumeKeys) VolumeKeys.stop();
@@ -153,6 +157,10 @@ public class HomeKeyService extends AccessibilityService {
                 holdAppScancodes.get(event.getScanCode()))) return true;
         // The stock launcher handled the remote's Settings button; with it disabled the button does nothing.
         if (isSettingsKey(event)) {
+            if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(SettingsButton.KEY, false)) {
+                settingsButton.handle(event);
+                return true;
+            }
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                 Intent open = settingsPanel ? new Intent(this, QuickSettingsActivity.class)
                         : SystemSettings.intent(this, Settings.ACTION_SETTINGS);
@@ -184,6 +192,7 @@ public class HomeKeyService extends AccessibilityService {
     /** Unbound by Android: the user turned the helper off, so Home doesn't put it back (ServiceRepair). */
     @Override
     public boolean onUnbind(Intent intent) {
+        if (settingsButton != null) settingsButton.cancel();
         if (repairRecord) ServiceRepair.disconnected(this, getClass());
         return super.onUnbind(intent);
     }

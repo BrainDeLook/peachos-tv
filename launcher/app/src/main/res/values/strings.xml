@@ -148,4 +148,7 @@
     <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
     <string name="last_opened">Last opened %1$s</string>
+    <string name="settings_hold_title">Hold Settings for Control Center</string>
+    <string name="settings_hold_state">Hold Settings for Control Center: %1$s</string>
+    <string name="settings_hold_help">When enabled, hold Settings to open Control Center; a short press does nothing. For use inside other apps, enable “Home button” in Accessibility. Press here to open Accessibility settings.</string>
 </resources>

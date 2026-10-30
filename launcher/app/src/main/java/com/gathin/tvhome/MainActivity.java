@@ -105,6 +105,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static final String ACTION_LAUNCHER_SETTINGS = "com.gathin.tvhome.action.LAUNCHER_SETTINGS";
     /** The system input switcher, forwarded here by InputsRequestActivity while handle_view_inputs is on. */
     static final String ACTION_VIEW_INPUTS = "com.android.tv.action.VIEW_INPUTS";
+    static final String ACTION_CONTROL_CENTER = "com.gathin.tvhome.action.CONTROL_CENTER";
+    private boolean controlCenterRequested;
+    private SettingsButton remoteSettingsButton;
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
     private boolean rtlAppGrid;
@@ -409,6 +412,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         applyViewInputsHandler(cfg.handleViewInputs);
         settingsKeycodes = cfg.settingsKeycodes;
         settingsKeyPanel = cfg.settingsKeyPanel;
+        remoteSettingsButton = new SettingsButton(() -> {
+            if (controlCenter == null) showControlCenter();
+        });
         COLUMNS = cfg.columns;
         animations = cfg.animations;
         advancedEffects = cfg.animations && cfg.advancedEffects;
@@ -901,7 +907,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .build(), vpnCallback);
         }
         // Not after recreate(): the launch intent survives it and would open the settings again.
-        if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())) openInputsIfAsked(getIntent());
+        if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())
+                && !requestControlCenter(getIntent())) openInputsIfAsked(getIntent());
+        else if (savedInstanceState != null) requestControlCenter(getIntent());
     }
 
     /**
@@ -963,6 +971,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (requestControlCenter(intent)) return;
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
@@ -1080,6 +1089,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void startPendingSettingsReorder() {
+        if (controlCenterRequested && !settingsRecreationPending && tilesReady && started && hasWindowFocus() && !isFinishing()) {
+            controlCenterRequested = false;
+            setIntent(new Intent(Intent.ACTION_MAIN));
+            root.post(() -> { if (started && !isFinishing() && controlCenter == null) showControlCenter(); });
+        }
         if (settingsRecreationPending || !tilesReady || !hasWindowFocus() || isFinishing()
                 || !getIntent().getBooleanExtra(LauncherSettingsActivity.EXTRA_REORDER, false)) return;
         getIntent().removeExtra(LauncherSettingsActivity.EXTRA_REORDER);
@@ -1300,6 +1314,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        remoteSettingsButton.cancel();
         if (controlCenter != null) controlCenter.dismissImmediately();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
@@ -1394,8 +1409,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * nothing even on Home.
      */
     private boolean handleSettingsKey(KeyEvent event) {
-        for (int code : settingsKeycodes) {
-            if (event.getKeyCode() != code) continue;
+        boolean matches = event.getKeyCode() == KeyEvent.KEYCODE_SETTINGS;
+        for (int code : settingsKeycodes) if (event.getKeyCode() == code) matches = true;
+        if (matches) {
+            if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(SettingsButton.KEY, false)) {
+                remoteSettingsButton.handle(event);
+                return true;
+            }
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                 open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class)
                         : systemIntent(Settings.ACTION_SETTINGS));
@@ -1403,6 +1423,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return true;
         }
         return false;
+    }
+
+    private boolean requestControlCenter(Intent intent) {
+        if (intent == null || !ACTION_CONTROL_CENTER.equals(intent.getAction())) return false;
+        setIntent(intent);
+        controlCenterRequested = true;
+        startPendingSettingsReorder();
+        return true;
     }
 
     // ---- reorder ---------------------------------------------------------------------------------
@@ -1419,6 +1447,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (handleSettingsKey(event)) return true;
         int code = event.getKeyCode();
         int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
                 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
@@ -1434,7 +1463,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             return super.dispatchKeyEvent(event);
         }
-        if (handleSettingsKey(event)) return true;
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();

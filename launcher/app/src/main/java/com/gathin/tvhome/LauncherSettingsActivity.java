@@ -43,6 +43,16 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        TextView settingsHoldChoice = findViewById(R.id.settingsHoldChoice);
+        settingsHoldChoice.setText(getString(R.string.settings_hold_state,
+                getString(choices.getBoolean(SettingsButton.KEY, false) ? R.string.on : R.string.off)));
+        settingsHoldChoice.setOnClickListener(v -> {
+            boolean enabled = !choices.getBoolean(SettingsButton.KEY, false);
+            choices.edit().putBoolean(SettingsButton.KEY, enabled).apply();
+            settingsHoldChoice.setText(getString(R.string.settings_hold_state, getString(enabled ? R.string.on : R.string.off)));
+            changed();
+        });
+        findViewById(R.id.settingsHoldHelp).setOnClickListener(v -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         TextView soundChoice = findViewById(R.id.navigationSoundChoice);
         soundChoice.setText(getString(R.string.navigation_sound_state,
                 getString(choices.getBoolean(NavigationSound.KEY, true) ? R.string.on : R.string.off)));
