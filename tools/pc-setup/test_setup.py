@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from catalog import candidates, protected, matching_profiles
-from core import Device, apply_plan, restore, read_restore, read_preset, packages
+from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
 
@@ -31,6 +31,49 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def test_short_component_is_normalized_at_adb_boundary(self):
+        self.assertEqual('com.example/com.example.Main', component('priority=2\ncom.example/.Main'))
+        self.assertEqual(PEACH, component(PEACH))
+
+    def test_xiaomi_home_fallback_is_opt_in_journalled_and_restorable(self):
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        class XiaomiAdb(FakeAdb):
+            def shell(self, *args):
+                if args[:3] == ('cmd', 'package', 'resolve-activity'):
+                    return PEACH if 'com.google.android.tvlauncher' in self.disabled else current.home
+                return super().shell(*args)
+        adb = XiaomiAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            path = apply_plan(adb, current, [], set(), None, True, Path(folder), xiaomi_home_fallback=True)
+            self.assertTrue(read_restore(path)['changes'][0]['confirmed'])
+            self.assertEqual({'com.google.android.tvlauncher'}, adb.disabled)
+            restore(adb, current, path)
+            self.assertEqual(set(), adb.disabled)
+
+    def test_failed_xiaomi_fallback_rolls_back_before_cleanup(self):
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        class XiaomiAdb(FakeAdb):
+            def shell(self, *args):
+                if args[:3] == ('cmd', 'package', 'resolve-activity'): return current.home
+                return super().shell(*args)
+        adb = XiaomiAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            with self.assertRaises(RuntimeError):
+                apply_plan(adb, current, ['com.miui.tv.analytics'], set(), None, True, Path(folder), xiaomi_home_fallback=True)
+        self.assertEqual(set(), adb.disabled)
+        self.assertFalse(any(call[:2] == ('pm', 'disable-user') and call[-1] == 'com.miui.tv.analytics' for call in adb.calls))
+
+    def test_xiaomi_fallback_rejects_other_devices(self):
+        current = device()
+        current.props = {}
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            with self.assertRaises(ValueError):
+                apply_plan(adb, current, [], set(), None, True, Path(folder), xiaomi_home_fallback=True)
+        self.assertEqual([], adb.calls)
+
     def test_android_framework_is_a_valid_inventory_package_but_protected(self):
         self.assertEqual({'android', 'com.google.android.gms'}, packages('package:android\npackage:com.google.android.gms\n'))
         self.assertTrue(protected('android'))

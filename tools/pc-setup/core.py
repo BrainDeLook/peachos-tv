@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 
-from catalog import candidates, protected, FEATURES
+from catalog import candidates, protected, matching_profiles, FEATURES
 
 PACKAGE = re.compile(r'(?:android|[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\Z')
 COMPONENT = re.compile(r'[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+\Z')
@@ -26,7 +26,11 @@ def packages(output):
 
 
 def component(output):
-    return next((s.strip() for s in reversed(output.splitlines()) if COMPONENT.fullmatch(s.strip())), '')
+    name = next((s.strip() for s in reversed(output.splitlines()) if COMPONENT.fullmatch(s.strip())), '')
+    if not name:
+        return ''
+    package, activity = name.split('/')
+    return package + '/' + (package + activity if activity.startswith('.') else activity)
 
 
 @dataclass
@@ -115,11 +119,15 @@ def save_json(path, value):
     temporary.replace(path)
 
 
-def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None):
+def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None, xiaomi_home_fallback=False):
     # Re-read at the mutation boundary: an IP can now belong to a different TV.
     current = discover(adb, device.serial)
     if current.identity != device.identity:
         raise ValueError('Устройство изменилось. Подключитесь заново и проверьте план.')
+    stock_package = 'com.google.android.tvlauncher'
+    if xiaomi_home_fallback and (not set_home or 'xiaomi-aesp0' not in matching_profiles(current.props)
+                                 or current.home.split('/')[0] != stock_package):
+        raise ValueError('Обход Home доступен только для штатного Google Home на Xiaomi MiTV-AESP0 / Android 9.')
     _, available = candidates(current.props, current.installed, current.user_apps, current.home.split('/')[0])
     for package in selected:
         if package not in available or protected(package, current.home.split('/')[0]) or package in current.protected_packages:
@@ -164,7 +172,30 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
                                        '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
         if resolved != PEACH:
             adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, current.home)
-            raise RuntimeError('Прошивка не подтвердила новый Home. Исходный Home возвращён; очистка не выполнялась.')
+            if not xiaomi_home_fallback:
+                raise RuntimeError('Прошивка продолжает выбирать штатный Home, несмотря на ответ Success. Исходное назначение возвращено; очистка не выполнялась. На Xiaomi MiTV-AESP0 включите отдельную опцию обхода Home и повторно проверьте план либо снимите «Назначить PeachOS главным экраном».')
+            dump = adb.shell('dumpsys', 'package', stock_package)
+            match = re.search(r'User ' + str(current.user) + r':[^\n]*\benabled=(\d+)', dump)
+            if not match or int(match[1]) not in (0, 1):
+                raise ValueError('Не определено исходное состояние штатного Home; ничего не отключено.')
+            entry = {'package': stock_package, 'original': int(match[1]), 'confirmed': False}
+            journal['changes'].append(entry)
+            save_json(path, journal)
+            progress('Обход Xiaomi: обратимое отключение штатного Home…')
+            # This boundary must roll back even if ADB fails after applying the command.
+            try:
+                adb.shell('am', 'start', '--user', current.user, '-n', PEACH)
+                adb.shell('pm', 'disable-user', '--user', current.user, stock_package)
+                resolved = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
+                                               '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
+                if resolved != PEACH:
+                    raise RuntimeError('После обхода Xiaomi Home не указывает на PeachOS; очистка остановлена.')
+            except Exception:
+                adb.shell('pm', 'default-state' if entry['original'] == 0 else 'enable', '--user', current.user, stock_package)
+                adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, current.home)
+                raise
+            entry['confirmed'] = True
+            save_json(path, journal)
     for index, (package, state) in enumerate(states.items(), 1):
         progress(f'Отключение {index}/{len(states)}: {package}')
         # Intent is durable before shell runs: even a timeout/disconnect can be restored.

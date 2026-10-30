@@ -72,6 +72,9 @@ class Wizard:
         self.home = tk.BooleanVar(value=False)
         for label, variable in [('Установить APK', self.install), ('Очистить выбранные пакеты', self.clean), ('Назначить PeachOS главным экраном', self.home)]:
             ttk.Checkbutton(options, text=label, variable=variable).pack(side='left', padx=(0, 18))
+        self.xiaomi_home = tk.BooleanVar(value=False)
+        ttk.Checkbutton(frame, text='Обход Home Xiaomi MiTV-AESP0 / Android 9: отключить штатный лаунчер, если назначение игнорируется (обратимо)',
+                        variable=self.xiaomi_home).pack(anchor='w', pady=(0, 9))
         keep_frame = ttk.LabelFrame(frame, text='Что сохранить (пакеты этих функций нельзя выбрать для отключения)', padding=6)
         keep_frame.pack(fill='x')
         self.keep = {key: tk.BooleanVar(value=True) for key in FEATURES}
@@ -289,12 +292,14 @@ class Wizard:
         selected = sorted(self.selected) if self.clean.get() else []
         apk = self.selected_apk() if self.install.get() else None
         set_home = self.home.get()
+        xiaomi_home = self.xiaomi_home.get() and set_home
         keep = {key for key, value in self.keep.items() if value.get()}
         if not (apk or selected or set_home):
             messagebox.showinfo('План пуст', 'Выберите установку APK, назначение Home или пакеты очистки.')
             return
         lines = [self.device_text.get(), '', 'APK: ' + (self.apk.get() if apk else 'не устанавливать'),
-                 'Home: ' + ('назначить PeachOS; старый лаунчер не отключается' if set_home else 'не менять'),
+                 'Home: ' + ('назначить PeachOS' if set_home else 'не менять'),
+                 'Обход Xiaomi: ' + ('если выбор игнорируется, отключить com.google.android.tvlauncher; состояние сохранится в копии' if xiaomi_home else 'выключен; штатный лаунчер не отключается'),
                  'Сохранить: ' + ', '.join(FEATURES[k] for k in keep), '', f'Отключить пакетов: {len(selected)}']
         for package in selected:
             rule = self.rows[package]
@@ -313,7 +318,8 @@ class Wizard:
         ttk.Button(controls, text='Отмена', command=window.destroy).pack(side='left')
         def apply():
             window.destroy()
-            self.job(lambda: apply_plan(self.adb, self.device, selected, keep, apk, set_home, DATA / 'backups', self.progress), self.completed)
+            self.job(lambda: apply_plan(self.adb, self.device, selected, keep, apk, set_home, DATA / 'backups', self.progress,
+                                       xiaomi_home_fallback=xiaomi_home), self.completed)
         ttk.Button(controls, text='Применить этот план', command=apply).pack(side='right')
 
     def completed(self, path):
