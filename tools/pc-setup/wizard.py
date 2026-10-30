@@ -1,5 +1,6 @@
 """Standalone Windows setup UI. Workers never touch Tk; all device changes require a reviewed plan."""
 import json
+import hashlib
 import os
 import queue
 import shutil
@@ -14,7 +15,21 @@ from catalog import FEATURES, PROFILES, RULES, candidates
 from core import Adb, discover, apply_plan, restore, read_preset
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(Path(os.environ.get('LOCALAPPDATA', BASE)) / 'PeachOS TV Setup')))
+ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else BASE
+DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(BASE / 'PeachOS-TV-data')))
+BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
+
+
+def portable_adb():
+    # ADB's server can outlive the GUI. Run it from the persistent portable cache,
+    # so it does not lock the one-file runtime's temporary extraction directory.
+    target = DATA / 'platform-tools'
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'NOTICE.txt'):
+        source, destination = ASSETS / 'platform-tools' / name, target / name
+        if not destination.exists() or hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(destination.read_bytes()).digest():
+            shutil.copyfile(source, destination)
+    return target / 'adb.exe'
 
 
 class Wizard:
@@ -39,13 +54,14 @@ class Wizard:
         self.connect_button = ttk.Button(connection, text='Подключиться', command=self.connect)
         self.connect_button.pack(side='left', padx=4)
         ttk.Button(connection, text='Выбрать adb.exe', command=self.choose_adb).pack(side='left')
-        bundled_adb = BASE / 'platform-tools' / 'adb.exe'
+        bundled_adb = ASSETS / 'platform-tools' / 'adb.exe'
         self.adb_path = str(bundled_adb) if bundled_adb.exists() else shutil.which('adb') or ''
         self.device_text = tk.StringVar(value='Включите отладку на ТВ. При подключении подтвердите разрешение компьютеру.')
         ttk.Label(frame, textvariable=self.device_text, wraplength=1120).pack(anchor='w', pady=8)
         apk_row = ttk.Frame(frame)
         apk_row.pack(fill='x')
-        self.apk = tk.StringVar(value=str(BASE / 'PeachOS-TV.apk'))
+        self.embedded_apk = ASSETS / 'PeachOS-TV.apk'
+        self.apk = tk.StringVar(value=BUNDLED_APK_LABEL if self.embedded_apk.exists() else str(BASE / 'PeachOS-TV.apk'))
         ttk.Label(apk_row, text='APK:').pack(side='left')
         ttk.Entry(apk_row, textvariable=self.apk).pack(side='left', fill='x', expand=True, padx=6)
         ttk.Button(apk_row, text='Выбрать', command=self.choose_apk).pack(side='left')
@@ -113,6 +129,9 @@ class Wizard:
         path = filedialog.askopenfilename(filetypes=[('Android APK', '*.apk')])
         if path: self.apk.set(path)
 
+    def selected_apk(self):
+        return self.embedded_apk if self.apk.get() == BUNDLED_APK_LABEL else Path(self.apk.get())
+
     def open_logs(self):
         DATA.mkdir(parents=True, exist_ok=True)
         os.startfile(DATA)
@@ -151,14 +170,18 @@ class Wizard:
             messagebox.showinfo('Нужен ADB', 'Выберите adb.exe из официальных Android Platform Tools: https://developer.android.com/tools/releases/platform-tools')
             return
         target = self.target.get().strip()
-        adb = Adb(self.adb_path, log=DATA / 'adb-log.jsonl')
+        adb_path = self.adb_path
         # A failed connection must not leave actions targeting the previously connected TV.
         self.device = self.adb = None
         self.rows.clear(); self.selected.clear()
         self.tree.delete(*self.tree.get_children())
         self.device_text.set('Подключение к ' + (target or 'единственному ADB-устройству') + '…')
         self.status.set('Подключение и чтение устройства… Подтвердите отладку на ТВ.')
-        self.job(lambda: (adb, discover(adb, target)), self.connected)
+        def read_device():
+            executable = portable_adb() if adb_path == str(ASSETS / 'platform-tools' / 'adb.exe') else adb_path
+            adb = Adb(executable, log=DATA / 'adb-log.jsonl')
+            return adb, discover(adb, target)
+        self.job(read_device, self.connected)
 
     def connected(self, result):
         self.adb, self.device = result
@@ -264,13 +287,13 @@ class Wizard:
     def review(self):
         if self.busy or not self.device: return
         selected = sorted(self.selected) if self.clean.get() else []
-        apk = Path(self.apk.get()) if self.install.get() else None
+        apk = self.selected_apk() if self.install.get() else None
         set_home = self.home.get()
         keep = {key for key, value in self.keep.items() if value.get()}
         if not (apk or selected or set_home):
             messagebox.showinfo('План пуст', 'Выберите установку APK, назначение Home или пакеты очистки.')
             return
-        lines = [self.device_text.get(), '', 'APK: ' + (str(apk) if apk else 'не устанавливать'),
+        lines = [self.device_text.get(), '', 'APK: ' + (self.apk.get() if apk else 'не устанавливать'),
                  'Home: ' + ('назначить PeachOS; старый лаунчер не отключается' if set_home else 'не менять'),
                  'Сохранить: ' + ', '.join(FEATURES[k] for k in keep), '', f'Отключить пакетов: {len(selected)}']
         for package in selected:
@@ -316,8 +339,11 @@ if __name__ == '__main__':
         root.withdraw()
         app = Wizard(root)
         root.update_idletasks()
+        test_adb = portable_adb() if app.adb_path == str(ASSETS / 'platform-tools' / 'adb.exe') else app.adb_path
         Path(sys.argv[2]).write_text(json.dumps({'tk': root.tk.call('info', 'patchlevel'), 'rules': len(RULES),
-                                               'adb': bool(app.adb_path), 'apk': Path(app.apk.get()).exists()}), encoding='utf-8')
+                                               'adb': bool(app.adb_path), 'apk': app.selected_apk().exists(),
+                                               'adb_version': Adb(test_adb).run('version', target=False) if test_adb else '',
+                                               'apk_sha256': hashlib.sha256(app.selected_apk().read_bytes()).hexdigest() if app.selected_apk().exists() else ''}), encoding='utf-8')
         root.destroy()
     else:
         Wizard(root)
