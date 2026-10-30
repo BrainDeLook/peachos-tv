@@ -27,12 +27,20 @@ final class ChannelSetup {
 
     /** Package and preference reads must not delay Home's first layout after boot. */
     static void start(Context context) {
+        start(context, false);
+    }
+
+    static void refresh(Context context) {
+        start(context, true);
+    }
+
+    private static void start(Context context, boolean force) {
         if (!running.compareAndSet(false, true)) return;
         Context app = context.getApplicationContext();
         new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             try {
-                run(app);
+                run(app, force);
             } finally {
                 running.set(false);
             }
@@ -40,21 +48,21 @@ final class ChannelSetup {
     }
 
     /** Sends the broadcast to each app that listens for it and hasn't had it since it was installed or updated. */
-    private static void run(Context context) {
+    private static void run(Context context, boolean force) {
         PackageManager pm = context.getPackageManager();
         SharedPreferences sent = context.getSharedPreferences(FILE, Context.MODE_PRIVATE);
         SharedPreferences.Editor edit = sent.edit();
         Set<String> seen = new HashSet<>();
         for (ResolveInfo r : pm.queryBroadcastReceivers(new Intent(TvContract.ACTION_INITIALIZE_PROGRAMS), 0)) {
             String pkg = r.activityInfo.packageName;
-            if (BackdropPolicy.isStaticYouTube(pkg) || !seen.add(pkg)) continue;
+            if ((!force && BackdropPolicy.isStaticYouTube(pkg)) || !seen.add(pkg)) continue;
             long updated;
             try {
                 updated = pm.getPackageInfo(pkg, 0).lastUpdateTime;
             } catch (PackageManager.NameNotFoundException e) {
                 continue;
             }
-            if (sent.getLong(pkg, 0) == updated) continue;
+            if (!force && sent.getLong(pkg, 0) == updated) continue;
             // Explicit: Android 8+ doesn't deliver implicit broadcasts to receivers in manifests.
             context.sendBroadcast(new Intent(TvContract.ACTION_INITIALIZE_PROGRAMS).setPackage(pkg));
             edit.putLong(pkg, updated);

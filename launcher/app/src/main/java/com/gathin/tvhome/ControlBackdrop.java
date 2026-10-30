@@ -72,6 +72,7 @@ final class ControlBackdrop extends Drawable {
     }
 
     static Bitmap snapshot(View content) {
+        if (content.getWidth() <= 0 || content.getHeight() <= 0) return null;
         int width = 160, height = Math.max(1, Math.round(content.getHeight() * (160f / content.getWidth())));
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         // Also serves as the matte fallback when the window has no readable frame yet.

@@ -27,6 +27,7 @@ final class Http {
 
     /** The body of a 200 reply, at most maxBytes long; anything else is an IOException. */
     static byte[] get(String url, Map<String, String> headers, int maxBytes) throws IOException {
+        if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Cancelled");
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         try {
             c.setConnectTimeout(10000);
@@ -99,6 +100,7 @@ final class Http {
                 long total = 0;
                 int n;
                 while ((n = in.read(buf)) > 0) {
+                    if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Cancelled");
                     total += n;
                     if (total > maxBytes) throw new IOException("over " + maxBytes + " bytes");
                     sha.update(buf, 0, n);
@@ -117,10 +119,15 @@ final class Http {
     static byte[] readAll(InputStream in, int maxBytes) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[16384];
-        int n;
-        while ((n = in.read(buf)) > 0) {
+        long deadline = System.nanoTime() + 60_000_000_000L;
+        for (;;) {
+            if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Cancelled");
+            if (System.nanoTime() > deadline) throw new java.io.InterruptedIOException("Body read timed out");
+            int n = in.read(buf);
+            if (n < 0) break;
+            if (n == 0) continue;
+            if ((long) out.size() + n > maxBytes) throw new IOException("over " + maxBytes + " bytes");
             out.write(buf, 0, n);
-            if (out.size() > maxBytes) throw new IOException("over " + maxBytes + " bytes");
         }
         return out.toByteArray();
     }

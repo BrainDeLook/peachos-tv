@@ -282,6 +282,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private long interactionGeneration;
     private boolean catalogueDrawReported;
     private boolean homeRefocusPending;
+    private boolean homeFirstPending, returningFromBackground;
     private final Runnable initializeChannels = () -> ChannelSetup.start(getApplicationContext());
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
@@ -975,8 +976,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     /**
-     * Home returns to the remembered app, just like Back. The app key survives Activity recreation
-     * and is resolved against the current list, so a reordered dock still selects the same app.
+     * Coming back from an app keeps its tile. Home pressed while already on Home goes to the dock's first tile.
      */
     @Override
     protected void onNewIntent(Intent intent) {
@@ -985,7 +985,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
-        if (controlCenter != null) { controlCenter.close(); return; }
+        if (controlCenter != null) { controlCenter.closeThen(this::returnToFirstDock); return; }
+        if (!returningFromBackground) {
+            returnToFirstDock();
+            return;
+        }
         if (openPopup != null) openPopup.dismiss();
         if (catalogueLoad != null) {
             homeRefocusPending = true;
@@ -997,6 +1001,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // Keep the existing tiles and restore by app key without replaying their entrance.
             restoreFocus();
         }
+    }
+
+    private void returnToFirstDock() {
+        homeFirstPending = true;
+        if (appLibrary != null) { appLibrary.close(); return; }
+        if (openPopup != null) openPopup.dismiss();
+        if (catalogueLoad != null || !tilesReady) { homeRefocusPending = true; return; }
+        homeFirstPending = false;
+        libraryFocusPending = false;
+        endReorder();
+        focusTile(0); // Existing grid/focus springs own the scroll; no parallel animator or bitmap capture.
     }
 
     @Override
@@ -1294,6 +1309,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * reload() the view that holds focus may no longer show the app it had.
      */
     private void restoreFocus() {
+        if (homeFirstPending) { tilesReady = true; returnToFirstDock(); return; }
         final boolean returnToLibrary = libraryFocusPending;
         final String returnKey = lastFocusedKey;
         final int returnSlot = lastFocused;
@@ -1313,6 +1329,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onUserInteraction();
         interactionGeneration++;
         homeRefocusPending = false;
+        homeFirstPending = false;
         restartIdleClock();
     }
 
@@ -1325,7 +1342,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         remoteSettingsButton.cancel();
-        if (controlCenter != null) controlCenter.dismissImmediately();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
         root.removeCallbacks(showIdleClock);
@@ -1349,6 +1365,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onStop() {
         super.onStop();
+        returningFromBackground = true;
+        // A foreground Home intent may pause/resume this Activity without stopping it. Preserve the panel
+        // until onNewIntent can run its normal close animation; discard it only when actually backgrounded.
+        if (controlCenter != null) controlCenter.dismissImmediately();
         if (metadataBackdrop != null) metadataBackdrop.pause();
         if (topShelf != null) topShelf.pause();
         started = false;
@@ -1386,6 +1406,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            returningFromBackground = false;
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
@@ -1848,6 +1869,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         appLibrary = new AppLibraryDialog(this, animations, reducedMotion, appLibrarySelection, adapter::containsPackage, () -> reloadApps(false), () -> {
             appLibrary = null;
             openPopup = null;
+            if (homeFirstPending) { returnToFirstDock(); return; }
             if (libraryFromTopBar) {
                 libraryFromTopBar = false;
                 btnLibraryTop.requestFocus();

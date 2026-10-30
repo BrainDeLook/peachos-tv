@@ -43,7 +43,7 @@
     <string name="vpn">VPN</string>
     <string name="vpn_off">VPN отключён</string>
     <string name="home_settings">Главный экран по умолчанию</string>
-    <string name="home_settings_help">Выберите исходный главный экран, чтобы перестать использовать CleanYourTV по умолчанию, или CleanYourTV, чтобы вернуться. Исходный экран должен быть включён, а телевизор должен поддерживать выбор главного экрана. Если он отключён, сначала запустите скрипт восстановления.</string>
+    <string name="home_settings_help">Выберите PeachOS TV или другой включённый главный экран. Доступность выбора зависит от прошивки. Если исходный экран отключён, сначала восстановите его через мастер на ПК.</string>
     <string name="input_key_service_description">Открывает список источников при нажатии кнопки выбора источника на пульте.</string>
     <string name="home_key_name">PeachOS TV · Кнопки пульта</string>
     <string name="home_key_description">Обрабатывает кнопки пульта для PeachOS TV: удержание Settings открывает контрольную панель при включённой опции, Home обрабатывается на поддерживаемых пультах. Не читает содержимое экрана.</string>
@@ -82,8 +82,8 @@
     <string name="open_on_start_label">Открывать при запуске</string>
     <string name="open_on_start_state">Открывать при запуске: %1$s</string>
     <string name="advanced_effects_warning">Приподнимает плитки, увеличивает значки и сглаживает переходы цвета. Может увеличить расход памяти; результат зависит от телевизора.</string>
-    <string name="follow_theme">Следовать теме (сбросить выбор)</string>
-    <string name="follow_theme_hint">Использовать параметры расположения и анимации текущей темы или встроенные. Установка или сброс темы также удаляет выбор на телевизоре.</string>
+    <string name="follow_theme">Сбросить расположение и анимации</string>
+    <string name="follow_theme_hint">Вернуть исходные параметры расположения, фона и анимаций. Порядок приложений, источники карточек, звуки и назначения пульта сохранятся.</string>
     <string name="tv_settings">Системные настройки ТВ</string>
     <string name="quick_picture">Экран</string>
     <string name="quick_network">Сеть</string>
@@ -150,7 +150,7 @@
     <string name="last_opened">Последний запуск: %1$s</string>
     <string name="settings_hold_title">Удержание Settings: контрольная панель</string>
     <string name="settings_hold_state">Удержание Settings: контрольная панель — %1$s</string>
-    <string name="settings_hold_help">Удерживайте Settings для открытия панели. Повторное удержание открывает настройки лаунчера, если включена опция удержания шестерёнки. Короткое нажатие ничего не делает. Верхняя шестерёнка недоступна стрелками; Назад возвращает выбранное приложение. Для работы в других приложениях включите службу «PeachOS TV · Кнопки пульта». Нажмите здесь, чтобы открыть специальные возможности.</string>
+    <string name="settings_hold_help">При включённом перехвате: удержание открывает панель, короткое нажатие игнорируется. Назад возвращает к выбранному приложению. Нажмите здесь, чтобы настроить службу кнопок пульта в специальных возможностях.</string>
     <string name="settings_key_choose">Настроить кнопку Settings пульта</string>
     <string name="settings_key_state">Кнопка Settings: %1$s</string>
     <string name="settings_key_auto">По умолчанию / конфигурация устройства</string>

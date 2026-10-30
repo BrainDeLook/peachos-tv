@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -80,6 +79,7 @@ final class TopShelf {
         TextView title;
         ShelfRepository.Item item;
         int rowHeight, maxWidth;
+        float aspect;
         boolean loading, loaded;
         volatile boolean wanted;
         long failedAt;
@@ -95,11 +95,23 @@ final class TopShelf {
     private boolean cardMode;
     private boolean rowExiting, awaitingRow;
     private String renderedPkg;
+    private ShelfRepository.Result renderedResult;
     private float dockTop;
     private float dimTarget;
     private final Runnable releaseImages = this::releaseDistantImages;
     private boolean refreshQueued;
     private final Runnable refreshImages = () -> { refreshQueued = false; updateVisible(); };
+    private final android.os.Handler metadataHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean metadataDirty;
+    private final Runnable refreshMetadata = this::refreshPublishedSources;
+    private final android.database.ContentObserver metadataObserver = new android.database.ContentObserver(metadataHandler) {
+        @Override public void onChange(boolean selfChange) {
+            if (!active) return;
+            lists.clear(); metadataDirty = true;
+            metadataHandler.removeCallbacks(refreshMetadata);
+            metadataHandler.postDelayed(refreshMetadata, 350);
+        }
+    };
 
     TopShelf(Activity activity, FrameLayout root, View hero, Navigation navigation, boolean animateRows) {
         this.activity = activity; this.hero = hero; this.navigation = navigation;
@@ -205,6 +217,7 @@ final class TopShelf {
             if (rowFocused == focused) return;
             rowFocused = focused;
             if (!focused) headingHold.reset();
+            if (!focused && metadataDirty) metadataHandler.post(refreshMetadata);
             position();
         };
         panel.getViewTreeObserver().addOnGlobalFocusChangeListener(rowFocusChanged);
@@ -214,14 +227,46 @@ final class TopShelf {
         if (active) return;
         active = true;
         releaseFinishedImages = false;
-        queries = Executors.newSingleThreadExecutor(task -> new Thread(() -> {
+        queries = new ThreadPoolExecutor(0, 1, 2, TimeUnit.SECONDS, new LinkedBlockingQueue<>(1), task -> new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             task.run();
-        }, "shelf-metadata"));
+        }, "shelf-metadata"), new ThreadPoolExecutor.DiscardOldestPolicy());
+        for (android.net.Uri uri : new android.net.Uri[]{android.media.tv.TvContract.Channels.CONTENT_URI,
+                android.media.tv.TvContract.PreviewPrograms.CONTENT_URI, android.media.tv.TvContract.WatchNextPrograms.CONTENT_URI})
+            activity.getContentResolver().registerContentObserver(uri, true, metadataObserver);
         lists.clear(); // refresh history after returning from playback; thumbnails remain on disk
         String pkg = requested;
         requested = null;
         if (pkg != null) show(pkg, label, dockTop);
+    }
+
+    private void refreshPublishedSources() {
+        if (!metadataDirty || !active || suspended || rowFocused || requested == null) return;
+        if (navigation.settling()) { metadataHandler.postDelayed(refreshMetadata, 120); return; }
+        metadataDirty = false;
+        String pkg = requested;
+        String source = ShelfRepository.source(activity, pkg);
+        if (ShelfSelection.OFF.equals(source)) return;
+        int ticket = generation;
+        // Provider notifications may concern another app, or only a playback timestamp. Keep the
+        // visible row until a real content change is known instead of fading/rebuilding on every ping.
+        queries.execute(() -> {
+            if (!valid(ticket, pkg)) return;
+            ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
+            activity.runOnUiThread(() -> {
+                if (!valid(ticket, pkg)) return;
+                lists.put(pkg + "\n" + source, new Snapshot(result));
+                if (ShelfRepository.sameContent(renderedResult, result)) return;
+                if (rowFocused || navigation.settling()) {
+                    metadataDirty = true;
+                    metadataHandler.removeCallbacks(refreshMetadata);
+                    metadataHandler.postDelayed(refreshMetadata, 120);
+                    return;
+                }
+                requested = null;
+                show(pkg, label, dockTop);
+            });
+        });
     }
 
     void show(String pkg, String appLabel, float top) {
@@ -230,6 +275,7 @@ final class TopShelf {
         if (pkg.equals(requested)) {
             if (suspended) {
                 suspended = false;
+                if (metadataDirty) metadataHandler.post(refreshMetadata);
                 if (!bindings.isEmpty() && pkg.equals(renderedPkg)) {
                     if (hero.getVisibility() != View.GONE) hero.setVisibility(View.INVISIBLE);
                     awaitingRow = false;
@@ -308,6 +354,7 @@ final class TopShelf {
 
     private void render(String pkg, ShelfRepository.Result result, int ticket) {
         awaitingRow = false;
+        renderedResult = result;
         if (result.items.isEmpty()) {
             cardMode = false;
             if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
@@ -319,10 +366,16 @@ final class TopShelf {
         String source = ShelfRepository.source(activity, pkg);
         String section = activity.getString(ShelfSelection.HISTORY.equals(source) ? R.string.shelf_history
                 : ShelfSelection.CONTINUE.equals(source) ? R.string.shelf_continue : R.string.shelf_cards);
-        if (source.startsWith("channel:")) for (ShelfRepository.Channel channel : result.channels) {
-            if (source.equals("channel:" + channel.id)) section = channel.name;
+        if (source.startsWith("channel:") || source.startsWith("provider:")) for (ShelfRepository.Channel channel : result.channels) {
+            if (ShelfSelection.matchesChannel(source, channel.id, channel.providerId)) section = channel.name;
         }
-        String headingText = ShelfSelection.AUTO.equals(source) ? label : section;
+        String headingText = section;
+        if (ShelfSelection.AUTO.equals(source)) {
+            headingText = result.channels.size() == 1 && !result.continueWatching
+                    ? result.channels.get(0).name : result.channels.isEmpty() && result.continueWatching
+                    ? activity.getString(R.string.shelf_continue) : label;
+        }
+        if (headingText.isEmpty()) headingText = label;
         heading.setText(headingText);
         headingTextWidth = heading.getPaint().measureText(headingText);
         headingSpring.cancel(); headingTarget = Float.NaN;
@@ -558,6 +611,9 @@ final class TopShelf {
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
     }
     void pause() {
+        if (active) activity.getContentResolver().unregisterContentObserver(metadataObserver);
+        metadataHandler.removeCallbacksAndMessages(null);
+        metadataDirty = false;
         active = false; generation++; clear();
         dim.animate().cancel(); dimTarget = 0f; dim.setAlpha(0f); dim.setVisibility(View.GONE);
         if (queries != null) queries.shutdownNow();
@@ -588,6 +644,7 @@ final class TopShelf {
         for (Binding b : bindings) if (b.reveal != null) b.reveal.cancel();
         bindings.clear();
         renderedPkg = null;
+        renderedResult = null;
         panel.setAlpha(0f);
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
     }
@@ -611,7 +668,7 @@ final class TopShelf {
 
     private void size(Binding binding, float aspect) {
         int[] dimensions = ShelfGeometry.size(aspect, binding.rowHeight, binding.maxWidth);
-        binding.item.aspect = aspect;
+        binding.aspect = aspect;
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         int portraitSlot = (viewport - dp(80) - 4 * dp(20)) / 5;
         binding.tile.getLayoutParams().width = Math.max(portraitSlot, dimensions[0] + dp(6));
@@ -684,7 +741,7 @@ final class TopShelf {
         boolean first = !b.loaded;
         b.loaded = true;
         float actual = bitmap.getWidth() / (float) bitmap.getHeight();
-        if (Math.abs(actual - b.item.aspect) > .02f) {
+        if (Math.abs(actual - b.aspect) > .02f) {
             size(b, actual);
             scheduleVisible();
         }

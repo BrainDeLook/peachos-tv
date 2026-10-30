@@ -28,6 +28,10 @@ public final class LauncherSettingsActivity extends Activity {
     static final String EXTRA_REORDER = "com.gathin.tvhome.extra.REORDER_FROM_SETTINGS";
     static final String GEAR_HOLD_SETTINGS_KEY = "gear_hold_launcher_settings";
     private SharedPreferences choices;
+    private Config settingsConfig;
+    private int section;
+    private final int[] sectionIds = {R.id.sectionDock, R.id.sectionCards, R.id.sectionAppearance, R.id.sectionRemote, R.id.sectionSystem};
+    private final int[] navigationIds = {R.id.navDock, R.id.navCards, R.id.navAppearance, R.id.navRemote, R.id.navSystem};
     private final TextView[] columnChoices = new TextView[4];
     private final TextView[] rowChoices = new TextView[4];
     private static final int[] DOCK_OPACITIES = {100, 70, 50, 30};
@@ -54,6 +58,13 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        section = state == null ? 0 : state.getInt("section", 0);
+        for (int i = 0; i < navigationIds.length; i++) {
+            final int at = i;
+            View nav = findViewById(navigationIds[i]);
+            nav.setOnFocusChangeListener((v, focused) -> { if (focused) showSection(at); });
+            nav.setOnClickListener(v -> { showSection(at); findViewById(sectionIds[at]).requestFocus(View.FOCUS_DOWN); });
+        }
         TextView gearHoldChoice = findViewById(R.id.gearHoldChoice);
         gearHoldChoice.setText(getString(R.string.gear_hold_settings_state,
                 getString(choices.getBoolean(GEAR_HOLD_SETTINGS_KEY, true) ? R.string.on : R.string.off)));
@@ -117,10 +128,12 @@ public final class LauncherSettingsActivity extends Activity {
             choices.edit().putBoolean("liquid_glass", enabled).apply();
             glassChoice.setText(getString(R.string.liquid_glass_state, getString(enabled ? R.string.on : R.string.off)));
             changed();
+            refreshVisibility();
         });
         findViewById(R.id.topShelfChoice).setOnClickListener(v ->
                 startActivity(new Intent(this, TopShelfSettingsActivity.class)));
         Config config = Config.load(this);
+        settingsConfig = config;
         View reorderChoice = findViewById(R.id.reorderChoice);
         reorderChoice.setOnClickListener(v -> {
             setResult(RESULT_OK, new Intent().putExtra(EXTRA_REORDER, true));
@@ -131,6 +144,27 @@ public final class LauncherSettingsActivity extends Activity {
         dockOpacity = config.dockOpacity;
         animations = config.animations;
         advancedEffects = config.animations && config.advancedEffects;
+        findViewById(R.id.idleClockChoice).setOnClickListener(v -> {
+            int[] minutes = {0, 5, 10, 15, 30};
+            String[] labels = new String[minutes.length];
+            int current = choices.getInt("home_idle_clock_minutes", settingsConfig.homeIdleClockMinutes), checked = -1;
+            for (int i = 0; i < minutes.length; i++) {
+                labels[i] = minutes[i] == 0 ? getString(R.string.off) : getString(R.string.settings_minutes, minutes[i]);
+                if (minutes[i] == current) checked = i;
+            }
+            new AlertDialog.Builder(this).setTitle(R.string.settings_idle_clock)
+                    .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                        choices.edit().putInt("home_idle_clock_minutes", minutes[which]).apply();
+                        changed(); refreshIdleClock(); dialog.dismiss();
+                    }).setNegativeButton(android.R.string.cancel, null).show();
+        });
+        refreshIdleClock();
+        try {
+            ((TextView) findViewById(R.id.versionLabel)).setText("PeachOS TV "
+                    + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        } catch (PackageManager.NameNotFoundException missing) {
+            ((TextView) findViewById(R.id.versionLabel)).setText("PeachOS TV");
+        }
 
         int[] ids = {R.id.columns4, R.id.columns5, R.id.columns6, R.id.columns7};
         for (int i = 0; i < ids.length; i++) {
@@ -209,7 +243,7 @@ public final class LauncherSettingsActivity extends Activity {
             if (!hasOnTvChoices()) return;
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
-                    .remove(Config.DOCK_OPACITY_KEY).remove(OpenOnStart.KEY).commit();
+                    .remove(Config.DOCK_OPACITY_KEY).apply();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
@@ -226,7 +260,37 @@ public final class LauncherSettingsActivity extends Activity {
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
         refresh();
-        reorderChoice.requestFocus();
+        refreshVisibility();
+        showSection(section);
+        findViewById(navigationIds[section]).requestFocus();
+    }
+
+    private void showSection(int selected) {
+        section = Math.max(0, Math.min(selected, sectionIds.length - 1));
+        for (int i = 0; i < sectionIds.length; i++) {
+            findViewById(sectionIds[i]).setVisibility(i == section ? View.VISIBLE : View.GONE);
+            findViewById(navigationIds[i]).setSelected(i == section);
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putInt("section", section); super.onSaveInstanceState(state);
+    }
+
+    private void refreshIdleClock() {
+        int minutes = choices.getInt("home_idle_clock_minutes", settingsConfig.homeIdleClockMinutes);
+        ((TextView) findViewById(R.id.idleClockChoice)).setText(getString(R.string.settings_idle_clock_state,
+                minutes == 0 ? getString(R.string.off) : getString(R.string.settings_minutes, minutes)));
+    }
+
+    private void refreshVisibility() {
+        findViewById(R.id.rowsGroup).setVisibility(settingsConfig.dockRow && !settingsConfig.singleRow ? View.VISIBLE : View.GONE);
+        findViewById(R.id.opacityGroup).setVisibility(settingsConfig.dockRow && !settingsConfig.cinematicHome
+                && !settingsConfig.dockGlass && !choices.getBoolean("liquid_glass", true) ? View.VISIBLE : View.GONE);
+        File dir = Config.dir(this);
+        boolean wallpapers = !settingsConfig.wallpapers.isEmpty() || dir != null
+                && (!WallpaperRotation.images(new File(dir, "wallpapers")).isEmpty() || new File(dir, Config.WALLPAPER_NAME).isFile());
+        findViewById(R.id.wallpaperChoice).setVisibility(wallpapers ? View.VISIBLE : View.GONE);
     }
 
     private void reverseRow(TextView[] views) {
@@ -402,8 +466,7 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean hasOnTvChoices() {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
-                || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
-                || choices.contains(OpenOnStart.KEY);
+                || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY);
     }
 
     private void open(Intent intent) {

@@ -15,7 +15,7 @@ import java.util.Set;
 /** Read-only Android TV metadata. All calls run on a worker; provider filters are applied locally. */
 final class ShelfRepository {
     private static final String[] CHANNEL_COLUMNS = {"package_name", "_id", "display_name",
-            "internal_provider_id", "internal_provider_data", "app_link_intent_uri"};
+            "internal_provider_id", "internal_provider_data", "app_link_intent_uri", "type"};
     private static final String[] PREVIEW_COLUMNS = {"package_name", "_id", "title", "poster_art_uri",
             "poster_art_aspect_ratio", "thumbnail_uri", "thumbnail_aspect_ratio", "intent_uri", "channel_id", "weight"};
     private static final String[] WATCH_COLUMNS = {"package_name", "_id", "title", "poster_art_uri",
@@ -24,8 +24,9 @@ final class ShelfRepository {
 
     static final class Channel {
         long id;
-        String name;
+        String name, providerId;
         boolean history;
+        String source() { return ShelfSelection.channelSource(id, providerId); }
     }
     static final class Item {
         String title, image, link;
@@ -36,7 +37,25 @@ final class ShelfRepository {
     static final class Result {
         final List<Channel> channels = new ArrayList<>();
         final List<Item> items = new ArrayList<>();
-        boolean unavailable;
+        boolean unavailable, continueWatching;
+    }
+
+    /** Compare the displayed channel/card content, excluding provider timestamps and ranking weights. */
+    static boolean sameContent(Result first, Result second) {
+        if (first == null || first.unavailable != second.unavailable
+                || first.continueWatching != second.continueWatching
+                || first.channels.size() != second.channels.size() || first.items.size() != second.items.size()) return false;
+        for (int i = 0; i < first.channels.size(); i++) {
+            Channel a = first.channels.get(i), b = second.channels.get(i);
+            if (a.id != b.id || a.history != b.history || !a.name.equals(b.name)
+                    || !a.providerId.equals(b.providerId)) return false;
+        }
+        for (int i = 0; i < first.items.size(); i++) {
+            Item a = first.items.get(i), b = second.items.get(i);
+            if (!a.title.equals(b.title) || !a.image.equals(b.image) || !a.link.equals(b.link)
+                    || a.aspect != b.aspect || a.continuing != b.continuing) return false;
+        }
+        return true;
     }
 
     static String source(Context context, String pkg) {
@@ -49,34 +68,68 @@ final class ShelfRepository {
         context.getSharedPreferences("top_shelf", Context.MODE_PRIVATE).edit().putString(pkg, source).apply();
     }
 
-    static Result read(Context context, String pkg, String source) {
-        Result result = new Result();
-        Set<Long> historyChannels = new HashSet<>();
-        try (Cursor c = context.getContentResolver().query(TvContract.Channels.CONTENT_URI,
-                CHANNEL_COLUMNS, null, null, null)) {
-            if (c != null) {
-                int packageColumn = c.getColumnIndexOrThrow("package_name");
-                int idColumn = c.getColumnIndexOrThrow("_id");
-                int nameColumn = c.getColumnIndexOrThrow("display_name");
-                int providerColumn = c.getColumnIndexOrThrow("internal_provider_id");
-                int dataColumn = c.getColumnIndexOrThrow("internal_provider_data");
-                int linkColumn = c.getColumnIndexOrThrow("app_link_intent_uri");
-                int visited = 0;
-                while (c.moveToNext() && visited++ < 4000) {
-                    if (!pkg.equals(text(c, packageColumn))) continue;
-                    Channel channel = new Channel();
-                    channel.id = number(c, idColumn, -1);
-                    channel.name = text(c, nameColumn);
-                    String data = textOrBlob(c, dataColumn);
-                    channel.history = ShelfSelection.isHistory(pkg, text(c, providerColumn), data,
-                            text(c, linkColumn), channel.name);
-                    if (channel.history) historyChannels.add(channel.id);
-                    result.channels.add(channel);
+    static java.util.Map<String, Result> catalogue(Context context, Set<String> apps) {
+        java.util.Map<String, Result> result = readChannels(context, apps);
+        try (Cursor c = context.getContentResolver().query(TvContract.WatchNextPrograms.CONTENT_URI,
+                new String[]{"package_name", "watch_next_type", "browsable", "title"}, null, null, null)) {
+            if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
+            int visited = 0;
+            while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 6000) {
+                String pkg = text(c, 0);
+                if (apps.contains(pkg) && !text(c, 3).isEmpty() && ShelfSelection.includes(ShelfSelection.CONTINUE, true,
+                        (int) number(c, 1, -1), number(c, 2, 1) != 0, -1, false)) {
+                    result.get(pkg).continueWatching = true;
                 }
             }
         } catch (RuntimeException e) {
-            result.unavailable = true;
+            for (Result value : result.values()) value.unavailable = true;
+            Log.w("TopShelf", "Watch Next catalogue unavailable: " + e.getClass().getSimpleName());
+        }
+        return result;
+    }
+
+    private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps) {
+        java.util.Map<String, Result> result = new java.util.LinkedHashMap<>();
+        for (String app : apps) result.put(app, new Result());
+        try (Cursor c = context.getContentResolver().query(TvContract.Channels.CONTENT_URI,
+                CHANNEL_COLUMNS, null, null, null)) {
+            if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
+            int visited = 0;
+            while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 4000) {
+                String pkg = text(c, 0);
+                if (!apps.contains(pkg) || !TvContract.Channels.TYPE_PREVIEW.equals(text(c, 6))) continue;
+                Channel channel = new Channel();
+                channel.id = number(c, 1, -1);
+                if (channel.id < 0) continue;
+                channel.name = text(c, 2);
+                channel.providerId = text(c, 3);
+                channel.history = ShelfSelection.isHistory(pkg, channel.providerId, textOrBlob(c, 4), text(c, 5), channel.name);
+                result.get(pkg).channels.add(channel);
+            }
+        } catch (RuntimeException e) {
+            for (Result value : result.values()) value.unavailable = true;
             Log.w("TopShelf", "Channel provider unavailable: " + e.getClass().getSimpleName());
+        }
+        for (Result value : result.values()) {
+            java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+            for (Channel channel : value.channels) counts.merge(channel.providerId, 1, Integer::sum);
+            for (Channel channel : value.channels) if (counts.get(channel.providerId) > 1) channel.providerId = "";
+        }
+        return result;
+    }
+
+    static Result read(Context context, String pkg, String source) {
+        Result result = readChannels(context, Collections.singleton(pkg)).get(pkg);
+        Set<Long> historyChannels = new HashSet<>();
+        Set<Long> appChannels = new HashSet<>();
+        String resolvedSource = source;
+        for (Channel channel : result.channels) {
+            appChannels.add(channel.id);
+            if (channel.history) historyChannels.add(channel.id);
+            if (ShelfSelection.matchesChannel(source, channel.id, channel.providerId)) {
+                resolvedSource = "channel:" + channel.id;
+                if (source.startsWith("channel:") && !channel.providerId.isEmpty()) save(context, pkg, channel.source());
+            }
         }
         if (ShelfSelection.OFF.equals(source)) return result;
         for (boolean watch : new boolean[]{true, false}) {
@@ -84,7 +137,7 @@ final class ShelfRepository {
             Uri table = watch ? TvContract.WatchNextPrograms.CONTENT_URI : TvContract.PreviewPrograms.CONTENT_URI;
             try (Cursor c = context.getContentResolver().query(table, watch ? WATCH_COLUMNS : PREVIEW_COLUMNS,
                     null, null, null)) {
-                if (c == null) continue;
+                if (c == null) { result.unavailable = true; continue; }
                 int packageColumn = c.getColumnIndexOrThrow("package_name");
                 int idColumn = c.getColumnIndexOrThrow("_id");
                 int titleColumn = c.getColumnIndexOrThrow("title");
@@ -98,15 +151,20 @@ final class ShelfRepository {
                 int browsableColumn = watch ? c.getColumnIndexOrThrow("browsable") : -1;
                 int rankColumn = c.getColumnIndexOrThrow(watch ? "last_engagement_time_utc_millis" : "weight");
                 int visited = 0;
-                while (c.moveToNext() && visited++ < 6000) {
+                while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 6000) {
                     if (!pkg.equals(text(c, packageColumn))) continue;
                     long channelId = watch ? -1 : number(c, channelColumn, -1);
+                    if (!watch && !appChannels.contains(channelId)) continue;
                     int type = watch ? (int) number(c, typeColumn, -1) : -1;
                     boolean browsable = !watch || number(c, browsableColumn, 1) != 0;
-                    if (!ShelfSelection.includes(source, watch, type, browsable,
+                    String title = text(c, titleColumn);
+                    if (title.isEmpty()) continue;
+                    if (watch && ShelfSelection.includes(ShelfSelection.CONTINUE, true, type, browsable, -1, false))
+                        result.continueWatching = true;
+                    if (!ShelfSelection.includes(resolvedSource, watch, type, browsable,
                             channelId, historyChannels.contains(channelId))) continue;
                     Item item = new Item();
-                    item.title = text(c, titleColumn);
+                    item.title = title;
                     item.image = text(c, posterColumn);
                     int aspectColumn = posterAspectColumn;
                     if (item.image.isEmpty()) {
@@ -116,7 +174,6 @@ final class ShelfRepository {
                     item.aspect = ShelfGeometry.ratio((int) number(c, aspectColumn, -1));
                     item.image = ShelfArtworkUrl.normalize(item.image);
                     item.link = text(c, linkColumn);
-                    if (item.title.isEmpty()) continue;
                     item.id = number(c, idColumn, 0);
                     item.continuing = watch;
                     item.rank = number(c, rankColumn, 0);

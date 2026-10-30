@@ -1,0 +1,18 @@
+<resources>
+    <string name="shelf_sync">Refresh app channels</string>
+    <string name="shelf_loading">Reading published Android TV sources…</string>
+    <string name="shelf_synced">Only channels published by each app are offered. Changes sync while this screen is open.</string>
+    <string name="shelf_unnamed_channel">App channel %1$d</string>
+    <string name="shelf_provider_unavailable">Android TV channel provider is unavailable</string>
+    <string name="shelf_no_sources">No published channels</string>
+    <string name="shelf_no_channels">The app has not published channels yet. Open it and enable Android TV home recommendations if available, then refresh.</string>
+    <string name="shelf_source_unavailable">Saved source is currently unavailable</string>
+    <string name="settings_section_dock">Apps and dock</string>
+    <string name="settings_section_cards">Cards and background</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_remote">Remote and sounds</string>
+    <string name="settings_section_system">System</string>
+    <string name="settings_idle_clock">Idle clock</string>
+    <string name="settings_idle_clock_state">Idle clock: %1$s</string>
+    <string name="settings_minutes">%1$d minutes</string>
+</resources>

@@ -78,7 +78,7 @@ final class ShelfImages {
             memory.put(url, bitmap);
             return bitmap;
         } catch (Exception e) {
-            failures.put(url, android.os.SystemClock.elapsedRealtime());
+            if (!Thread.currentThread().isInterrupted()) failures.put(url, android.os.SystemClock.elapsedRealtime());
             // Hosts only: private artwork URLs may include credentials.
             Uri uri = Uri.parse(url);
             Log.w("ShelfImages", "Unavailable via " + uri.getScheme() + "://" + uri.getHost()

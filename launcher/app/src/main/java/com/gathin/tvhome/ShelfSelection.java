@@ -8,7 +8,16 @@ final class ShelfSelection {
     static boolean usesBackdrop(String source) { return OFF.equals(source); }
     static boolean usesWatchNext(String source) { return AUTO.equals(source) || CONTINUE.equals(source); }
     static boolean usesPreview(String source) {
-        return AUTO.equals(source) || HISTORY.equals(source) || source.startsWith("channel:");
+        return AUTO.equals(source) || HISTORY.equals(source) || source.startsWith("channel:") || source.startsWith("provider:");
+    }
+
+    static String channelSource(long id, String providerId) {
+        return providerId.isEmpty() ? "channel:" + id : "provider:" + java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(providerId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    static boolean matchesChannel(String source, long id, String providerId) {
+        return source.equals("channel:" + id) || source.equals(channelSource(id, providerId));
     }
 
     static boolean isHistory(String pkg, String providerId, String data, String link, String name) {

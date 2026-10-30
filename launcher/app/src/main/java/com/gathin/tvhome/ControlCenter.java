@@ -74,6 +74,8 @@ final class ControlCenter {
     private volatile boolean closing;
     private boolean returnToGear;
     private Runnable afterClose;
+    private Runnable captureFrame, revealFrame;
+    private int captureAttempts;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(1),
             task -> new Thread(() -> {
@@ -210,7 +212,7 @@ final class ControlCenter {
 
     void show() {
         panel.setAlpha(0f); scrim.setAlpha(0f);
-        Runnable reveal = () -> {
+        revealFrame = () -> {
             if (!showing || closing) return;
             int[] from = new int[2], to = new int[2];
             sourceClock.getLocationOnScreen(from); clock.getLocationOnScreen(to);
@@ -249,35 +251,34 @@ final class ControlCenter {
             overviewTab.requestFocusFromTouch();
         };
         if (backdrop != null) {
-            View content = stage;
-            int[] location = new int[2];
-            content.getLocationInWindow(location);
-            Rect source = new Rect(location[0], location[1],
-                    location[0] + content.getWidth(), location[1] + content.getHeight());
-            long copyStart = android.os.SystemClock.elapsedRealtime();
-            // Copy the existing window frame asynchronously. A software content.draw() traversed every
-            // view on the UI thread and could not draw a wallpaper held in a hardware bitmap.
-            try {
-                PixelCopy.request(host.getWindow(), source, backdrop, result -> {
-                    if (closing) return;
-                    android.util.Log.d("PeachControls", "Window copy " + result + " in "
-                            + (android.os.SystemClock.elapsedRealtime() - copyStart) + "ms");
-                    if (result != PixelCopy.SUCCESS) {
-                        backdrop.eraseColor(0xff29262f);
-                        panel.post(reveal);
-                        return;
+            captureFrame = new Runnable() {
+                @Override public void run() {
+                    if (!showing || closing) return;
+                    int[] location = new int[2]; stage.getLocationInWindow(location);
+                    Rect source = new Rect(location[0], location[1],
+                            location[0] + stage.getWidth(), location[1] + stage.getHeight());
+                    captureAttempts++;
+                    try {
+                        PixelCopy.request(host.getWindow(), source, backdrop, result -> {
+                            if (closing) return;
+                            android.util.Log.d("PeachControls", "Window copy " + result + " attempt " + captureAttempts);
+                            if (result != PixelCopy.SUCCESS) {
+                                if (captureAttempts < 3) stage.postOnAnimation(captureFrame);
+                                else panel.post(revealFrame);
+                                return;
+                            }
+                            GLASS_WORK.execute(() -> {
+                                if (closing) return;
+                                ControlBackdrop.blur(backdrop);
+                                panel.post(revealFrame);
+                            });
+                        }, new Handler(Looper.getMainLooper()));
+                    } catch (IllegalArgumentException noWindowFrame) {
+                        if (captureAttempts < 3) stage.postOnAnimation(captureFrame);
+                        else panel.post(revealFrame);
                     }
-                    GLASS_WORK.execute(() -> {
-                        if (closing) return;
-                        ControlBackdrop.blur(backdrop);
-                        panel.post(reveal);
-                    });
-                }, new Handler(Looper.getMainLooper()));
-            } catch (IllegalArgumentException noWindowFrame) {
-                // A window opened before its first draw may not have a backing surface yet.
-                android.util.Log.w("PeachControls", "Window has no readable frame yet; using matte controls");
-                panel.post(reveal);
-            }
+                }
+            };
         }
         // A sibling of Home in the same window: removing the panel and restoring the capsule now
         // produce one render transaction, rather than racing two independently presented surfaces.
@@ -288,7 +289,12 @@ final class ControlCenter {
         home.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         showing = true;
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
-        if (backdrop == null) panel.post(reveal);
+        if (backdrop == null) panel.post(revealFrame);
+        else stage.postOnAnimation(() -> {
+            // Home resumed from another app has not necessarily submitted a readable frame yet.
+            // Wait for its first presentation rather than retaining the matte bitmap for this whole opening.
+            if (!closing) stage.postOnAnimation(captureFrame);
+        });
     }
 
     void close() { closeThen(null); }
@@ -319,7 +325,10 @@ final class ControlCenter {
     }
 
     void closeThen(Runnable action) {
-        if (closing) return;
+        if (closing) {
+            if (action != null) { afterClose = action; returnToGear = false; }
+            return;
+        }
         closing = true; returnToGear = action == null; afterClose = action;
         if (returnToGear && !host.remoteSettingsHoldEnabled()) {
             overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
@@ -344,6 +353,8 @@ final class ControlCenter {
         if (!showing) return;
         showing = false;
         closing = true;
+        if (captureFrame != null) stage.removeCallbacks(captureFrame);
+        if (revealFrame != null) panel.removeCallbacks(revealFrame);
         if (spring != null) spring.cancel();
         body.setLayerType(View.LAYER_TYPE_NONE, null);
         capsule.animate().cancel();
@@ -354,7 +365,7 @@ final class ControlCenter {
         home.setImportantForAccessibility(homeAccessibility);
         sourceClock.setAlpha(1f); anchor.setAlpha(1f);
         capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
-        if (!returnToGear && homeFocus != null) homeFocus.requestFocusFromTouch();
+        if (!returnToGear && afterClose == null && homeFocus != null && host.hasWindowFocus()) homeFocus.requestFocusFromTouch();
         host.controlCenterDismissed(this, returnToGear);
         stage.removeView(root);
         Runnable action = afterClose; afterClose = null;

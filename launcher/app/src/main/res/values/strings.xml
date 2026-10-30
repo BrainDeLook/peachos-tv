@@ -44,7 +44,7 @@
     <string name="vpn">VPN</string>
     <string name="vpn_off">VPN off</string>
     <string name="home_settings">Choose default home</string>
-    <string name="home_settings_help">Select your original home to stop using CleanYourTV as Home, or CleanYourTV to switch back. The original launcher must be enabled and your TV must provide a home picker; use the restore script first if it was disabled.</string>
+    <string name="home_settings_help">Select PeachOS TV or another enabled home screen. Availability depends on the firmware. If the original home is disabled, restore it with the PC wizard first.</string>
     <string name="launcher_settings">Launcher settings</string>
     <string name="native_settings">Native settings</string>
     <string name="columns_label">Apps per row</string>
@@ -61,8 +61,8 @@
     <string name="open_on_start_label">Open on start</string>
     <string name="open_on_start_state">Open on start: %1$s</string>
     <string name="advanced_effects_warning">Adds a lifted tile, icon zoom and smooth colour transitions. May increase memory use; the actual difference depends on your TV.</string>
-    <string name="follow_theme">Follow theme (reset on-TV choices)</string>
-    <string name="follow_theme_hint">Uses the current theme or built-in layout and motion settings. Pushing or resetting a theme also clears your on-TV choices.</string>
+    <string name="follow_theme">Reset layout and motion</string>
+    <string name="follow_theme_hint">Restore layout, wallpaper and motion defaults. App order, sources, sounds and remote assignments stay unchanged.</string>
     <string name="tv_settings">TV system settings</string>
     <string name="quick_picture">Display</string>
     <string name="quick_network">Network</string>
@@ -150,7 +150,7 @@
     <string name="last_opened">Last opened %1$s</string>
     <string name="settings_hold_title">Hold Settings for Control Center</string>
     <string name="settings_hold_state">Hold Settings for Control Center: %1$s</string>
-    <string name="settings_hold_help">Hold Settings to open Control Center. Holding again opens launcher settings when Hold gear for launcher settings is enabled. A short press does nothing. Directional navigation skips the top gear; Back restores the selected app. For use inside other apps, enable “PeachOS TV · Remote buttons”. Press here to open Accessibility settings.</string>
+    <string name="settings_hold_help">When interception is enabled, holding opens the panel and a short press is ignored. Back restores the selected app. Press here to manage the remote buttons service in Accessibility settings.</string>
     <string name="settings_key_choose">Set remote Settings button</string>
     <string name="settings_key_state">Settings button: %1$s</string>
     <string name="settings_key_auto">Default / device configuration</string>

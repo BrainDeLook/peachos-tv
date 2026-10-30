@@ -4,6 +4,19 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ShelfSelectionTest {
+    @Test public void providerIdentitySurvivesChannelRecreationWithoutSelectingAnotherProvider() {
+        String selected = ShelfSelection.channelSource(42, "continue/channel:history");
+        assertEquals(selected, ShelfSelection.channelSource(901, "continue/channel:history"));
+        assertTrue(ShelfSelection.matchesChannel(selected, 901, "continue/channel:history"));
+        assertFalse(ShelfSelection.matchesChannel(selected, 42, "recommendations"));
+        assertTrue(ShelfSelection.usesPreview(selected));
+        assertFalse(ShelfSelection.usesWatchNext(selected));
+    }
+    @Test public void channelsWithoutProviderIdsKeepTheirOwnNumericIdentity() {
+        assertEquals("channel:42", ShelfSelection.channelSource(42, ""));
+        assertFalse(ShelfSelection.matchesChannel("channel:42", 43, ""));
+        assertTrue(ShelfSelection.matchesChannel("channel:42", 42, "provider-renamed"));
+    }
     @Test public void cardSourcesNeverUseFullScreenAppArtwork() {
         assertTrue(ShelfSelection.usesBackdrop(ShelfSelection.OFF));
         for (String source : new String[]{ShelfSelection.AUTO, ShelfSelection.CONTINUE,

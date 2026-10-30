@@ -5,8 +5,8 @@
     <string name="liquid_glass_state">Light glass: %1$s</string>
     <string name="compact_home_date">EEE, d MMM</string>
     <string name="top_shelf">Top shelf</string>
-    <string name="shelf_settings_hint">Choose what appears above each app.</string>
-    <string name="shelf_off">Off</string>
+    <string name="shelf_settings_hint">Choose from channels actually published by each app. Apps without sources cannot supply posters.</string>
+    <string name="shelf_off">No cards · app background</string>
     <string name="shelf_auto">All cards</string>
     <string name="shelf_continue">Continue watching</string>
     <string name="shelf_history">Watch history</string>

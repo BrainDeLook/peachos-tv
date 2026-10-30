@@ -1,0 +1,18 @@
+<resources>
+    <string name="shelf_sync">Синхронизировать каналы приложений</string>
+    <string name="shelf_loading">Читаем опубликованные каналы Android TV…</string>
+    <string name="shelf_synced">Здесь только источники, опубликованные самими приложениями. Изменения обновляются автоматически.</string>
+    <string name="shelf_unnamed_channel">Канал приложения %1$d</string>
+    <string name="shelf_provider_unavailable">Провайдер каналов Android TV недоступен</string>
+    <string name="shelf_no_sources">Нет опубликованных каналов</string>
+    <string name="shelf_no_channels">Приложение пока не опубликовало каналы. Откройте его и включите рекомендации на главном экране Android TV, если такая настройка есть, затем обновите список.</string>
+    <string name="shelf_source_unavailable">Сохранённый источник сейчас недоступен</string>
+    <string name="settings_section_dock">Приложения и док</string>
+    <string name="settings_section_cards">Карточки и фон</string>
+    <string name="settings_section_appearance">Оформление</string>
+    <string name="settings_section_remote">Пульт и звук</string>
+    <string name="settings_section_system">Система</string>
+    <string name="settings_idle_clock">Часы при бездействии</string>
+    <string name="settings_idle_clock_state">Часы при бездействии: %1$s</string>
+    <string name="settings_minutes">%1$d мин.</string>
+</resources>
