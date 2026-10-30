@@ -181,6 +181,10 @@ final class ControlCenter {
         if (hasVpn() || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
         addTab("overview", R.drawable.ic_settings, R.string.cc_title);
         overviewTab = tabViews.get(tabViews.size() - 1);
+        if (host.remoteSettingsHoldEnabled()) overviewTab.setOnLongClickListener(v -> {
+            host.remoteSettingsHeld();
+            return true;
+        });
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
         addTab("network", R.drawable.ic_wifi, R.string.quick_network);
 
@@ -317,7 +321,9 @@ final class ControlCenter {
     void closeThen(Runnable action) {
         if (closing) return;
         closing = true; returnToGear = action == null; afterClose = action;
-        if (returnToGear) overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
+        if (returnToGear && !host.remoteSettingsHoldEnabled()) {
+            overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
+        }
         if (!revealed || !animate) { finishDismiss(); return; }
         if (reduced) {
             panel.animate().cancel();

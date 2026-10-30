@@ -57,7 +57,9 @@ Starting with **1.5.3**, holding the physical Settings button can open our contr
 3. If the button is not recognized, select **Settings button** and press your remote Settings key within 15 seconds. The launcher saves its code; **Use default** clears the assignment. Navigation, volume, power and Home cannot be assigned.
 4. Check Settings and held-volume behavior with your remote.
 
-When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The option is off by default; disabling it restores the previous key handling. The on-screen gear keeps its existing controls: OK opens the panel, and holding OK opens launcher settings.
+When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The top gear is excluded from directional navigation; Back from the panel restores the last selected app icon. Holding Settings again while the panel is open launches launcher settings. Holding OK on the gear tab inside the panel does the same.
+
+The option is off by default. Disabling it restores the previous controls: directional navigation reaches the top gear, OK opens the panel, holding OK opens the launcher menu, and Back from the panel restores gear focus.
 
 Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some TCL firmware, filtering can break held-volume repeat; disable the helper and use the on-screen gear if this happens. The sleep helper is a separate service and is not required for this feature.
 

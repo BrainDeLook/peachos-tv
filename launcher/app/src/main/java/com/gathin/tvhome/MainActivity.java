@@ -108,6 +108,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static final String ACTION_CONTROL_CENTER = "com.gathin.tvhome.action.CONTROL_CENTER";
     private boolean controlCenterRequested;
     private SettingsButton remoteSettingsButton;
+    private boolean remoteSettingsHoldMode;
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
     private boolean rtlAppGrid;
@@ -412,9 +413,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         applyViewInputsHandler(cfg.handleViewInputs);
         settingsKeycodes = cfg.settingsKeycodes;
         settingsKeyPanel = cfg.settingsKeyPanel;
-        remoteSettingsButton = new SettingsButton(() -> {
-            if (controlCenter == null) showControlCenter();
-        });
+        remoteSettingsHoldMode = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(SettingsButton.KEY, false);
+        remoteSettingsButton = new SettingsButton(this::remoteSettingsHeld);
         COLUMNS = cfg.columns;
         animations = cfg.animations;
         advancedEffects = cfg.animations && cfg.advancedEffects;
@@ -470,7 +470,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         metadataBackdrop = new MetadataBackdrop(this, findViewById(R.id.metadataBackdrop));
         topShelf = new TopShelf(this, (android.widget.FrameLayout) root, findViewById(R.id.hero), new TopShelf.Navigation() {
             @Override public void dock() { focusTile(singleRow ? lastFocused : lastFocused % COLUMNS); }
-            @Override public void header() { findViewById(R.id.btnSettings).requestFocus(); }
+            @Override public void header() {
+                if (!remoteSettingsHoldMode) findViewById(R.id.btnSettings).requestFocus();
+            }
             @Override public void fallback(float top) { showHero(lastFocused, top); }
             @Override public boolean settling() { return grid != null && grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE; }
             @Override public void appLaunched() { onAppLaunched(); }
@@ -842,6 +844,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             showSettingsMenu();
             return true;
         });
+        btnSettings.setFocusable(!remoteSettingsHoldMode);
+        btnSettings.setFocusableInTouchMode(!remoteSettingsHoldMode);
+        btnSettings.setClickable(!remoteSettingsHoldMode);
+        btnSettings.setLongClickable(!remoteSettingsHoldMode);
 
         // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
         // jump to a tile far below when there is nothing in that direction.
@@ -1092,7 +1098,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (controlCenterRequested && !settingsRecreationPending && tilesReady && started && hasWindowFocus() && !isFinishing()) {
             controlCenterRequested = false;
             setIntent(new Intent(Intent.ACTION_MAIN));
-            root.post(() -> { if (started && !isFinishing() && controlCenter == null) showControlCenter(); });
+            root.post(() -> { if (started && !isFinishing()) remoteSettingsHeld(); });
         }
         if (settingsRecreationPending || !tilesReady || !hasWindowFocus() || isFinishing()
                 || !getIntent().getBooleanExtra(LauncherSettingsActivity.EXTRA_REORDER, false)) return;
@@ -2496,7 +2502,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (singleRow) {
             // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return remoteSettingsHoldMode;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return true;
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             int last = adapter.focusablePosition(count - 1);
@@ -2520,7 +2526,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) return remoteSettingsHoldMode;
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -3192,6 +3198,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         rows.getChildAt(0).requestFocus();
     }
 
+    boolean remoteSettingsHoldEnabled() { return remoteSettingsHoldMode; }
+
+    void remoteSettingsHeld() {
+        if (controlCenter == null) showControlCenter();
+        else if (remoteSettingsHoldMode && controlCenter.isShowing()) {
+            controlCenter.closeThen(() -> startActivityForResult(
+                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        }
+    }
+
     private void showControlCenter() {
         if (controlCenter != null && controlCenter.isShowing()) {
             controlCenter.close();
@@ -3206,6 +3222,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
         if (controlCenter == center) controlCenter = null;
         if (returnToGear) {
+            if (remoteSettingsHoldMode) {
+                int position = adapter.positionOf(lastFocusedKey);
+                focusTile(position >= 0 ? position : lastFocused);
+                return;
+            }
             View gear = findViewById(R.id.btnSettings);
             gear.requestFocusFromTouch();
             // The panel now shares Home's window: settle the selected button in this same frame,

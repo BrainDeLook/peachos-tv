@@ -150,7 +150,7 @@
     <string name="last_opened">Последний запуск: %1$s</string>
     <string name="settings_hold_title">Удержание Settings: контрольная панель</string>
     <string name="settings_hold_state">Удержание Settings: контрольная панель — %1$s</string>
-    <string name="settings_hold_help">При включении удерживайте Settings для открытия контрольной панели. Короткое нажатие ничего не делает. Для работы в других приложениях включите службу «PeachOS TV · Кнопки пульта» в специальных возможностях. Нажмите здесь, чтобы открыть этот раздел.</string>
+    <string name="settings_hold_help">Удерживайте Settings для открытия панели; удержите ещё раз в открытой панели для настроек лаунчера. Короткое нажатие ничего не делает. Верхняя шестерёнка недоступна стрелками; Назад возвращает выбранное приложение. Для работы в других приложениях включите службу «PeachOS TV · Кнопки пульта». Нажмите здесь, чтобы открыть специальные возможности.</string>
     <string name="settings_key_choose">Настроить кнопку Settings пульта</string>
     <string name="settings_key_state">Кнопка Settings: %1$s</string>
     <string name="settings_key_auto">По умолчанию / конфигурация устройства</string>
