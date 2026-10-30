@@ -623,7 +623,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         });
         if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding,
-                singleRow, cfg.dockBandAll, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true)));
+                singleRow, cfg.dockBandAll, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean("liquid_glass", true),
+                animations && !reducedMotion));
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {

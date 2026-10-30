@@ -24,6 +24,10 @@ An atrace capture showed median `flush commands` wall time of 19.2 ms, including
   interruption/velocity handling are preserved.
 - Only the first and last dock tiles invalidate the RecyclerView during zoom, because only
   those tiles change the dock's outside clearance. Interior focus changes do not invalidate it.
+  The adaptive outer clearance now eases toward the end-tile footprint, using a 45 ms
+  response for expansion and 85 ms for contraction. This adjusts only the band's cached
+  canvas transform, not icon timing or bitmap dimensions. A brief frame-aligned tail
+  stops once both edges settle; disabled/reduced animations snap to the existing geometry.
 - Cache the entire glass band, including its continuous rim and illumination. Reuse the
   bitmap/Canvas when its dimensions match. Cache width is bounded to 2048 pixels; at 1080p
   it retains native resolution for the thin rim. Other uncacheable dock layouts retain direct drawing.

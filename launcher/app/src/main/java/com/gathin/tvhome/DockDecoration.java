@@ -33,6 +33,9 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     /** dock_band_all: in a single row, the band runs behind every app instead of the dock apps only. */
     private final boolean bandAll;
     private final LiquidGlass liquid;
+    private final boolean animateEdges;
+    private float leftExpansion, rightExpansion;
+    private long edgeFrameNanos;
 
     /**
      * @param translucent the cinematic shelf's band: the artwork and the glow show through it.
@@ -44,10 +47,11 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
      * @param bandAll     with singleRow, the band runs behind every app in the row (dock_band_all).
      */
     DockDecoration(int dockSize, float density, boolean translucent, boolean names, int opacity, boolean lightGlass,
-                   boolean evenPadding, boolean singleRow, boolean bandAll, boolean liquidGlass) {
+                   boolean evenPadding, boolean singleRow, boolean bandAll, boolean liquidGlass, boolean animateEdges) {
         this.dockSize = dockSize;
         this.singleRow = singleRow;
         this.bandAll = singleRow && bandAll;
+        this.animateEdges = animateEdges;
         // This band's dimensions stay fixed while scrolling; sideways/variable-padding bands keep direct drawing.
         this.liquid = liquidGlass ? new LiquidGlass(density, 26 * density, !singleRow && !evenPadding) : null;
         this.density = density;
@@ -114,7 +118,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
                 rect.union(l, t, r, b);
             }
         }
-        if (!any) return;
+        if (!any) { edgeFrameNanos = 0; return; }
         float pad = 20.5f * density;
         // Extra paint room at the row ends keeps a zoomed first/last icon inset from the band.
         // The wrapper's wider viewport is balanced by grid padding, so tile positions stay fixed.
@@ -142,11 +146,27 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         }
         rect.bottom += namesRoom;
         // The reference keeps 12dp around enlarged end tiles, rather than squeezing them
-        // into the idle band's smaller end clearance. Follow the existing focus spring.
+        // into the idle band's smaller end clearance. Keep the icon spring responsive;
+        // only the band's outside clearance eases toward it, with a slower release.
         float drawLeft = rect.left, drawRight = rect.right;
         if (!singleRow && !evenPadding) {
-            drawLeft = Math.min(drawLeft, artworkLeft - 12 * density);
-            drawRight = Math.max(drawRight, artworkRight + 12 * density);
+            float targetLeft = Math.max(0f, rect.left - artworkLeft + 12 * density);
+            float targetRight = Math.max(0f, artworkRight + 12 * density - rect.right);
+            long now = System.nanoTime();
+            long elapsed = now - edgeFrameNanos;
+            if (!animateEdges || edgeFrameNanos == 0 || elapsed > 200_000_000L) {
+                leftExpansion = targetLeft; rightExpansion = targetRight;
+            } else {
+                float seconds = elapsed * 1e-9f;
+                leftExpansion = easeExpansion(leftExpansion, targetLeft, seconds);
+                rightExpansion = easeExpansion(rightExpansion, targetRight, seconds);
+            }
+            edgeFrameNanos = now;
+            if (Math.abs(leftExpansion - targetLeft) < .025f * density) leftExpansion = targetLeft;
+            if (Math.abs(rightExpansion - targetRight) < .025f * density) rightExpansion = targetRight;
+            if (leftExpansion != targetLeft || rightExpansion != targetRight) parent.postInvalidateOnAnimation();
+            drawLeft -= leftExpansion;
+            drawRight += rightExpansion;
         }
         if (liquid != null) {
             liquid.radius(radius);
@@ -172,5 +192,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         }
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
+    }
+
+    private static float easeExpansion(float current, float target, float seconds) {
+        float response = target > current ? .045f : .085f;
+        return target + (current - target) * (float) Math.exp(-seconds / response);
     }
 }
