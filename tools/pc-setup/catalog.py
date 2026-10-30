@@ -5,6 +5,8 @@ plus the user's MiTV-AESP0 Android 9 session (28 cleanup packages, two optional 
 Package presence alone never establishes device-profile compatibility.
 """
 from dataclasses import dataclass
+from pathlib import Path
+import json
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,95 @@ RULES = [
     Rule('com.nousguide.android.rbtv', 'Red Bull TV', 'Предустановленные приложения', 'Не будет приложения Red Bull TV.'),
 ]
 
+# Reviewed cross-device candidates, backed by the upstream evidence index. Presence is
+# never an instruction to disable: new optional/vendor entries are manual choices.
+for package, title, impact in [
+    ('tv.samba.ssm', 'Samba TV ACR', 'Распознавание просматриваемого контента Samba TV; его настройки могут исчезнуть.'),
+    ('tv.inscape.tvclient.inscapeacr', 'Inscape ACR', 'Распознавание содержимого экрана Inscape, включая HDMI.'),
+    ('tv.anoki.acr.controller', 'Anoki ACR', 'Фоновое распознавание просматриваемого контента Anoki.'),
+    ('tv.anoki.acr.anokiacroptin', 'Согласие Anoki ACR', 'Экран согласия на распознавание контента; не сам проигрыватель.'),
+    ('com.smartdevice.acr.recommendation', 'ACR SmartDevice', 'Распознавание контента и персонализация рекомендаций.'),
+    ('com.sonyericsson.idd.agent', 'Аналитика Sony IDD', 'Отправка статистики использования Sony.'),
+    ('com.xiaomi.statistic', 'Статистика Xiaomi', 'Отправка статистики и журналов Xiaomi.'),
+    ('com.miui.analytics', 'Аналитика MIUI / OneTrack', 'Сбор и отправка статистики MIUI.'),
+    ('com.tcl.bi', 'Аналитика TCL BI', 'Аналитика поведения и использования TCL.'),
+    ('com.tcl.usagestats', 'Статистика TCL', 'Сбор статистики использования TCL.'),
+    ('org.droidtv.candeebug', 'Аналитика Philips DAC', 'Отправка статистики TP Vision; связан с org.droidtv.gel.'),
+    ('org.droidtv.gel', 'Аналитика Philips GEL', 'Сбор статистики TP Vision, совместно с candeebug.'),
+    ('org.droidtv.usagelogger', 'Статистика Philips', 'Журналы загрузки, нажатий пульта и использования устройства.'),
+    ('org.droidtv.tv.frameworklogger', 'Журналы Philips', 'Диагностические журналы платформы Philips.'),
+]:
+    RULES.append(Rule(package, title, 'Метрики и диагностика', impact))
+
+for package, title, impact in [
+    ('com.google.android.leanbacklauncher.recommendations', 'Рекомендации Leanback', 'Рекомендательные ряды штатного Home. Оставьте, если используете его рекомендации.'),
+    ('android.autoinstalls.config.google.gtvpai', 'Партнёрская автоустановка Google TV', 'Автоматическая установка партнёрских приложений; не Play Store.'),
+    ('android.autoinstalls.config.tcl.device', 'Партнёрская автоустановка TCL', 'Автоматическая установка партнёрских приложений TCL.'),
+    ('android.autoinstalls.config.sony.bravia', 'Партнёрская автоустановка Sony', 'Автоматическая установка партнёрских приложений BRAVIA.'),
+    ('android.autoinstalls.config.tpv.device', 'Партнёрская автоустановка Philips', 'Автоматическая установка приложений партнёров TP Vision.'),
+    ('com.tcl.partnercustomizer', 'Рекомендации TCL', 'Настройки партнёрских рядов Home; на отдельных TCL исчезает плитка Live TV из Home.'),
+    ('com.tcl.smartlink.core', 'SmartLink TCL', 'Служба SmartLink, содержащая фоновую установку приложений; проверьте связанные функции.'),
+    ('com.sony.dtv.promos', 'Промо Sony', 'Промоэкраны My BRAVIA.'),
+    ('com.sony.dtv.sonyselect', 'Sony Select', 'Каталог партнёрских приложений Sony.'),
+    ('com.sony.dtv.sonytab', 'Контентная вкладка Sony', 'Партнёрская контентная вкладка Sony.'),
+    ('com.sony.dtv.recommendationservice', 'Рекомендации Sony', 'Служба рекомендаций Sony.'),
+]:
+    RULES.append(Rule(package, title, 'Реклама и рекомендации', impact))
+
+for package, title, impact in [
+    ('com.sony.dtv.demosupport', 'Деморежим Sony', 'Поддержка магазинных демонстраций.'),
+    ('com.sony.dtv.demosystemsupport', 'Системный деморежим Sony', 'Поддержка магазинной демонстрации Sony.'),
+    ('com.sony.dtv.multiscreendemo', 'Мультиэкранная демонстрация Sony', 'Магазинная демонстрация на нескольких экранах.'),
+    ('fusion.android.tv.demo', 'Магазинная демонстрация Fusion', 'Демонстрационный режим телевизора в магазине.'),
+    ('com.tcl.guard', 'TGuard', 'Интерфейс очистки памяти TCL; не отключает все фоновые менеджеры TCL.'),
+    ('com.xiaomi.mitv.tvmanager', 'TV Manager Xiaomi', 'Менеджер очистки и обслуживания Xiaomi.'),
+    ('com.qterics.da.product', 'Qterics Device Agent', 'Агент удалённой диагностики и поддержки; поддержка производителя может перестать работать.'),
+    ('com.sony.dtv.da.service', 'Удалённая поддержка Sony', 'Служба удалённых сеансов технической поддержки.'),
+]:
+    RULES.append(Rule(package, title, 'Фоновые дополнения', impact))
+
+for package, title, impact, features in [
+    ('com.google.android.speech.pumpkin', 'Распознавание речи офлайн', 'Голосовой поиск и микрофон в приложениях могут перестать работать.', ('voice',)),
+    ('com.google.android.tts', 'Синтез речи Google', 'Пропадут озвучивание текста и функции доступности.', ('accessibility', 'voice')),
+    ('com.tcl.smartalexa', 'Alexa TCL', 'Голосовой помощник Alexa TCL.', ('voice',)),
+    ('org.droidtv.amazonalexa', 'Alexa Philips', 'Голосовой помощник Alexa Philips.', ('voice',)),
+    ('com.sony.dtv.voicesearch', 'Голосовой поиск Sony', 'Голосовой поиск и кнопка микрофона Sony.', ('voice',)),
+    ('com.sony.dtv.assistantadapter', 'Адаптер помощника Sony', 'Связь пульта и голосового помощника Sony.', ('voice',)),
+    ('com.tcl.magiconnectfree', 'MagiConnect', 'Подключение телефона и управление телевизором через MagiConnect.', ('cast',)),
+    ('com.tcl.airplay2', 'AirPlay TCL', 'Приём трансляции AirPlay.', ('cast',)),
+    ('com.realtek.airplay2', 'AirPlay Realtek', 'Служба приёма AirPlay.', ('cast',)),
+    ('com.google.android.backdrop', 'Ambient Mode Google', 'Стандартная заставка Google и слайд-шоу.', ('screensaver',)),
+    ('com.tcl.channelplus', 'TCL Live / FAST', 'Интернет-каналы TCL Live; могут исчезнуть и из списка Live TV.', ('channels',)),
+    ('com.tcl.UpdatePeripheral', 'Обновления аксессуаров TCL', 'Обновление прошивки совместимых аксессуаров, например саундбара.', ('updates',)),
+    ('com.nvidia.ota', 'Обновления NVIDIA SHIELD', 'Обновление прошивки NVIDIA SHIELD.', ('updates',)),
+    ('com.tcl.ui_mediaCenter', 'USB-медиаплеер TCL', 'Воспроизведение файлов с USB через штатный медиаплеер.', ()),
+    ('com.tcl.gamebar', 'Игровая панель TCL', 'Игровая панель и наложения для консолей.', ()),
+]:
+    RULES.append(Rule(package, title, 'Необязательные функции', impact, features=features))
+
+for package, title in [
+    ('com.google.android.play.games', 'Google Play Игры'),
+    ('com.google.android.youtube.tv', 'YouTube'),
+    ('com.amazon.amazonvideo.livingroom.nvidia', 'Prime Video для SHIELD'),
+    ('com.apple.atve.androidtv.appletv', 'Apple TV'),
+    ('com.apple.atve.sony.appletv', 'Apple TV для Sony'),
+    ('com.disney.disneyplus', 'Disney+'),
+    ('com.hbo.hbonow', 'HBO Max'),
+    ('com.wbd.stream', 'Max'),
+    ('com.spotify.tv.android', 'Spotify'),
+    ('com.hulu.livingroomplus', 'Hulu'),
+    ('com.crunchyroll.crunchyroid', 'Crunchyroll'),
+    ('com.peacocktv.peacockandroid', 'Peacock'),
+    ('com.cbs.ott', 'Paramount+'),
+    ('com.tubitv', 'Tubi'),
+    ('tv.pluto.android', 'Pluto TV'),
+    ('com.tcl.browser', 'Браузер TCL'),
+    ('com.sony.dtv.customersupport', 'Справка Sony'),
+    ('com.sony.dtv.smarthelp', 'SmartHelp Sony'),
+]:
+    RULES.append(Rule(package, title, 'Предустановленные приложения',
+                      'Отключает только выбранное приложение. Оставьте, если пользуетесь им; данные не удаляются.'))
+
 # These are optional on the verified tuner-less, NFC-less Android 9 stick, not universal junk.
 for package, title, feature in [
     ('com.android.providers.contacts', 'Хранилище контактов', 'backup'),
@@ -131,3 +222,6 @@ def candidates(props, installed, user_apps, home_package):
             rows[package] = Rule(package, package, 'Другие пользовательские приложения',
                                  'Установленное пользователем приложение. Выбирайте только если оно вам не нужно.')
     return profiles, rows
+
+# Reference evidence is not a disable allowlist. These entries remain read-only in normal mode.
+REFERENCE = json.loads(Path(__file__).with_name('reference-catalog.json').read_text(encoding='utf-8'))

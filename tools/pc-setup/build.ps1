@@ -9,7 +9,7 @@ $buildDir = Join-Path $Output 'build'
 New-Item -ItemType Directory -Force $Output,$buildDir | Out-Null
 $repo = Split-Path (Split-Path $PSScriptRoot)
 $assets = @('--add-data', "$Apk;.", '--add-data', "$(Join-Path $PSScriptRoot 'README.ru.md');.")
-foreach ($name in @('peachos.ico','peachos.png')) {
+foreach ($name in @('peachos.ico','peachos.png','reference-catalog.json')) {
     $assets += @('--add-data', "$(Join-Path $PSScriptRoot $name);.")
 }
 foreach ($name in @('adb.exe','AdbWinApi.dll','AdbWinUsbApi.dll','NOTICE.txt')) {

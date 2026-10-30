@@ -119,6 +119,13 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             }
         }
         if (!any) { edgeFrameNanos = 0; return; }
+        if (!singleRow) {
+            // The configured slot count defines the band, even with a partly empty first row.
+            int inner = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+            float inset = (inner / (float) dockSize - cardWidth) * .5f;
+            rect.left = parent.getPaddingLeft() + inset;
+            rect.right = parent.getWidth() - parent.getPaddingRight() - inset;
+        }
         float pad = 20.5f * density;
         // Extra paint room at the row ends keeps a zoomed first/last icon inset from the band.
         // The wrapper's wider viewport is balanced by grid padding, so tile positions stay fixed.

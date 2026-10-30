@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
-from catalog import FEATURES, PROFILES, RULES, candidates
+from catalog import FEATURES, PROFILES, RULES, REFERENCE, candidates
 from core import Adb, discover, wait_for_device, apply_plan, restore, read_preset
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
@@ -38,6 +38,7 @@ class Wizard:
         self.device = self.adb = None
         self.rows, self.selected, self.profiles = {}, set(), ()
         self.extra_apks = []
+        self.advanced = False
         self.busy = False
         self.wait_window = None
         self.cancel_connect = threading.Event()
@@ -86,14 +87,16 @@ class Wizard:
         title.pack(side='left')
         ttk.Label(title, text='PeachOS TV', style='Title.TLabel').pack(anchor='w')
         ttk.Label(title, text='Ваш телевизор. Ваши приложения. Ничего лишнего.', style='Muted.TLabel').pack(anchor='w', pady=(2, 0))
-        ttk.Label(header, text='PORTABLE  /  PREVIEW', style='Muted.TLabel').pack(side='right')
+        self.mode_button = ttk.Button(header, text='Расширенный мастер →', command=self.switch_mode)
+        self.mode_button.pack(side='right')
         self.status = tk.StringVar(value='Начните с подключения устройства. Никаких автоматических изменений.')
         footer = ttk.Frame(frame); footer.pack(side='bottom', fill='x', pady=(16, 0))
         ttk.Label(footer, textvariable=self.status, style='Muted.TLabel', wraplength=730).pack(side='left', fill='x', expand=True)
         self.plan_button = ttk.Button(footer, text='Посмотреть план →', style='Accent.TButton', command=self.review, state='disabled')
         self.plan_button.pack(side='right', padx=(16, 0))
-        navigation = ttk.Frame(frame); navigation.pack(fill='x', pady=(20, 18))
-        self.tabs = ttk.Notebook(frame)
+        self.advanced_container = ttk.Frame(frame)
+        navigation = ttk.Frame(self.advanced_container); navigation.pack(fill='x', pady=(20, 18))
+        self.tabs = ttk.Notebook(self.advanced_container)
         self.tabs.pack(fill='both', expand=True)
         connection, apps, cleanup, recovery = [ttk.Frame(self.tabs, padding=(4, 6)) for _ in range(4)]
         self.nav_buttons = []
@@ -133,6 +136,7 @@ class Wizard:
         self.embedded_apk = ASSETS / 'PeachOS-TV.apk'
         self.apk = tk.StringVar(value=BUNDLED_APK_LABEL if self.embedded_apk.exists() else str(BASE / 'PeachOS-TV.apk'))
         ttk.Label(apps, text='Установка приложений', style='Heading.TLabel').pack(anchor='w', pady=(12, 8))
+        ttk.Button(apps, text='Только обновить PeachOS TV', command=lambda: self.review(update_only=True)).pack(anchor='e')
         ttk.Checkbutton(apps, text='Установить PeachOS TV', variable=self.install).pack(anchor='w')
         apk_row = ttk.Frame(apps); apk_row.pack(fill='x', pady=(0, 8))
         ttk.Label(apk_row, textvariable=self.apk, style='Muted.TLabel', wraplength=660).pack(side='left', fill='x', expand=True)
@@ -166,7 +170,7 @@ class Wizard:
             ttk.Checkbutton(self.keep_frame, text='Сохранить: ' + label, variable=self.keep[key], command=self.refresh).grid(row=index // 3, column=index % 3, sticky='w', padx=(0, 14))
         filter_row = ttk.Frame(cleanup); filter_row.pack(fill='x', pady=10)
         self.category = tk.StringVar(value='Все категории')
-        categories = ['Все категории'] + sorted({r.category for r in RULES} | {'Другие пользовательские приложения', 'Неизвестные системные пакеты'})
+        categories = ['Все категории'] + sorted({r.category for r in RULES} | {'Другие пользовательские приложения', 'Неизвестные системные пакеты', 'CleanYourTV — требуется проверка'})
         combo = ttk.Combobox(filter_row, textvariable=self.category, values=categories, state='readonly', width=30)
         combo.pack(side='left'); combo.bind('<<ComboboxSelected>>', lambda event: self.refresh())
         self.search = tk.StringVar(); self.search.trace_add('write', lambda *_: self.refresh())
@@ -200,7 +204,50 @@ class Wizard:
         preset_row = ttk.Frame(recovery); preset_row.pack(anchor='w', pady=14)
         ttk.Button(preset_row, text='Сохранить выбор…', command=self.save_preset).pack(side='left')
         ttk.Button(preset_row, text='Загрузить выбор…', command=self.load_preset).pack(side='left', padx=10)
+        self.simple_container = ttk.Frame(frame, padding=(4, 26))
+        self.simple_container.pack(fill='both', expand=True)
+        ttk.Label(self.simple_container, text='Новый главный экран за несколько шагов', style='Heading.TLabel').pack(anchor='w', pady=(6, 10))
+        ttk.Label(self.simple_container, text='Введите адрес телевизора. Подтвердите отладку на его экране, затем проверьте план установки.',
+                  style='Muted.TLabel', wraplength=850).pack(anchor='w')
+        ttk.Label(self.simple_container, text='1. Подключите телевизор или приставку', style='Heading.TLabel').pack(anchor='w', pady=(28, 12))
+        simple_connection = ttk.Frame(self.simple_container); simple_connection.pack(fill='x')
+        ttk.Entry(simple_connection, textvariable=self.target, width=30).pack(side='left', padx=(0, 12))
+        self.simple_connect_button = ttk.Button(simple_connection, text='Подключиться', style='Accent.TButton', command=self.connect)
+        self.simple_connect_button.pack(side='left')
+        ttk.Button(simple_connection, text='Как подготовить ТВ?', command=lambda: messagebox.showinfo('Подготовка Android TV / Google TV',
+            '1. Откройте настройки ТВ → Система / Об устройстве. Найдите «Сборка» и нажмите ОК семь раз.\n\n'
+            '2. В появившемся меню «Для разработчиков» включите отладку USB (на некоторых ТВ — отладку ADB или по сети).\n\n'
+            '3. В настройках сети ТВ посмотрите его локальный IP. Подключите ПК к той же сети и введите этот IP в мастер.\n\n'
+            '4. Нажмите «Подключиться» и разрешите отладку на экране ТВ.\n\n'
+            'Названия пунктов зависят от прошивки. Если требуется беспроводное сопряжение с кодом, его нужно выполнить отдельно через adb pair.')).pack(side='left', padx=12)
+        ttk.Label(self.simple_container, text='Например: 192.168.1.199 · ПК и ТВ должны быть в одной сети.', style='Muted.TLabel').pack(anchor='w', pady=8)
+        ttk.Label(self.simple_container, textvariable=self.device_text, style='Muted.TLabel', wraplength=850).pack(anchor='w', pady=(10, 20))
+        ttk.Label(self.simple_container, text='2. Установите или обновите PeachOS TV', style='Heading.TLabel').pack(anchor='w', pady=(12, 10))
+        self.simple_hint = tk.StringVar(value='Если PeachOS уже установлен, мастер обновит его с сохранением настроек и порядка приложений.')
+        ttk.Label(self.simple_container, textvariable=self.simple_hint, style='Muted.TLabel', wraplength=850).pack(anchor='w', pady=(0, 10))
+        self.simple_home = tk.BooleanVar(value=True)
+        self.simple_home_choice = ttk.Checkbutton(self.simple_container, text='Открывать PeachOS по кнопке Home при новой установке', variable=self.simple_home)
+        self.simple_home_choice.pack(anchor='w')
+        self.simple_cleanup = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.simple_container, text='Дополнительно: лёгкая очистка рекомендованных пакетов', variable=self.simple_cleanup).pack(anchor='w')
+        ttk.Label(self.simple_container, text='Голосовой поиск, трансляция, обновления и эфирные каналы сохраняются. Ничего не удаляется.\nДля выбора отдельных APK и пакетов откройте расширенный мастер.',
+                  style='Muted.TLabel', wraplength=850).pack(anchor='w', pady=12)
+        ttk.Label(self.simple_container, text='3. Нажмите «Посмотреть план» и подтвердите изменения', style='Heading.TLabel').pack(anchor='w', pady=(18, 0))
         root.after(80, self.poll)
+
+    def switch_mode(self):
+        if self.busy: return
+        self.advanced = not self.advanced
+        if self.advanced:
+            self.simple_container.pack_forget()
+            self.advanced_container.pack(fill='both', expand=True)
+        else:
+            if self.expert.get():
+                self.expert.set(False)
+                self.toggle_expert()
+            self.advanced_container.pack_forget()
+            self.simple_container.pack(fill='both', expand=True)
+        self.mode_button.configure(text='← Простой установщик' if self.advanced else 'Расширенный мастер →')
 
     def add_apks(self):
         if self.busy: return
@@ -251,7 +298,7 @@ class Wizard:
     def job(self, action, callback):
         if self.busy: return
         self.busy = True
-        for button in (self.connect_button, self.plan_button, self.restore_button): button.configure(state='disabled')
+        for button in (self.connect_button, self.simple_connect_button, self.plan_button, self.restore_button): button.configure(state='disabled')
         def work():
             try:
                 result = action()
@@ -272,6 +319,7 @@ class Wizard:
                     self.wait_window = None
                 self.busy = False
                 self.connect_button.configure(state='normal')
+                self.simple_connect_button.configure(state='normal')
                 for button in (self.plan_button, self.restore_button): button.configure(state='normal' if self.device else 'disabled')
                 if event[0] == 'done': event[1](event[2])
                 elif event[0] == 'cancelled': self.status.set('Подключение отменено. Изменений нет.')
@@ -330,6 +378,10 @@ class Wizard:
         self.plan_button.configure(state='normal')
         self.restore_button.configure(state='normal')
         self.refresh()
+        already_installed = 'com.gathin.tvhome.backdrops' in d.installed
+        self.simple_home_choice.configure(state='disabled' if already_installed else 'normal')
+        self.simple_hint.set('PeachOS TV уже установлен: обновим до версии из этого мастера. Настройки, порядок и Home сохранятся.' if already_installed
+                             else 'Установим встроенный PeachOS TV. Изменения главного экрана будут перечислены в плане.')
         self.status.set('Устройство подключено. Выберите APK и необязательную очистку, затем проверьте план.')
 
     def blocked(self, package):
@@ -341,7 +393,7 @@ class Wizard:
 
     def visible(self, package):
         rule = self.rows.get(package)
-        category = rule.category if rule else 'Неизвестные системные пакеты'
+        category = rule.category if rule else 'CleanYourTV — требуется проверка' if package in REFERENCE['packages'] else 'Неизвестные системные пакеты'
         text = package + ' ' + (rule.title if rule else '')
         return (self.category.get() == 'Все категории' or self.category.get() == category) and self.search.get().casefold() in text.casefold()
 
@@ -355,7 +407,7 @@ class Wizard:
             rule = self.rows.get(package)
             reason = self.blocked(package)
             self.tree.insert('', 'end', iid=package, values=('—' if reason else '☑' if package in self.selected else '☐',
-                             rule.title if rule else package, rule.category if rule else 'Неизвестные системные пакеты', package),
+                             rule.title if rule else package, rule.category if rule else 'CleanYourTV — требуется проверка' if package in REFERENCE['packages'] else 'Неизвестные системные пакеты', package),
                              tags=('blocked',) if reason else ('danger',) if self.expert.get() and package not in self.rows else ())
         if focus and self.tree.exists(focus[0]): self.tree.selection_set(focus[0])
         self.status.set(f'Отключить: {len(self.selected)} · Установлено пакетов: {len(self.device.installed)} · ' + ('Экспертный режим — защита отключена' if self.expert.get() else 'Обычный режим — защита включена'))
@@ -382,6 +434,11 @@ class Wizard:
         rule = self.rows.get(package)
         self.detail.set(package + '\n' + (rule.impact if rule else 'Назначение не подтверждено базой. В экспертном режиме отключение на ваш риск.')
                         + '\n' + (self.blocked(package) or ('Профиль: ' + ', '.join(PROFILES[p][0] for p in rule.profiles) if rule and rule.profiles else 'Проверьте назначение пакета перед отключением.')))
+        evidence = REFERENCE['packages'].get(package)
+        if evidence:
+            sources = evidence['profiles'] + evidence['optional_profiles']
+            self.detail.set(self.detail.get() + '\nCleanYourTV: ' + ', '.join(sources[:3]) + (' …' if len(sources) > 3 else '')
+                            + '. Присутствие в чужом списке не подтверждает безопасность на вашей модели.')
 
     def recommended(self):
         if self.busy or not self.device: return
@@ -390,7 +447,7 @@ class Wizard:
 
     def select_category(self):
         if self.busy or not self.device: return
-        if self.category.get() == 'Все категории' or (self.category.get() == 'Неизвестные системные пакеты' and not self.expert.get()):
+        if self.category.get() == 'Все категории' or (self.category.get() in ('Неизвестные системные пакеты', 'CleanYourTV — требуется проверка') and not self.expert.get()):
             messagebox.showinfo('Выберите категорию', 'Выберите конкретную категорию, чтобы не отключить всё сразу.')
             return
         if self.expert.get() and not messagebox.askyesno('Массовое отключение', 'Выбрать все видимые пакеты категории? Среди них могут быть критические компоненты.', icon='warning', default='no'):
@@ -425,7 +482,7 @@ class Wizard:
         self.refresh()
         messagebox.showinfo('Выбор загружен', f'Доступно для этого устройства: {len(self.selected)} из {len(preset["packages"])}. Неподходящие и защищённые пакеты пропущены. Изменения не применены.')
 
-    def review(self):
+    def review(self, update_only=False):
         if self.busy or not self.device: return
         selected = sorted(self.selected) if self.clean.get() else []
         apk = self.selected_apk() if self.install.get() else None
@@ -434,10 +491,27 @@ class Wizard:
         extra_apks = tuple(self.extra_apks)
         expert = self.expert.get()
         keep = {key for key, value in self.keep.items() if value.get()}
+        if not self.advanced and not update_only:
+            apk = self.embedded_apk
+            extra_apks = ()
+            expert = False
+            keep = set(FEATURES)
+            selected = [p for p, rule in self.rows.items() if self.simple_cleanup.get() and rule.suggested
+                        and not set(rule.features).intersection(keep) and p not in self.device.disabled]
+            installed = 'com.gathin.tvhome.backdrops' in self.device.installed
+            set_home = self.simple_home.get() and not installed
+            xiaomi_home = set_home and 'xiaomi-aesp0' in self.profiles and self.device.home.split('/')[0] == 'com.google.android.tvlauncher'
+            update_only = installed and not selected
+        if update_only:
+            if 'com.gathin.tvhome.backdrops' not in self.device.installed:
+                messagebox.showinfo('Лаунчер ещё не установлен', 'Используйте обычную установку PeachOS TV.')
+                return
+            apk, extra_apks, selected, set_home, xiaomi_home, expert = self.embedded_apk, (), [], False, False, False
         if not (apk or extra_apks or selected or set_home):
             messagebox.showinfo('План пуст', 'Выберите установку APK, назначение Home или пакеты очистки.')
             return
-        lines = [self.device_text.get(), '', 'APK: ' + (self.apk.get() if apk else 'не устанавливать'),
+        lines = [self.device_text.get(), '', 'Режим: ' + ('Только обновление — очистка и смена Home исключены' if update_only else 'Установка и выбранные операции'),
+                 'APK: ' + (BUNDLED_APK_LABEL if apk == self.embedded_apk else str(apk) if apk else 'не устанавливать'),
                  'Дополнительные APK (по порядку):', *['• ' + str(file) for file in extra_apks], '',
                  'Home: ' + ('назначить PeachOS' if set_home else 'не менять'),
                  'Обход Xiaomi: ' + ('если выбор игнорируется, отключить com.google.android.tvlauncher; состояние сохранится в копии' if xiaomi_home else 'выключен; штатный лаунчер не отключается'),
@@ -451,6 +525,18 @@ class Wizard:
         lines += ['', 'Удалений и очистки данных не будет.', 'Откат возвращает состояния пакетов и исходный Home, но не удаляет установленный APK.',
                   'Установка APK не атомарна: при ошибке предыдущие APK останутся установленными. Копия не откатывает версии APK.',
                   'Резервные копии и подробный журнал: ' + str(DATA), 'После применения проверьте пульт, HDMI, сеть и используемые приложения.']
+        if not self.advanced:
+            lines = [self.device_text.get(), '', 'Обновить PeachOS TV' if update_only else 'Установить PeachOS TV',
+                     'Настройки и порядок приложений сохранятся. Приложения и данные не удаляются.', '',
+                     'Главный экран: ' + ('назначить PeachOS' if set_home else 'оставить как сейчас'),
+                     'Очистка: ' + (f'отключить {len(selected)} рекомендованных пакетов' if selected else 'не выполнять')]
+            if xiaomi_home:
+                lines += ['', 'На этом Xiaomi может потребоваться отключить штатный главный экран. Если обычное назначение не сработает, мастер отключит его с возможностью восстановления из копии.']
+            for package in selected:
+                rule = self.rows[package]
+                lines += ['• ' + rule.title + ': ' + rule.impact]
+            lines += ['', 'Копии и журнал сохранятся рядом с установщиком в PeachOS-TV-data.',
+                      'Копия возвращает состояния отключённых пакетов, но не предыдущую версию APK.']
         window = tk.Toplevel(self.root)
         window.title('Проверка плана — изменений пока нет')
         window.geometry('900x650')
@@ -467,7 +553,7 @@ class Wizard:
                 return
             window.destroy()
             self.job(lambda: apply_plan(self.adb, self.device, selected, keep, apk, set_home, DATA / 'backups', self.progress,
-                                       xiaomi_home_fallback=xiaomi_home, extra_apks=extra_apks, expert=expert), self.completed)
+                                       xiaomi_home_fallback=xiaomi_home, extra_apks=extra_apks, expert=expert, update_only=update_only), self.completed)
         ttk.Button(controls, text='Применить этот план', command=apply).pack(side='right')
 
     def completed(self, path):
@@ -500,6 +586,7 @@ if __name__ == '__main__':
                                                'adb': bool(app.adb_path), 'apk': app.selected_apk().exists(),
                                                'icon': (ASSETS / 'peachos.ico').exists(), 'tabs': len(app.tabs.tabs()),
                                                'expert_default': app.expert.get(),
+                                               'simple_default': not app.advanced, 'reference_packages': len(REFERENCE['packages']),
                                                'adb_version': Adb(test_adb).run('version', target=False) if test_adb else '',
                                                'apk_sha256': hashlib.sha256(app.selected_apk().read_bytes()).hexdigest() if app.selected_apk().exists() else ''}), encoding='utf-8')
         root.destroy()

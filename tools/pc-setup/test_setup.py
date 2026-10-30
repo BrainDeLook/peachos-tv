@@ -6,7 +6,7 @@ import threading
 import zipfile
 from unittest.mock import patch
 
-from catalog import candidates, protected, matching_profiles
+from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
 from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, wait_for_device
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
@@ -34,6 +34,45 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def test_catalogue_is_unique_and_new_common_candidates_have_upstream_evidence(self):
+        self.assertEqual(len(RULES), len({r.package for r in RULES}))
+        for package in ('tv.samba.ssm', 'org.droidtv.candeebug', 'com.tcl.bi', 'com.google.android.play.games'):
+            self.assertIn(package, REFERENCE['packages'])
+            self.assertIn(package, candidates({}, {package}, set(), '')[1])
+
+    def test_reference_entry_does_not_bypass_normal_protection(self):
+        self.assertIn('com.google.android.tungsten.setupwraith', REFERENCE['packages'])
+        self.assertEqual({}, candidates({}, {'com.google.android.tungsten.setupwraith'}, set(), '')[1])
+
+    def test_update_only_rejects_cleanup_home_and_missing_install_before_mutation(self):
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            for selected, home in ((['com.miui.tv.analytics'], False), ([], True)):
+                with self.assertRaises(ValueError):
+                    apply_plan(adb, current, selected, set(), Path(folder)/'a.apk', home, Path(folder), update_only=True)
+            current.installed.remove(PEACH.split('/')[0])
+            with self.assertRaises(ValueError):
+                apply_plan(adb, current, [], set(), Path(folder)/'a.apk', False, Path(folder), update_only=True)
+        self.assertEqual([], adb.calls)
+
+    def test_update_only_installs_without_any_disable_or_home_command(self):
+        class InstallingAdb(FakeAdb):
+            def run(self, *args, **kwargs): self.calls.append(args); return 'Success'
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        adb = InstallingAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            file = Path(folder)/'launcher.apk'
+            with zipfile.ZipFile(file, 'w') as archive: archive.writestr('AndroidManifest.xml', b'test')
+            path = apply_plan(adb, current, [], set(), file, False, Path(folder)/'backups', update_only=True)
+            self.assertEqual([('install', '-r', str(file))], adb.calls)
+            journal = read_restore(path)
+            self.assertTrue(journal['update_only'])
+            self.assertEqual([], journal['changes'])
+            self.assertFalse(journal['home_attempted'])
+
     def test_authorization_waits_then_connects_instead_of_failing(self):
         class AuthorizingAdb:
             serial = ''

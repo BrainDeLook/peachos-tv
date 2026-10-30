@@ -158,11 +158,16 @@ def save_json(path, value):
 
 
 def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None,
-               xiaomi_home_fallback=False, extra_apks=(), expert=False):
+               xiaomi_home_fallback=False, extra_apks=(), expert=False, update_only=False):
     # Re-read at the mutation boundary: an IP can now belong to a different TV.
     current = discover(adb, device.serial)
     if current.identity != device.identity:
         raise ValueError('Устройство изменилось. Подключитесь заново и проверьте план.')
+    if update_only:
+        if selected or set_home or xiaomi_home_fallback or extra_apks or not apk:
+            raise ValueError('Режим обновления допускает только APK лаунчера без очистки и смены Home.')
+        if PEACH.split('/')[0] not in current.installed:
+            raise ValueError('PeachOS TV ещё не установлен. Используйте обычную установку.')
     stock_package = 'com.google.android.tvlauncher'
     if xiaomi_home_fallback and (not set_home or 'xiaomi-aesp0' not in matching_profiles(current.props)
                                  or current.home.split('/')[0] != stock_package):
@@ -197,7 +202,7 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
     journal = {'version': 1, 'identity': current.identity, 'serial': current.serial, 'user': current.user,
                'props': current.props, 'installed': sorted(current.installed), 'disabled': sorted(current.disabled),
                'original_home': current.home, 'home_attempted': False, 'changes': [], 'complete': False,
-               'expert': expert, 'installs': installs}
+               'expert': expert, 'installs': installs, 'update_only': update_only}
     path = folder / 'restore.json'
     save_json(path, journal)
     progress('Резервная копия: ' + str(path))
