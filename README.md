@@ -48,7 +48,17 @@ Apps must publish their cards through Android TV Preview / Watch Next. Lampa his
 
 The control center also provides shortcuts to system settings, apps, Bluetooth, accessibility, search when available, and the clock screen. VPN controls open the detected client or system VPN settings; the launcher cannot read another app's private VPN profiles. **Sleep** requires Android 9+ and the optional **PeachOS TV · Sleep** accessibility helper. This helper does not read screen content or intercept remote keys. The physical power button remains available without it.
 
-The optional **Hold Settings for Control Center** setting changes the physical remote Settings key: a short press does nothing, and holding opens the control center once. It is off by default. To use it inside other apps, enable the **Home button** accessibility helper and keep key filtering enabled in the device configuration. Firmware may reserve this key; check remote and held-volume behavior after enabling the helper. The on-screen gear keeps its existing controls.
+### Remote Settings button
+
+Starting with **1.5.3**, holding the physical Settings button can open our control center instead of Android settings.
+
+1. Enable **Launcher settings → Hold Settings for Control Center**.
+2. To use it inside other apps, enable the **Home button** helper in Android Accessibility settings. The explanatory row below the option opens that screen.
+3. Check Settings and held-volume behavior with your remote.
+
+When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The option is off by default; disabling it restores the previous key handling. The on-screen gear keeps its existing controls: OK opens the panel, and holding OK opens launcher settings.
+
+Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some TCL firmware, filtering can break held-volume repeat; disable the helper and use the on-screen gear if this happens. The sleep helper is a separate service and is not required for this feature.
 
 ## Install
 
