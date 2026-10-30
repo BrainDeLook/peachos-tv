@@ -3,6 +3,8 @@ import hashlib
 import json
 import re
 import subprocess
+import time
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
@@ -50,7 +52,7 @@ class Adb:
     def __init__(self, executable, serial='', log=None):
         self.executable, self.serial, self.log = str(executable), serial, log
 
-    def run(self, *args, target=True, timeout=40):
+    def run(self, *args, target=True, timeout=40, check=True):
         command = [self.executable] + (['-s', self.serial] if target and self.serial else []) + list(args)
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
                                 timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -60,12 +62,48 @@ class Adb:
             with self.log.open('a', encoding='utf-8') as stream:
                 stream.write(json.dumps({'time': datetime.now().isoformat(), 'args': args,
                                          'code': result.returncode, 'stdout': output, 'stderr': result.stderr}, ensure_ascii=False) + '\n')
+        if not check:
+            return (output + '\n' + result.stderr.strip()).strip()
         if result.returncode or re.search(r'(^|\n)(Error:|Security exception:|Failure\b)', output):
             raise RuntimeError(output + '\n' + result.stderr.strip())
         return output
 
     def shell(self, *args):
         return self.run('shell', *map(str, args))
+
+
+def wait_for_device(adb, target, cancelled, progress=lambda text: None, timeout=120):
+    """Connection/authentication boundary; never issues commands to Android itself."""
+    if target and not re.fullmatch(r'[A-Za-z0-9_.:\[\]-]+', target):
+        raise ValueError('Укажите IP:порт или USB-серийный номер без пробелов')
+    network = target and ('.' in target or ':' in target)
+    if network:
+        target = target if ':' in target else target + ':5555'
+        progress('Соединение с ' + target + '…')
+        response = adb.run('connect', target, target=False, timeout=15, check=False)
+    else:
+        response = 'Подключите устройство по USB или укажите IP.'
+    deadline = time.monotonic() + timeout
+    while not cancelled.is_set():
+        entries = dict(line.split()[:2] for line in adb.run('devices', target=False).splitlines()[1:]
+                       if len(line.split()) >= 2 and not line.startswith('*'))
+        if not target:
+            if len(entries) > 1:
+                raise ValueError('Найдено несколько устройств. Укажите IP или USB-серийный номер.')
+            if entries:
+                target = next(iter(entries))
+        state = entries.get(target)
+        if state == 'device':
+            adb.serial = target
+            return target
+        if network and not state:
+            raise RuntimeError('Не удалось соединиться с ' + target + '. Проверьте IP, сеть и отладку.\n' + response)
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Разрешение ADB не получено за две минуты. Проверьте запрос на экране ТВ и повторите подключение.')
+        progress('Подтвердите «Разрешить отладку» на экране телевизора. Ожидаю…' if state == 'unauthorized'
+                 else 'Ожидаю устройство. Проверьте отладку и запрос разрешения на экране ТВ…')
+        cancelled.wait(0.75)
+    raise InterruptedError('Подключение отменено. Изменения на устройстве не выполнялись.')
 
 
 def discover(adb, target):
@@ -119,7 +157,8 @@ def save_json(path, value):
     temporary.replace(path)
 
 
-def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None, xiaomi_home_fallback=False):
+def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None,
+               xiaomi_home_fallback=False, extra_apks=(), expert=False):
     # Re-read at the mutation boundary: an IP can now belong to a different TV.
     current = discover(adb, device.serial)
     if current.identity != device.identity:
@@ -130,21 +169,35 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         raise ValueError('Обход Home доступен только для штатного Google Home на Xiaomi MiTV-AESP0 / Android 9.')
     _, available = candidates(current.props, current.installed, current.user_apps, current.home.split('/')[0])
     for package in selected:
+        if package not in current.installed:
+            raise ValueError('Пакет больше не установлен: ' + package)
+        if expert:
+            continue
         if package not in available or protected(package, current.home.split('/')[0]) or package in current.protected_packages:
             raise ValueError('Пакет не разрешён для этого устройства: ' + package)
         if set(available[package].features).intersection(keep):
             raise ValueError('Пакет нужен сохраняемой функции: ' + package)
-    if set_home and not (apk or PEACH.split('/')[0] in current.installed):
+    if set_home and not (apk or extra_apks or PEACH.split('/')[0] in current.installed):
         raise ValueError('Сначала установите PeachOS TV')
     if set_home and not current.home:
         raise ValueError('Исходный Home не определён. Назначьте лаунчер вручную в настройках Android.')
-    if apk and (not apk.is_file() or apk.suffix.lower() != '.apk'):
-        raise ValueError('Выберите существующий APK лаунчера')
+    install_apks = list(dict.fromkeys(([apk] if apk else []) + list(extra_apks)))
+    installs = []
+    for file in install_apks:
+        if not file.is_file() or file.suffix.lower() != '.apk' or not zipfile.is_zipfile(file):
+            raise ValueError('Некорректный APK: ' + str(file))
+        with zipfile.ZipFile(file) as archive:
+            if 'AndroidManifest.xml' not in archive.namelist():
+                raise ValueError('В APK отсутствует AndroidManifest.xml: ' + file.name)
+        with file.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        installs.append({'file': str(file), 'sha256': digest, 'confirmed': False})
     folder = backup_root / (datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     folder.mkdir(parents=True)
     journal = {'version': 1, 'identity': current.identity, 'serial': current.serial, 'user': current.user,
                'props': current.props, 'installed': sorted(current.installed), 'disabled': sorted(current.disabled),
-               'original_home': current.home, 'home_attempted': False, 'changes': [], 'complete': False}
+               'original_home': current.home, 'home_attempted': False, 'changes': [], 'complete': False,
+               'expert': expert, 'installs': installs}
     path = folder / 'restore.json'
     save_json(path, journal)
     progress('Резервная копия: ' + str(path))
@@ -158,12 +211,17 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         if not match or int(match[1]) not in (0, 1):
             raise ValueError('Не определено исходное состояние ' + package + '; ничего не отключено. Копия: ' + str(path))
         states[package] = int(match[1])
-    if apk:
-        progress('Установка APK без удаления данных…')
-        journal['apk_sha256'] = hashlib.sha256(apk.read_bytes()).hexdigest()
+    for index, entry in enumerate(installs, 1):
+        progress(f'Установка APK {index}/{len(installs)}: ' + Path(entry['file']).name)
+        entry['attempted'] = True
         save_json(path, journal)
-        adb.run('install', '-r', str(apk), timeout=180)
+        adb.run('install', '-r', entry['file'], timeout=180)
+        entry['confirmed'] = True
+        save_json(path, journal)
     if set_home:
+        installed = packages(adb.shell('pm', 'list', 'packages', '--user', current.user))
+        if PEACH.split('/')[0] not in installed:
+            raise ValueError('PeachOS TV не установлен для этого пользователя; назначение Home и очистка остановлены.')
         progress('Назначение PeachOS главным экраном…')
         journal['home_attempted'] = True
         save_json(path, journal)

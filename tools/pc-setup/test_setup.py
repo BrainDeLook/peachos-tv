@@ -2,10 +2,12 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import threading
+import zipfile
 from unittest.mock import patch
 
 from catalog import candidates, protected, matching_profiles
-from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH
+from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, wait_for_device
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
 
@@ -22,6 +24,7 @@ class FakeAdb:
             if self.fail: raise TimeoutError('Connection lost after command')
         if args[:2] in (('pm', 'enable'), ('pm', 'default-state')): self.disabled.discard(args[-1])
         if args[:4] == ('pm', 'list', 'packages', '-d'): return '\n'.join('package:' + p for p in self.disabled)
+        if args[:3] == ('pm', 'list', 'packages'): return 'package:' + PEACH.split('/')[0]
         return ''
 
 
@@ -31,6 +34,93 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def test_authorization_waits_then_connects_instead_of_failing(self):
+        class AuthorizingAdb:
+            serial = ''
+            def __init__(self): self.polls = 0
+            def run(self, *args, **kwargs):
+                if args[0] == 'connect': return 'failed to authenticate'
+                self.polls += 1
+                return 'List of devices attached\n192.168.1.5:5555\t' + ('unauthorized' if self.polls == 1 else 'device')
+        adb = AuthorizingAdb()
+        messages = []
+        with patch('threading.Event.wait', return_value=False):
+            self.assertEqual('192.168.1.5:5555', wait_for_device(adb, '192.168.1.5', threading.Event(), messages.append))
+        self.assertTrue(any('Подтвердите' in message for message in messages))
+        self.assertEqual(2, adb.polls)
+
+    def test_authorization_can_be_cancelled_without_device_changes(self):
+        event = threading.Event(); event.set()
+        class UsbAdb:
+            def run(self, *args, **kwargs): raise AssertionError('No calls after cancellation')
+        with self.assertRaises(InterruptedError): wait_for_device(UsbAdb(), '', event)
+
+    def test_expert_mode_can_disable_protected_package_and_restore_it(self):
+        adb = FakeAdb()
+        current = device()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            path = apply_plan(adb, current, ['com.android.systemui'], {'voice'}, None, False, Path(folder), expert=True)
+            self.assertTrue(read_restore(path)['expert'])
+            self.assertIn('com.android.systemui', adb.disabled)
+            restore(adb, current, path)
+            self.assertEqual(set(), adb.disabled)
+
+    def test_expert_mode_still_rejects_noninstalled_names(self):
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=device()):
+            with self.assertRaises(ValueError):
+                apply_plan(adb, device(), ['bad;reboot'], set(), None, False, Path(folder), expert=True)
+        self.assertEqual([], adb.calls)
+
+    def test_multiple_apks_install_in_order_and_are_journalled(self):
+        class InstallingAdb(FakeAdb):
+            def run(self, *args, **kwargs): self.calls.append(args); return 'Success'
+        adb = InstallingAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=device()):
+            files = [Path(folder) / name for name in ('one.apk', 'two.apk')]
+            for file in files:
+                with zipfile.ZipFile(file, 'w') as archive: archive.writestr('AndroidManifest.xml', b'test')
+            path = apply_plan(adb, device(), [], set(), None, False, Path(folder) / 'backups', extra_apks=files)
+            self.assertEqual([str(file) for file in files], [call[-1] for call in adb.calls])
+            self.assertTrue(all(entry['confirmed'] for entry in read_restore(path)['installs']))
+
+    def test_bad_second_apk_stops_before_any_install_or_cleanup(self):
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=device()):
+            good, bad = Path(folder) / 'good.apk', Path(folder) / 'bad.apk'
+            with zipfile.ZipFile(good, 'w') as archive: archive.writestr('AndroidManifest.xml', b'test')
+            bad.write_text('not apk')
+            with self.assertRaises(ValueError):
+                apply_plan(adb, device(), ['com.miui.tv.analytics'], set(), None, False, Path(folder) / 'backups', extra_apks=[good, bad])
+        self.assertEqual([], adb.calls)
+
+    def test_second_install_failure_records_first_success_and_skips_cleanup(self):
+        class InstallingAdb(FakeAdb):
+            def run(self, *args, **kwargs):
+                self.calls.append(args)
+                if args[-1].endswith('two.apk'): raise RuntimeError('INSTALL_FAILED_NO_MATCHING_ABIS')
+                return 'Success'
+        adb = InstallingAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=device()):
+            files = [Path(folder) / name for name in ('one.apk', 'two.apk')]
+            for file in files:
+                with zipfile.ZipFile(file, 'w') as archive: archive.writestr('AndroidManifest.xml', b'test')
+            with self.assertRaises(RuntimeError):
+                apply_plan(adb, device(), ['com.miui.tv.analytics'], set(), None, False, Path(folder) / 'backups', extra_apks=files)
+            journal = read_restore(next((Path(folder) / 'backups').glob('*/restore.json')))
+            self.assertTrue(journal['installs'][0]['confirmed'])
+            self.assertFalse(journal['installs'][1]['confirmed'])
+            self.assertEqual([], journal['changes'])
+            self.assertEqual(set(), adb.disabled)
+
+    def test_expert_mode_allows_unknown_system_package_and_ignores_keep(self):
+        current = device()
+        current.installed.update({'com.vendor.unknown', 'com.google.android.katniss'})
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            apply_plan(adb, current, ['com.vendor.unknown', 'com.google.android.katniss'], {'voice'}, None, False, Path(folder), expert=True)
+        self.assertEqual({'com.vendor.unknown', 'com.google.android.katniss'}, adb.disabled)
+
     def test_short_component_is_normalized_at_adb_boundary(self):
         self.assertEqual('com.example/com.example.Main', component('priority=2\ncom.example/.Main'))
         self.assertEqual(PEACH, component(PEACH))
