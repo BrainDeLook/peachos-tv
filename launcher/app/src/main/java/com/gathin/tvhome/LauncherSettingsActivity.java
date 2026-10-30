@@ -122,7 +122,6 @@ public final class LauncherSettingsActivity extends Activity {
                 startActivity(new Intent(this, TopShelfSettingsActivity.class)));
         Config config = Config.load(this);
         View reorderChoice = findViewById(R.id.reorderChoice);
-        reorderChoice.setVisibility(config.launcherSettingsButton ? View.VISIBLE : View.GONE);
         reorderChoice.setOnClickListener(v -> {
             setResult(RESULT_OK, new Intent().putExtra(EXTRA_REORDER, true));
             finish();
@@ -227,8 +226,7 @@ public final class LauncherSettingsActivity extends Activity {
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
         refresh();
-        if (config.launcherSettingsButton) reorderChoice.requestFocus();
-        else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
+        reorderChoice.requestFocus();
     }
 
     private void reverseRow(TextView[] views) {

@@ -25,8 +25,7 @@
             android:id="@+id/reorderChoice"
             style="@style/SettingsRow"
             android:layout_marginTop="28dp"
-            android:text="@string/reorder"
-            android:visibility="gone" />
+            android:text="@string/reorder" />
 
         <TextView
             android:id="@+id/topShelfChoice"
