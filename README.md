@@ -6,7 +6,7 @@
 
 PeachOS TV is a minimal launcher for Android TV and Google TV, built around a dock of favourite apps, large artwork, and quiet glass effects. It replaces your home screen, while your apps and subscriptions stay where they are.
 
-[Download APK](https://github.com/BrainDeLook/peachos-tv/releases/latest) · [Русский](README.ru.md) · [Installation](#install) · [Build from source](#build)
+[Download APK](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV.apk) · [Windows installer](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV-Setup-Portable.exe) · [Русский](README.ru.md) · [Installation](#install) · [Build from source](#build)
 
 > PeachOS TV was previously called **CleanYourTV + Art**. Existing users can update in place: the package ID and signing certificate are unchanged. Despite the name, this is a launcher, not a replacement operating system.
 
@@ -20,7 +20,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 - **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
 - **Lightweight glass.** Restrained translucent materials. The control center uses one small, blurred snapshot when opened, with no continuous screen capture. Glass can be turned off.
 - **A compact control center.** Press the gear for quick settings, network status, available TV inputs and detected VPN clients. It unfolds from the clock capsule and returns within the same window to avoid a flashing header.
-- **Your layout.** Rearrange apps and choose which ones belong in the dock.
+- **Your layout.** Rearrange apps in Launcher settings → Reorder apps. Fresh installs default to six columns and fill the dock from the first six available apps. The dock keeps its configured width even when some slots are empty; existing layouts are preserved on upgrade.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
 
 ## Made for TVs and streaming boxes
@@ -92,9 +92,9 @@ These commands do not debloat the device or disable its original launcher. Firmw
 
 ## Optional PC setup wizard
 
-The separate [Windows wizard](tools/pc-setup/README.ru.md) installs the APK over ADB and offers selective, reversible package disabling. Cleanup is off by default. The normal APK remains independent. The wizard provides categories, retained features, search, reusable selections, a reviewed plan, and restoration from a local journal.
+Download the single portable **PeachOS-TV-Setup-Portable.exe** from the [latest release](https://github.com/BrainDeLook/peachos-tv/releases/latest). ADB, the launcher APK and its runtime are included. The [Windows wizard](tools/pc-setup/README.ru.md) opens in simple mode: connect, review, install or update. Cleanup is optional and off by default. Existing users can choose an update-only plan that preserves Home and disables no packages. The normal APK remains independent.
 
-Its initial catalogue includes common candidates and verified MiTV-AESP0 / Android 9 and TCL G10 / Android 12 profiles. Unknown system packages remain read-only. Analytics, advertising, apps and optional features are separate; combined updater/analytics dependencies are shown explicitly. See the wizard guide for supported profiles and limits.
+The advanced wizard supports multiple local APKs, manual package selection, retained features, backups and restoration. It includes 116 described candidates and a reference index of 1,403 package names from 260 CleanYourTV device lists. References from other devices do not establish safety on yours. Normal mode protects unknown and critical packages; a separate expert toggle permits installed-package selection after explicit warnings. Firmware restrictions remain, and disabling ADB or system components can make recovery impossible. See the wizard guide for supported profiles and limits.
 
 ## Data and network access
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.6 — 2026-10-31
+
+- Add a single portable Windows setup executable with bundled ADB, APK, runtime and PeachOS icon. Default to a simple install/update screen; keep the detailed wizard and separately confirmed expert mode available.
+- Wait for TV-side ADB authorization, with cancellation, instead of failing immediately on a first unauthorized connection.
+- Add sequential installation of multiple local APKs, reviewed plans and per-install results. An update-only plan preserves Home and performs no package disabling.
+- Expand the described catalogue from 50 to 116 candidates and bundle a read-only evidence index of 1,403 package names from 260 CleanYourTV device lists. Preserve normal-mode core protection and retained-function checks. The expert mode can attempt disabling any installed package subject to Android permissions; warnings explain the risk of losing boot, networking or ADB.
+- Provide an explicitly reviewed, journalled Home fallback for Xiaomi MiTV-AESP0 / Android 9 when the stock launcher ignores default-Home selection.
+- Default new launcher installs to six columns and the first six available apps, while preserving existing preferences and saved order.
+- Keep the dock band at the configured number of slots even when the first row is incomplete. Preserve existing end-tile contour easing.
+- Restore Reorder apps in launcher settings independently of the top-bar settings-button visibility.
+
+Validation: 268 Android unit tests, release lint and 35 setup tests pass. GUI smoke checks cover simple/advanced mode switching, update isolation, APK queue controls and authorization cancellation. The portable executable is checked in an isolated folder without external Python, ADB or APK files. Package disabling and install-failure paths are tested with simulated ADB; compatibility across additional TV firmware is not yet established. Existing package ID and signing certificate are retained.
+
 ## 1.5.2 — 2026-10-30
 
 - Improve focus animation performance by caching attached app tiles, including their continuous mask and lighting. Release tile layers on detach and restore them on reattach; preserve the existing scale spring and interrupted-motion velocity.

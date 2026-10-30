@@ -42,7 +42,7 @@ class Wizard:
         self.busy = False
         self.wait_window = None
         self.cancel_connect = threading.Event()
-        root.title('PeachOS TV · Setup')
+        root.title('PeachOS TV · Установщик 1.5.6')
         root.geometry('1120x800')
         root.minsize(960, 720)
         root.protocol('WM_DELETE_WINDOW', self.close)
