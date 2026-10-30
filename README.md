@@ -53,8 +53,9 @@ The control center also provides shortcuts to system settings, apps, Bluetooth, 
 Starting with **1.5.3**, holding the physical Settings button can open our control center instead of Android settings.
 
 1. Enable **Launcher settings → Hold Settings for Control Center**.
-2. To use it inside other apps, enable the **Home button** helper in Android Accessibility settings. The explanatory row below the option opens that screen.
-3. Check Settings and held-volume behavior with your remote.
+2. To use it inside other apps, enable **PeachOS TV · Remote buttons** in Android Accessibility settings. The explanatory row opens that screen and shows the helper status. Before 1.5.4 it was called “Home button”.
+3. If the button is not recognized, select **Settings button** and press your remote Settings key within 15 seconds. The launcher saves its code; **Use default** clears the assignment. Navigation, volume, power and Home cannot be assigned.
+4. Check Settings and held-volume behavior with your remote.
 
 When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The option is off by default; disabling it restores the previous key handling. The on-screen gear keeps its existing controls: OK opens the panel, and holding OK opens launcher settings.
 

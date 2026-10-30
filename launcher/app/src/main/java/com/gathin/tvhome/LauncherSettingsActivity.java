@@ -2,14 +2,18 @@ package com.gathin.tvhome;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -37,6 +41,12 @@ public final class LauncherSettingsActivity extends Activity {
     private int dockOpacity;
     private boolean animations;
     private boolean advancedEffects;
+    private AlertDialog settingsKeyDialog;
+    private final Handler settingsKeyHandler = new Handler(Looper.getMainLooper());
+    private final Runnable settingsKeyTimeout = () -> {
+        if (settingsKeyDialog != null) settingsKeyDialog.dismiss();
+        Toast.makeText(this, R.string.settings_key_timeout, Toast.LENGTH_LONG).show();
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -53,6 +63,32 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
         });
         findViewById(R.id.settingsHoldHelp).setOnClickListener(v -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        findViewById(R.id.settingsKeyChoice).setOnClickListener(v -> {
+            SettingsKeyBinding.begin((code, scan) -> {
+                choices.edit().putInt(SettingsKeyBinding.CODE, code).putInt(SettingsKeyBinding.SCAN, scan).apply();
+                changed();
+                if (settingsKeyDialog != null) settingsKeyDialog.dismiss();
+                refreshSettingsKey();
+                Toast.makeText(this, R.string.settings_key_saved, Toast.LENGTH_SHORT).show();
+            });
+            settingsKeyDialog = new AlertDialog.Builder(this)
+                    .setTitle(R.string.settings_key_choose)
+                    .setMessage(R.string.settings_key_prompt)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setNeutralButton(R.string.settings_key_reset, (dialog, which) -> {
+                        choices.edit().remove(SettingsKeyBinding.CODE).remove(SettingsKeyBinding.SCAN).apply();
+                        changed();
+                        refreshSettingsKey();
+                    }).create();
+            settingsKeyDialog.setOnKeyListener((dialog, code, event) -> SettingsKeyBinding.capture(event));
+            settingsKeyDialog.setOnDismissListener(dialog -> {
+                SettingsKeyBinding.cancel();
+                settingsKeyHandler.removeCallbacks(settingsKeyTimeout);
+                settingsKeyDialog = null;
+            });
+            settingsKeyDialog.show();
+            settingsKeyHandler.postDelayed(settingsKeyTimeout, 15000);
+        });
         TextView soundChoice = findViewById(R.id.navigationSoundChoice);
         soundChoice.setText(getString(R.string.navigation_sound_state,
                 getString(choices.getBoolean(NavigationSound.KEY, true) ? R.string.on : R.string.off)));
@@ -287,6 +323,36 @@ public final class LauncherSettingsActivity extends Activity {
      * A choice was saved. Home rebuilds when it next resumes because the change count moved, whether these
      * settings are left with Back or with the remote's Home button (which cancels the activity result).
      */
+    @Override protected void onResume() {
+        super.onResume();
+        refreshSettingsKey();
+    }
+
+    @Override protected void onPause() {
+        if (settingsKeyDialog != null) settingsKeyDialog.dismiss();
+        super.onPause();
+    }
+
+    private void refreshSettingsKey() {
+        int code = choices.getInt(SettingsKeyBinding.CODE, -1);
+        String binding = code < 0 ? getString(R.string.settings_key_auto)
+                : code == 0 ? "scan " + choices.getInt(SettingsKeyBinding.SCAN, 0)
+                : android.view.KeyEvent.keyCodeToString(code);
+        ((TextView) findViewById(R.id.settingsKeyChoice)).setText(getString(R.string.settings_key_state, binding));
+        AccessibilityManager manager = getSystemService(AccessibilityManager.class);
+        String status = getString(R.string.settings_key_service_off);
+        for (AccessibilityServiceInfo info : manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)) {
+            android.content.pm.ServiceInfo service = info.getResolveInfo().serviceInfo;
+            if (getPackageName().equals(service.packageName) && HomeKeyService.class.getName().equals(service.name)) {
+                status = getString((info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0
+                        ? R.string.settings_key_service_on : R.string.settings_key_filter_off);
+                break;
+            }
+        }
+        ((TextView) findViewById(R.id.settingsHoldHelp)).setText(getString(R.string.settings_key_status, status)
+                + "\n" + getString(R.string.settings_hold_help));
+    }
+
     private void changed() {
         setResult(RESULT_OK);
         choices.edit().putLong(Config.SETTINGS_REVISION_KEY,

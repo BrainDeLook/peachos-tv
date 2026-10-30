@@ -53,6 +53,12 @@
             android:text="@string/settings_hold_title" />
 
         <TextView
+            android:id="@+id/settingsKeyChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp"
+            android:text="@string/settings_key_choose" />
+
+        <TextView
             android:id="@+id/settingsHoldHelp"
             style="@style/SettingsRow"
             android:layout_height="wrap_content"

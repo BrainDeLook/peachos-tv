@@ -1409,6 +1409,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * nothing even on Home.
      */
     private boolean handleSettingsKey(KeyEvent event) {
+        if (SettingsKeyBinding.matches(event, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE))) {
+            remoteSettingsButton.handle(event);
+            return true;
+        }
         boolean matches = event.getKeyCode() == KeyEvent.KEYCODE_SETTINGS;
         for (int code : settingsKeycodes) if (event.getKeyCode() == code) matches = true;
         if (matches) {

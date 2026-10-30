@@ -72,8 +72,8 @@
     <string name="off">Off</string>
     <string name="enable">Enable</string>
     <string name="input_key_service_description">Opens the input switcher when the remote\'s Input button is pressed.</string>
-    <string name="home_key_name">Home button</string>
-    <string name="home_key_description">Makes the remote\'s Home button open this launcher.</string>
+    <string name="home_key_name">PeachOS TV · Remote buttons</string>
+    <string name="home_key_description">Handles remote buttons for PeachOS TV, including optional hold-Settings access to Control Center and Home handling on supported remotes. Does not read screen content.</string>
     <string name="card_prompt_title">New card from %1$s</string>
     <string name="card_prompt_body">%1$s can show a card on your home screen. Keeping it hidden leaves the app\'s normal tile as it is.</string>
     <string name="card_prompt_names">The card is named \'%1$s\'. The app is \'%2$s\'.</string>
@@ -150,5 +150,16 @@
     <string name="last_opened">Last opened %1$s</string>
     <string name="settings_hold_title">Hold Settings for Control Center</string>
     <string name="settings_hold_state">Hold Settings for Control Center: %1$s</string>
-    <string name="settings_hold_help">When enabled, hold Settings to open Control Center; a short press does nothing. For use inside other apps, enable “Home button” in Accessibility. Press here to open Accessibility settings.</string>
+    <string name="settings_hold_help">When enabled, hold Settings to open Control Center; a short press does nothing. For use inside other apps, enable “PeachOS TV · Remote buttons” in Accessibility. Press here to open Accessibility settings.</string>
+    <string name="settings_key_choose">Set remote Settings button</string>
+    <string name="settings_key_state">Settings button: %1$s</string>
+    <string name="settings_key_auto">Default / device configuration</string>
+    <string name="settings_key_prompt">Press and release your remote Settings button within 15 seconds. For keys reserved by firmware, first enable the PeachOS TV · Remote buttons accessibility helper. Back cancels; Home, power, volume and navigation keys cannot be assigned.</string>
+    <string name="settings_key_reset">Use default</string>
+    <string name="settings_key_saved">Settings button saved</string>
+    <string name="settings_key_timeout">No button received. Check the accessibility helper and key filtering; firmware may reserve this button.</string>
+    <string name="settings_key_service_off">PeachOS TV · Remote buttons is off</string>
+    <string name="settings_key_service_on">PeachOS TV · Remote buttons is enabled</string>
+    <string name="settings_key_filter_off">Helper enabled; key filtering is off</string>
+    <string name="settings_key_status">Remote button service: %1$s</string>
 </resources>

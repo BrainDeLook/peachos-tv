@@ -151,6 +151,11 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        if (SettingsKeyBinding.capture(event)) return true;
+        if (SettingsKeyBinding.matches(event, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE))) {
+            settingsButton.handle(event);
+            return true;
+        }
         if (consumeVolumeKeys && VolumeKeys.handle(this, event)) return true;
         // A scancode entry is more specific than any keycode, so it goes first.
         if (RemoteKeys.handle(this, event, appScancodes.get(event.getScanCode()),
