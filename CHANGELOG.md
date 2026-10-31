@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.5.7 — 2026-10-31
+
+### Русский
+
+- Добавлена опциональная контрол-панель поверх приложений: плавное открытие и закрытие, вкладки с белым пружинным выделением, сохранение объёма и стекла. В этом режиме Home и Назад закрывают панель, оставляя приложение открытым. Возможность остаётся пробной и зависит от прошивки и воспроизводимого контента.
+- Добавлено контекстное меню приложений по удержанию OK. В первых трёх столбцах меню открывается справа от иконки, в последующих — слева. Ореол выбранной иконки продолжает цвета её контура.
+- Источники постеров синхронизируются с каналами, которые действительно публикуют приложения Android TV. Настройки лаунчера сгруппированы по разделам.
+- На главном экране выбранная иконка сохраняет выделение под контрол-панелью. Кнопки панели больше не обрезаются по бокам. Home при открытой панели плавно закрывает её и сохраняет выбранное приложение; без панели Home по-прежнему возвращает на первую иконку дока.
+- Исправлено удержание закрытых панелей в памяти. Ограничены кэши, отменяется устаревшая загрузка постеров и иконок, сокращены лишние декодирования фонов и сетевые обновления. В мастере ПК ускорено изменение выбора пакетов и исправлена упаковка встроенного APK.
+- Выпускаются отдельный APK и один портативный Windows EXE со встроенными APK, ADB и средой выполнения. Обновление сохраняет данные и настройки лаунчера.
+
+Проверки: 289 Android-тестов, release lint и 41 тест мастера ПК. Проверка производительности подтверждает устранение накопления закрытых панелей в измеренном сценарии, но не гарантирует постоянные 60 FPS на всех устройствах. Глобальный перехват Settings на некоторых прошивках может нарушать удержание громкости по HDMI-CEC; обработка громкости в этом выпуске не изменена.
+
+### English
+
+- Add optional Control Center over apps, with animated opening and closing, spring-driven white focus, and layered glass materials. In this mode, Home and Back dismiss the panel while keeping the app open. This feature remains experimental and depends on firmware and displayed content.
+- Add an app context menu on long-press OK. It opens to the right of icons in the first three columns and to the left in later columns. The selected icon's contour glow follows its edge colours.
+- Synchronize poster sources with channels actually published by Android TV apps. Organize launcher settings into sections.
+- Preserve the selected Home icon while Control Center is open. Prevent focused panel buttons from clipping at their sides. Home smoothly dismisses an open panel and retains the selected app; without the panel, Home still returns to the first dock icon.
+- Release closed panel views, bound caches, cancel stale poster and icon work, and reduce redundant background decoding and network refreshes. Improve package selection updates in the PC wizard and correct its bundled APK packaging.
+- Provide a standalone APK and one portable Windows executable containing the APK, ADB and runtime. In-place updates preserve launcher data and preferences.
+
+Validation: 289 Android unit tests, release lint and 41 PC setup tests. Device measurements confirm that closed panels no longer accumulate in the tested scenario; they do not guarantee locked 60 FPS on every device. Global Settings interception can interrupt held HDMI-CEC volume on some firmware; volume handling is unchanged in this release.
+
 ## 1.5.6 — 2026-10-31
 
 - Add a single portable Windows setup executable with bundled ADB, APK, runtime and PeachOS icon. Default to a simple install/update screen; keep the detailed wizard and separately confirmed expert mode available.

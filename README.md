@@ -43,6 +43,10 @@ CEC device names are preserved. On supported TCL firmware, a confirmed physical 
 | Open launcher settings | Dedicated control center button; hold gear when enabled |
 | Choose artwork sources | Launcher menu → Top shelf |
 | Rearrange apps / edit the dock | Launcher menu → Reorder / Edit dock |
+| App context menu | Hold OK on an app icon |
+| Home while the control center is open | Close the panel and keep the selected app |
+
+Enable **Launcher settings → Remote and sounds → Control Center over apps** to open the panel over the current app by holding Settings, with the Remote buttons helper enabled. Home and Back dismiss only the panel. This optional feature remains experimental: a small blurred snapshot is used when available, while protected video or firmware restrictions can require a simpler material.
 
 Apps must publish their cards through Android TV Preview / Watch Next. Lampa history uses Lampa's published history channel. Private app databases are not read, and root is not required. Availability and freshness depend on the publishing app; empty or temporarily refreshed channels can show no cards.
 
