@@ -14,6 +14,46 @@ from catalog import candidates, protected, matching_profiles, FEATURES
 PACKAGE = re.compile(r'(?:android|[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\Z')
 COMPONENT = re.compile(r'[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+\Z')
 PEACH = 'com.gathin.tvhome.backdrops/com.gathin.tvhome.MainActivity'
+AIRPLAY = 'com.gathin.peachos.airplay'
+
+
+@dataclass(frozen=True)
+class ApkInfo:
+    file: Path
+    sha256: str
+    abis: frozenset[str]
+
+
+def inspect_apk(file):
+    """Validate a file once at the APK boundary, including its native ABIs."""
+    if not file.is_file() or file.suffix.lower() != '.apk' or not zipfile.is_zipfile(file):
+        raise ValueError('Некорректный APK: ' + str(file))
+    with zipfile.ZipFile(file) as archive:
+        names = archive.namelist()
+        if 'AndroidManifest.xml' not in names:
+            raise ValueError('В APK отсутствует AndroidManifest.xml: ' + file.name)
+        abis = frozenset(name.split('/')[1] for name in names
+                         if name.startswith('lib/') and name.count('/') == 2 and name.endswith('.so'))
+    with file.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return ApkInfo(file, digest, abis)
+
+
+def airplay_compatibility(module, props):
+    """An empty result means this companion APK supports the Android OS ABI."""
+    sdk = props.get('ro.build.version.sdk', '')
+    if not sdk.isdecimal():
+        return 'Не удалось определить версию Android для модуля AirPlay.'
+    if int(sdk) < 24:
+        return 'Для модуля AirPlay нужен Android 7.0 или новее.'
+    if not module.abis:
+        return 'В APK модуля AirPlay отсутствуют нативные библиотеки.'
+    device_abis = set(filter(None, props.get('ro.product.cpu.abilist',
+                                            props.get('ro.product.cpu.abi', '')).split(',')))
+    if not device_abis.intersection(module.abis):
+        return ('Модуль AirPlay поддерживает ' + ', '.join(sorted(module.abis))
+                + '; Android устройства: ' + (', '.join(sorted(device_abis)) or 'архитектура не определена') + '.')
+    return ''
 
 
 def packages(output):
@@ -160,13 +200,13 @@ def save_json(path, value):
 
 
 def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None,
-               xiaomi_home_fallback=False, extra_apks=(), expert=False, update_only=False):
+               xiaomi_home_fallback=False, extra_apks=(), expert=False, update_only=False, airplay_apk=None):
     # Re-read at the mutation boundary: an IP can now belong to a different TV.
     current = discover(adb, device.serial)
     if current.identity != device.identity:
         raise ValueError('Устройство изменилось. Подключитесь заново и проверьте план.')
     if update_only:
-        if selected or set_home or xiaomi_home_fallback or extra_apks or not apk:
+        if selected or set_home or xiaomi_home_fallback or extra_apks or airplay_apk or not apk:
             raise ValueError('Режим обновления допускает только APK лаунчера без очистки и смены Home.')
         if PEACH.split('/')[0] not in current.installed:
             raise ValueError('PeachOS TV ещё не установлен. Используйте обычную установку.')
@@ -188,23 +228,25 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         raise ValueError('Сначала установите PeachOS TV')
     if set_home and not current.home:
         raise ValueError('Исходный Home не определён. Назначьте лаунчер вручную в настройках Android.')
-    install_apks = list(dict.fromkeys(([apk] if apk else []) + list(extra_apks)))
+    if airplay_apk and not (apk or PEACH.split('/')[0] in current.installed):
+        raise ValueError('Установите PeachOS TV вместе с модулем AirPlay или перед ним.')
+    install_apks = list(dict.fromkeys(([apk] if apk else []) + ([airplay_apk] if airplay_apk else []) + list(extra_apks)))
     installs = []
     for file in install_apks:
-        if not file.is_file() or file.suffix.lower() != '.apk' or not zipfile.is_zipfile(file):
-            raise ValueError('Некорректный APK: ' + str(file))
-        with zipfile.ZipFile(file) as archive:
-            if 'AndroidManifest.xml' not in archive.namelist():
-                raise ValueError('В APK отсутствует AndroidManifest.xml: ' + file.name)
-        with file.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        installs.append({'file': str(file), 'sha256': digest, 'confirmed': False})
+        info = inspect_apk(file)
+        if file == airplay_apk:
+            reason = airplay_compatibility(info, current.props)
+            if reason:
+                raise ValueError(reason + ' Установка и очистка не начинались.')
+        installs.append({'file': str(file), 'sha256': info.sha256, 'confirmed': False,
+                         'role': 'airplay' if file == airplay_apk else 'launcher' if file == apk else 'custom'})
     folder = backup_root / (datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     folder.mkdir(parents=True)
     journal = {'version': 1, 'identity': current.identity, 'serial': current.serial, 'user': current.user,
                'props': current.props, 'installed': sorted(current.installed), 'disabled': sorted(current.disabled),
                'original_home': current.home, 'home_attempted': False, 'changes': [], 'complete': False,
-               'expert': expert, 'installs': installs, 'update_only': update_only}
+               'expert': expert, 'installs': installs, 'update_only': update_only,
+               'optional_modules': {'airplay': bool(airplay_apk)}}
     path = folder / 'restore.json'
     save_json(path, journal)
     progress('Резервная копия: ' + str(path))

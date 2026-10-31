@@ -80,18 +80,38 @@ final class AirPlayControl implements AutoCloseable {
         // Validate the external reply once here, then pass only known states to the UI.
         try {
             if ("enable".equals(method)) {
-                context.startForegroundService(new android.content.Intent().setComponent(
-                        new android.content.ComponentName(PACKAGE, "com.codelphi.airplay.AirPlayService")));
+                Status status = readStatus("status");
+                if (status.state == ERROR) return ERROR;
+                if (!status.configured) {
+                    // Only the module's own visible button can accept permission and enable reception.
+                    context.startActivity(new android.content.Intent().setComponent(
+                            new android.content.ComponentName(PACKAGE, "com.codelphi.airplay.SetupActivity"))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                    return OFF;
+                }
+                android.content.Intent service = new android.content.Intent().setComponent(
+                        new android.content.ComponentName(PACKAGE, "com.codelphi.airplay.AirPlayService"));
+                if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(service);
+                else context.startService(service);
                 return STARTING;
             }
-            Bundle reply = context.getContentResolver().call(URI, method, null, null);
-            if (reply == null || reply.getInt("protocol") != 1 || !reply.containsKey("state")) return ERROR;
-            int value = reply.getInt("state");
-            return value >= OFF && value <= ERROR ? value : ERROR;
+            return readStatus(method).state;
         } catch (RuntimeException unavailable) {
             android.util.Log.w("PeachAirPlay", "Companion " + method + " unavailable", unavailable);
             return ERROR;
         }
+    }
+
+    private record Status(int state, boolean configured) { }
+
+    private Status readStatus(String method) {
+        Bundle reply = context.getContentResolver().call(URI, method, null, null);
+        if (reply == null) return new Status(ERROR, false);
+        Object protocol = reply.get("protocol"), state = reply.get("state"), configured = reply.get("configured");
+        if (!(protocol instanceof Integer version) || version != 1
+                || !(state instanceof Integer value) || value < OFF || value > ERROR
+                || !(configured instanceof Boolean allowed)) return new Status(ERROR, false);
+        return new Status(value, allowed);
     }
 
     private void deliver(int value) {

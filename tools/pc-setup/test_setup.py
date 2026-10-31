@@ -5,11 +5,12 @@ from pathlib import Path
 import tempfile
 import unittest
 import threading
+import tkinter as tk
 import zipfile
 from unittest.mock import Mock, patch
 
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
-from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, wait_for_device
+from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
 from wizard import Wizard, portable_adb
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
@@ -37,6 +38,37 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def test_optional_module_ui_is_unchecked_and_absent_feature_is_disabled(self):
+        with tempfile.TemporaryDirectory() as folder, patch('wizard.ASSETS', Path(folder)):
+            root = tk.Tk(); root.withdraw()
+            self.addCleanup(root.destroy)
+            wizard = Wizard(root)
+            self.assertIsNone(wizard.airplay_module)
+            self.assertFalse(wizard.airplay.get())
+            self.assertEqual(['disabled', 'disabled'], [str(choice['state']) for choice in wizard.airplay_choices])
+            self.assertIn('остаётся поиск', wizard.airplay_hint.get())
+
+    def test_optional_module_ui_rejects_unsupported_android_abi_on_connect(self):
+        with tempfile.TemporaryDirectory() as folder, patch('wizard.ASSETS', Path(folder)):
+            with zipfile.ZipFile(Path(folder) / 'PeachOS-AirPlay.apk', 'w') as archive:
+                archive.writestr('AndroidManifest.xml', b'test')
+                archive.writestr('lib/armeabi-v7a/libairplay.so', b'lib')
+            root = tk.Tk(); root.withdraw()
+            self.addCleanup(root.destroy)
+            wizard = Wizard(root)
+            self.assertFalse(wizard.airplay.get())
+            wizard.airplay.set(True)
+            current = device()
+            current.props = dict(XIAOMI, **{'ro.product.cpu.abilist': 'arm64-v8a'})
+            wizard.connected((Mock(), current))
+            self.assertFalse(wizard.airplay.get())
+            self.assertEqual(['disabled', 'disabled'], [str(choice['state']) for choice in wizard.airplay_choices])
+            self.assertIn('arm64-v8a', wizard.airplay_hint.get())
+            current.props = dict(XIAOMI, **{'ro.product.cpu.abilist': 'armeabi-v7a'})
+            wizard.connected((Mock(), current))
+            self.assertFalse(wizard.airplay.get())
+            self.assertEqual(['normal', 'normal'], [str(choice['state']) for choice in wizard.airplay_choices])
+
     def test_catalogue_is_unique_and_new_common_candidates_have_upstream_evidence(self):
         self.assertEqual(len(RULES), len({r.package for r in RULES}))
         for package in ('tv.samba.ssm', 'org.droidtv.candeebug', 'com.tcl.bi', 'com.google.android.play.games'):
@@ -75,6 +107,91 @@ class SetupTests(unittest.TestCase):
             self.assertTrue(journal['update_only'])
             self.assertEqual([], journal['changes'])
             self.assertFalse(journal['home_attempted'])
+            self.assertFalse(journal['optional_modules']['airplay'])
+
+    def test_airplay_uses_android_os_abis_not_hardware_model(self):
+        with tempfile.TemporaryDirectory() as folder:
+            module = Path(folder) / 'module.apk'
+            with zipfile.ZipFile(module, 'w') as archive:
+                archive.writestr('AndroidManifest.xml', b'test')
+                archive.writestr('lib/armeabi-v7a/libairplay-jni.so', b'lib')
+            info = inspect_apk(module)
+            self.assertEqual(frozenset({'armeabi-v7a'}), info.abis)
+            self.assertEqual('', airplay_compatibility(info, {'ro.build.version.sdk': '31',
+                             'ro.product.cpu.abilist': 'arm64-v8a,armeabi-v7a,armeabi'}))
+            self.assertEqual('', airplay_compatibility(info, {'ro.build.version.sdk': '31',
+                             'ro.product.cpu.abilist': 'armeabi-v7a,armeabi'}))
+            self.assertIn('arm64-v8a', airplay_compatibility(info, {'ro.build.version.sdk': '31',
+                          'ro.product.cpu.abilist': 'arm64-v8a'}))
+            self.assertTrue(airplay_compatibility(info, {'ro.build.version.sdk': '23',
+                            'ro.product.cpu.abilist': 'armeabi-v7a'}))
+            self.assertTrue(airplay_compatibility(info, {'ro.build.version.sdk': '31'}))
+
+    def test_incompatible_optional_module_stops_before_launcher_install_and_cleanup(self):
+        current = device()
+        current.props = dict(XIAOMI, **{'ro.product.cpu.abilist': 'arm64-v8a'})
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            launcher, module = Path(folder) / 'launcher.apk', Path(folder) / 'airplay.apk'
+            for file in (launcher, module):
+                with zipfile.ZipFile(file, 'w') as archive:
+                    archive.writestr('AndroidManifest.xml', b'test')
+                    if file == module: archive.writestr('lib/armeabi-v7a/libairplay.so', b'lib')
+            with self.assertRaisesRegex(ValueError, 'arm64-v8a'):
+                apply_plan(adb, current, ['com.miui.tv.analytics'], set(), launcher, False,
+                           Path(folder) / 'backups', airplay_apk=module)
+            self.assertFalse((Path(folder) / 'backups').exists())
+        self.assertEqual([], adb.calls)
+
+    def test_optional_module_failure_is_journalled_and_stops_before_home_cleanup(self):
+        class InstallingAdb(FakeAdb):
+            def run(self, *args, **kwargs):
+                self.calls.append(args)
+                if args[-1].endswith('airplay.apk'): raise RuntimeError('INSTALL_FAILED_UPDATE_INCOMPATIBLE')
+                return 'Success'
+        current = device()
+        current.props = dict(XIAOMI, **{'ro.product.cpu.abilist': 'armeabi-v7a,armeabi'})
+        adb = InstallingAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            launcher, module = Path(folder) / 'launcher.apk', Path(folder) / 'airplay.apk'
+            for file in (launcher, module):
+                with zipfile.ZipFile(file, 'w') as archive:
+                    archive.writestr('AndroidManifest.xml', b'test')
+                    if file == module: archive.writestr('lib/armeabi-v7a/libairplay.so', b'lib')
+            with self.assertRaisesRegex(RuntimeError, 'UPDATE_INCOMPATIBLE'):
+                apply_plan(adb, current, ['com.miui.tv.analytics'], set(), launcher, True,
+                           Path(folder) / 'backups', airplay_apk=module)
+            journal = read_restore(next((Path(folder) / 'backups').glob('*/restore.json')))
+            self.assertTrue(journal['optional_modules']['airplay'])
+            self.assertEqual(['launcher', 'airplay'], [entry['role'] for entry in journal['installs']])
+            self.assertTrue(journal['installs'][0]['confirmed'])
+            self.assertFalse(journal['installs'][1]['confirmed'])
+            self.assertFalse(journal['home_attempted'])
+            self.assertFalse(journal['complete'])
+            self.assertEqual([], journal['changes'])
+
+    def test_update_only_rejects_optional_module_before_mutation(self):
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            with self.assertRaisesRegex(ValueError, 'только APK лаунчера'):
+                apply_plan(adb, current, [], set(), Path(folder) / 'launcher.apk', False, Path(folder),
+                           update_only=True, airplay_apk=Path(folder) / 'airplay.apk')
+        self.assertEqual([], adb.calls)
+
+    def test_launcher_only_install_never_installs_existing_companion(self):
+        class InstallingAdb(FakeAdb):
+            def run(self, *args, **kwargs): self.calls.append(args); return 'Success'
+        current = device()
+        current.installed.add(AIRPLAY)
+        adb = InstallingAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            launcher = Path(folder) / 'launcher.apk'
+            with zipfile.ZipFile(launcher, 'w') as archive: archive.writestr('AndroidManifest.xml', b'test')
+            path = apply_plan(adb, current, [], set(), launcher, False, Path(folder) / 'backups')
+            self.assertEqual([('install', '-r', str(launcher))], adb.calls)
+            self.assertFalse(read_restore(path)['optional_modules']['airplay'])
 
     def test_authorization_waits_then_connects_instead_of_failing(self):
         class AuthorizingAdb:
@@ -167,7 +284,46 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             bundled = output / 'build' / 'portable-assets' / 'PeachOS-TV.apk'
             self.assertEqual(source.read_bytes(), bundled.read_bytes())
-            self.assertIn(str(bundled) + ';.', (root / 'args.txt').read_text(encoding='utf-8-sig'))
+            arguments = (root / 'args.txt').read_text(encoding='utf-8-sig')
+            self.assertIn(str(bundled) + ';.', arguments)
+            self.assertNotIn('PeachOS-AirPlay', arguments)
+
+    @unittest.skipUnless(shutil.which('powershell') or shutil.which('pwsh'), 'PowerShell unavailable')
+    def test_optional_companion_build_requires_source_and_bundles_all_three_assets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            launcher, module, source, license_file = (root / name for name in ('launcher.apk', 'receiver.apk', 'source.zip', 'COPYING'))
+            launcher.write_bytes(b'APK fixture')
+            with zipfile.ZipFile(module, 'w') as archive:
+                archive.writestr('AndroidManifest.xml', b'test')
+                archive.writestr('lib/armeabi-v7a/libairplay.so', b'lib')
+            with zipfile.ZipFile(source, 'w') as archive: archive.writestr('module/source.java', b'source')
+            license_file.write_text('GPL-3.0', encoding='utf-8')
+            adb = root / 'adb'; adb.mkdir()
+            fake_python = root / 'fake-python.ps1'
+            fake_python.write_text("$args | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'args.txt')\n$global:LASTEXITCODE = 0\n", encoding='utf-8')
+            command = [shutil.which('powershell') or shutil.which('pwsh'), '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                       '-File', str(Path(__file__).with_name('build.ps1')), '-Apk', str(launcher),
+                       '-AdbDirectory', str(adb), '-Python', str(fake_python), '-Output', str(root / 'output'),
+                       '-AirPlayApk', str(module)]
+            result = subprocess.run(command, capture_output=True, text=True, errors='replace', timeout=30,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('AirPlay requires', result.stderr)
+            self.assertFalse((root / 'args.txt').exists())
+            result = subprocess.run(command + ['-AirPlaySource', str(source), '-AirPlayLicense', str(license_file)],
+                                    capture_output=True, text=True, errors='replace', timeout=30,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            arguments = (root / 'args.txt').read_text(encoding='utf-8-sig')
+            for original, name in ((module, 'PeachOS-AirPlay.apk'), (source, 'PeachOS-AirPlay-source.zip'), (license_file, 'LICENSE-AirPlay.txt')):
+                bundled = root / 'output' / 'build' / 'portable-assets' / name
+                self.assertEqual(original.read_bytes(), bundled.read_bytes())
+                self.assertIn(str(bundled) + ';.', arguments)
+            result = subprocess.run(command[:-2], capture_output=True, text=True, errors='replace', timeout=30,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertNotIn('PeachOS-AirPlay', (root / 'args.txt').read_text(encoding='utf-8-sig'))
 
     def test_expert_mode_can_disable_protected_package_and_restore_it(self):
         adb = FakeAdb()
