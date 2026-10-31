@@ -4,6 +4,9 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Bitmap;
 import android.graphics.BlurMaskFilter;
+import android.graphics.BitmapShader;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
@@ -48,8 +51,14 @@ public final class AppTile extends FrameLayout {
             @Override protected int sizeOf(String key, Bitmap bitmap) { return bitmap.getAllocationByteCount(); }
         };
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private static final LruCache<java.util.List<Object>, Bitmap> COLORS = new LruCache<java.util.List<Object>, Bitmap>(512 * 1024) {
+            @Override protected int sizeOf(java.util.List<Object> key, Bitmap bitmap) { return bitmap.getAllocationByteCount(); }
+        };
         private final Bitmap mask;
+        private final int width, height, padding;
+        private Bitmap colored;
         Glow(int width, int height, float density, int padding) {
+            this.width = width; this.height = height; this.padding = padding;
             String key = width + ":" + height + ":" + density + ":" + padding;
             Bitmap cached = MASKS.get(key);
             if (cached == null) {
@@ -66,9 +75,43 @@ public final class AppTile extends FrameLayout {
             }
             mask = cached;
         }
-        static void trimCache() { MASKS.evictAll(); }
-        void tint(int color) { paint.setColor(color | 0xff000000); invalidateSelf(); }
-        @Override public void draw(Canvas canvas) { canvas.drawBitmap(mask, null, getBounds(), paint); }
+        static void trimCache() { MASKS.evictAll(); COLORS.evictAll(); }
+        void artwork(Object entry, Drawable banner, Drawable background) {
+            java.util.List<Object> key = java.util.Arrays.asList(entry, width, height, padding);
+            colored = COLORS.get(key);
+            if (colored == null) {
+                // Clamp the actual edge pixels into the feather, preserving different colours
+                // along each side instead of choosing a saturated accent from the logo centre.
+                Bitmap art = Bitmap.createBitmap(48, Math.max(1, Math.round(48f * height / width)), Bitmap.Config.ARGB_8888);
+                Canvas sample = new Canvas(art);
+                Drawable source = banner != null ? banner : background;
+                if (source != null) {
+                    Rect old = new Rect(source.getBounds());
+                    int dw = source.getIntrinsicWidth(), dh = source.getIntrinsicHeight();
+                    if (banner != null && dw > 0 && dh > 0) {
+                        float scale = Math.max(art.getWidth() / (float) dw, art.getHeight() / (float) dh);
+                        sample.translate((art.getWidth() - dw * scale) * .5f, (art.getHeight() - dh * scale) * .5f);
+                        sample.scale(scale, scale); source.setBounds(0, 0, dw, dh);
+                    } else source.setBounds(0, 0, art.getWidth(), art.getHeight());
+                    source.draw(sample); source.setBounds(old);
+                }
+                colored = Bitmap.createBitmap(Math.max(1, mask.getWidth() / 2), Math.max(1, mask.getHeight() / 2), Bitmap.Config.ARGB_8888);
+                colored.setDensity(Bitmap.DENSITY_NONE);
+                Canvas raster = new Canvas(colored);
+                raster.scale(colored.getWidth() / (float) mask.getWidth(), colored.getHeight() / (float) mask.getHeight());
+                BitmapShader edgeColor = new BitmapShader(art, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                Matrix position = new Matrix(); position.setScale(width / (float) art.getWidth(), height / (float) art.getHeight());
+                position.postTranslate(padding, padding); edgeColor.setLocalMatrix(position);
+                Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                fill.setColor(0xffffffff);
+                raster.drawBitmap(mask, 0, 0, fill);
+                fill.setShader(edgeColor); fill.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+                raster.drawRect(0, 0, mask.getWidth(), mask.getHeight(), fill);
+                COLORS.put(key, colored);
+            }
+            invalidateSelf();
+        }
+        @Override public void draw(Canvas canvas) { if (colored != null) canvas.drawBitmap(colored, null, getBounds(), paint); }
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
         @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }

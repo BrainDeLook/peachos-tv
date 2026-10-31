@@ -151,6 +151,12 @@ final class ControlBackdrop extends Drawable {
         invalidateSelf();
     }
 
+    /** A mutable snapshot changed after these backgrounds recorded their initial matte frame. */
+    static void backdropPrepared(View view) {
+        if (view.getBackground() instanceof ControlBackdrop material && material.hasBackdrop) material.invalidateSelf();
+        if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) backdropPrepared(group.getChildAt(i));
+    }
+
     /** Preserve the sampled screen region before a fading page moves into a visual overlay. */
     static void freezePositions(View view) {
         if (view.getBackground() instanceof ControlBackdrop material) {

@@ -543,7 +543,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean focused = h.card.isFocused() || h.card.isActivated();   // a rebind after reload() can hit the focused tile
         h.sheen.setAlpha(focused ? .22f : .16f);
         h.glow.animate().cancel();
-        ((AppTile.Glow) h.glow.getBackground()).tint(ambientColorAt(position));
         h.glow.setAlpha(focused ? .14f : 0f);
         h.glow.setScaleX(focused ? focusScale() : 1f);
         h.glow.setScaleY(focused ? focusScale() : 1f);
@@ -574,6 +573,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
+        ((AppTile.Glow) h.glow.getBackground()).artwork(e, e.banner, h.card.getBackground());
         h.toneStep = -1; // The rebound holder may now contain another banner or background.
         h.applyFocusTone(focused);
         h.card.setOnClickListener(v -> launch(e));

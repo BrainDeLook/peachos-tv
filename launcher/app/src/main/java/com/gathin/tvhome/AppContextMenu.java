@@ -264,10 +264,14 @@ final class AppContextMenu {
         for (SpringAnimation animation : rowSprings) animation.cancel();
         rowSprings.clear();
         if (spring != null) spring.cancel(); panel.setLayerType(View.LAYER_TYPE_NONE, null);
-        home.setDescendantFocusability(focusability); home.setImportantForAccessibility(accessibility);
         root.getViewTreeObserver().removeOnGlobalFocusChangeListener(focusListener);
-        stage.removeView(root); anchor.setActivated(false);
+        home.setDescendantFocusability(focusability);
+        // Transfer directly while the menu still owns focus: removing it first lets
+        // ViewRoot focus the first dock tile before the explicit anchor request.
         if (anchor.isAttachedToWindow() && home.hasWindowFocus()) anchor.requestFocus();
+        anchor.setActivated(false);
+        stage.removeView(root);
+        home.setImportantForAccessibility(accessibility);
         dismissed.run();
         Runnable action = afterClose; afterClose = null; if (action != null) action.run();
     }

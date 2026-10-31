@@ -318,6 +318,7 @@ final class ControlCenter {
         panel.setAlpha(0f); scrim.setAlpha(0f);
         revealFrame = () -> {
             if (!showing || closing) return;
+            ControlBackdrop.backdropPrepared(panel);
             int[] from = new int[2], to = new int[2];
             sourceClock.getLocationOnScreen(from); clock.getLocationOnScreen(to);
             clockDx = from[0] + sourceClock.getWidth() * .5f - to[0] - clock.getWidth() * .5f;
@@ -359,15 +360,12 @@ final class ControlCenter {
             if (floating) android.util.Log.d("PeachOverlay", "Reveal prepared "
                     + (android.os.SystemClock.uptimeMillis() - showStarted) + "ms");
         };
-        long captureDeadline = android.os.SystemClock.uptimeMillis() + 900;
         if (backdrop != null && captureNeeded) {
             captureFrame = new Runnable() {
                 @Override public void run() {
                     if (!showing || closing) return;
-                    if (!actions.controlBackdropReady() && android.os.SystemClock.uptimeMillis() < captureDeadline) {
-                        stage.postOnAnimation(this);
-                        return;
-                    }
+                    // Capture what Home currently displays; network poster loading must not
+                    // delay the controls. Only fully settled snapshots enter the reusable cache.
                     int[] location = new int[2]; stage.getLocationInWindow(location);
                     Rect source = new Rect(location[0], location[1],
                             location[0] + stage.getWidth(), location[1] + stage.getHeight());
@@ -618,6 +616,9 @@ final class ControlCenter {
         column.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         next.interactive = true;
         if (populate) {
+            // Hardware page textures clip to their own bounds even with clipChildren=false.
+            // Reserve room inside the texture for the focused button's scale and spring overshoot.
+            column.setPadding(dp(5), dp(5), dp(5), dp(5));
             body.addView(column, new FrameLayout.LayoutParams(-1, -2));
             populatePage(page, column);
             Page obsolete = pages.put(page, next);
@@ -830,7 +831,8 @@ final class ControlCenter {
 
     private void roundShortcut(LinearLayout parent, int icon, int label, Runnable action) {
         FrameLayout slot = new FrameLayout(host);
-        LinearLayout.LayoutParams slotLp = new LinearLayout.LayoutParams(dp(48), -1);
+        slot.setClipChildren(false); slot.setClipToPadding(false);
+        LinearLayout.LayoutParams slotLp = new LinearLayout.LayoutParams(0, -1, 1f);
         if (parent.getChildCount() > 0) slotLp.setMarginStart(dp(8));
         parent.addView(slot, slotLp);
         ImageView button = new ImageView(host); button.setImageResource(icon);
