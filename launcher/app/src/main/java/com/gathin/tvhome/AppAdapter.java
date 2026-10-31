@@ -131,6 +131,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static final float FOCUS_SCALE = 1.10f; // keep the existing layout clearance
     private static final float SELECTED_SCALE = 1.22f;
+    private static final float SELECTED_GLOW_ALPHA = .36f;
     // Two shared tones: no image-filter changes during focus animation.
     private static final class FocusTones {
         static final ColorMatrixColorFilter[] VALUES = new ColorMatrixColorFilter[2];
@@ -543,7 +544,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean focused = h.card.isFocused() || h.card.isActivated();   // a rebind after reload() can hit the focused tile
         h.sheen.setAlpha(focused ? .22f : .16f);
         h.glow.animate().cancel();
-        h.glow.setAlpha(focused ? .14f : 0f);
+        h.glow.setAlpha(focused ? SELECTED_GLOW_ALPHA : 0f);
         h.glow.setScaleX(focused ? focusScale() : 1f);
         h.glow.setScaleY(focused ? focusScale() : 1f);
         h.name.setAlpha(focused ? 1f : restNameAlpha);
@@ -1024,7 +1025,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 boolean selected = focused || view.isActivated();
                 float target = selected ? SELECTED_SCALE : 1f;
                 glow.animate().cancel();
-                glow.animate().alpha(selected ? .14f : 0f).setDuration(animations ? 120 : 0).start();
+                glow.animate().alpha(selected ? SELECTED_GLOW_ALPHA : 0f).setDuration(animations ? 120 : 0).start();
                 view.setTranslationY(0f); view.setTranslationZ(0f);
                 banner.setScaleX(1f); banner.setScaleY(1f);
                 // The tiny idle tone changes once, not on every spring step. Reapplying image

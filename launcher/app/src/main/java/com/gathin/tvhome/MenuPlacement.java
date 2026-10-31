@@ -10,11 +10,12 @@ final class MenuPlacement {
     }
 
     static MenuPlacement beside(int width, int height, int left, int top, int right, int bottom,
-                                int menuWidth, int menuHeight, int gap, int margin, boolean rtl) {
+                                int menuWidth, int menuHeight, int gap, int margin, boolean preferRight) {
         int availableRight = width - margin - right - gap;
         int availableLeft = left - gap - margin;
-        boolean onRight = availableRight >= menuWidth && (!rtl || availableLeft < menuWidth)
-                || availableLeft < menuWidth && availableRight >= availableLeft;
+        boolean onRight = preferRight;
+        if (preferRight && availableRight < menuWidth && availableLeft >= menuWidth) onRight = false;
+        else if (!preferRight && availableLeft < menuWidth && availableRight >= menuWidth) onRight = true;
         int x = onRight ? right + gap : left - gap - menuWidth;
         int y = (top + bottom - menuHeight) / 2;
         return new MenuPlacement(Math.max(margin, Math.min(width - margin - menuWidth, x)),

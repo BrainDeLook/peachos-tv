@@ -3618,7 +3618,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             return; // Package disappeared after the catalogue snapshot.
         }
         if (actions.isEmpty()) return;
-        appContextMenu = new AppContextMenu(this, root, card, actions, animations, reducedMotion,
+        boolean menuOnRight = position % COLUMNS < (COLUMNS + 1) / 2;
+        if (root.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) menuOnRight = !menuOnRight;
+        appContextMenu = new AppContextMenu(this, root, card, actions, menuOnRight, animations, reducedMotion,
                 () -> { if (navigationSound != null) navigationSound.play(); }, () -> appContextMenu = null);
         appContextMenu.show();
     }

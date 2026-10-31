@@ -57,7 +57,7 @@ final class AppContextMenu {
     private final LinearLayout panel;
     private final View shade;
     private final float density;
-    private final boolean animate;
+    private final boolean animate, preferRight;
     private final Runnable dismissed, tick;
     private final android.view.ViewTreeObserver.OnGlobalFocusChangeListener focusListener;
     private final List<Action> main;
@@ -77,8 +77,9 @@ final class AppContextMenu {
         @Override public void setValue(AppContextMenu value, float amount) { value.apply(amount); }
     };
 
-    AppContextMenu(Activity host, ViewGroup home, View anchor, List<Action> actions,
+    AppContextMenu(Activity host, ViewGroup home, View anchor, List<Action> actions, boolean preferRight,
                    boolean animate, boolean reduced, Runnable tick, Runnable dismissed) {
+        this.preferRight = preferRight;
         this.host = host; this.home = home; this.anchor = anchor; this.main = actions;
         this.animate = animate && !reduced; this.tick = tick; this.dismissed = dismissed;
         focusListener = (before, after) -> { if (before != null && after != null && after != before) this.tick.run(); };
@@ -164,7 +165,7 @@ final class AppContextMenu {
                 View.MeasureSpec.makeMeasureSpec(stage.getHeight() - dp(32), View.MeasureSpec.AT_MOST));
         MenuPlacement at = MenuPlacement.beside(stage.getWidth(), stage.getHeight(),
                 Math.round(tile.left), Math.round(tile.top), Math.round(tile.right), Math.round(tile.bottom),
-                width, panel.getMeasuredHeight(), dp(8), dp(16), home.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
+                width, panel.getMeasuredHeight(), dp(8), dp(16), preferRight);
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
         lp.leftMargin = at.left; lp.topMargin = at.top; lp.gravity = Gravity.TOP | Gravity.LEFT;
         panel.setLayoutParams(lp);

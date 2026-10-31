@@ -16,3 +16,11 @@ Validation on Homatics: release assembly, 281 unit tests and lint passed; upgrad
 - Cached pages reserve 5dp of internal space for focused scaling. Round shortcut containers allow their child to grow beyond the slot, preventing clipped sides.
 
 Validation: 281 tests, release assembly and lint; Homatics screen capture shows glass on first opening and frame-by-frame menu close retains Lampa. In-app physical remote confirmation remains pending.
+
+## Preview 118
+
+Menu side now follows the physical half of each app row: columns 1–3 open to the right and 4–6 to the left in a six-column layout. Other column counts use the same half-row rule, with RTL mirrored and an edge-fit fallback on small screens. Two additional placement tests cover all six columns and fallback.
+
+The narrow artwork-colored halo keeps its geometry and cached rendering; selected opacity is increased from 0.14 to 0.36 after comparison with the supplied Twitch video. No extra blur, animation work or cache size is added.
+
+Validation: 283 unit tests, release assembly and lint passed; preview installed on Homatics.
