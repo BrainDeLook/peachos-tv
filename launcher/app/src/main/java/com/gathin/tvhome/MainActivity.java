@@ -296,6 +296,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private final Runnable initializeChannels = () -> ChannelSetup.start(getApplicationContext());
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
+    private AppContextMenu appContextMenu;
     private ControlCenter controlCenter;
     private boolean dashboardHasInputs;
     /** Reorder mode is on (top-bar button). */
@@ -996,6 +997,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         if (controlCenter != null) { controlCenter.closeThen(this::returnToFirstDock); return; }
+        if (appContextMenu != null) { appContextMenu.closeThen(this::returnToFirstDock); return; }
         if (!returningFromBackground) {
             returnToFirstDock();
             return;
@@ -1014,6 +1016,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     }
 
     private void returnToFirstDock() {
+        if (appContextMenu != null) { appContextMenu.closeThen(this::returnToFirstDock); return; }
         homeFirstPending = true;
         if (appLibrary != null) { appLibrary.close(); return; }
         if (openPopup != null) openPopup.dismiss();
@@ -1381,6 +1384,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         // A foreground Home intent may pause/resume this Activity without stopping it. Preserve the panel
         // until onNewIntent can run its normal close animation; discard it only when actually backgrounded.
         if (controlCenter != null) controlCenter.dismissImmediately();
+        if (appContextMenu != null) appContextMenu.dismissImmediately();
         if (metadataBackdrop != null) metadataBackdrop.pause();
         if (topShelf != null) topShelf.pause();
         started = false;
@@ -1495,6 +1499,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (appContextMenu != null) return appContextMenu.dispatch(event);
         if (handleSettingsKey(event)) return true;
         int code = event.getKeyCode();
         int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
@@ -1867,7 +1872,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
 
     @Override
     public void onBackPressed() {
-        if (controlCenter != null) controlCenter.close();
+        if (appContextMenu != null) appContextMenu.close();
+        else if (controlCenter != null) controlCenter.close();
         // Home screen: Back goes nowhere.
     }
 
@@ -3579,47 +3585,42 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         String pkg = adapter.packageAt(position);
         // Empty dock slots and the Default-home tile carry the launcher's own package: no menu for them.
         if (key == null || pkg == null || pkg.equals(getPackageName())) return;
-        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
-        LinearLayout rows = panel.findViewById(R.id.rows);
-        PopupWindow popup = glassPopup(panel, (int) (200 * density));
+        if (appContextMenu != null || controlCenter != null) return;
+        List<AppContextMenu.Action> actions = new ArrayList<>();
+        if (position < adapter.movableCount()) {
+            actions.add(new AppContextMenu.Action(getString(R.string.context_edit_home), R.drawable.ic_apps, false, () -> {
+                if (!beginReorder()) return;
+                int at = adapter.positionOf(key);
+                if (at < 0) return;
+                focusTile(at); pickUp(at);
+                Toast.makeText(this, R.string.reorder_hint, Toast.LENGTH_LONG).show();
+            }));
+        }
+        List<AppContextMenu.Action> destinations = new ArrayList<>();
         if (dockRow && position < adapter.movableCount()) {
             boolean inDock = position < COLUMNS;
-            addSettingsMenuRow(rows, popup, inDock ? R.string.tile_replace_in_dock : R.string.tile_add_to_dock,
-                    () -> startDockEditFor(key, inDock));
+            destinations.add(new AppContextMenu.Action(getString(inDock ? R.string.tile_replace_in_dock : R.string.tile_add_to_dock), 0, false,
+                    () -> startDockEditFor(key, inDock)));
         }
-        if (position < adapter.movableCount()) addSettingsMenuRow(rows, popup, R.string.tile_move, () -> {
-            if (!beginReorder()) return;
-            int at = adapter.positionOf(key);   // beginReorder can rebuild the tiles
-            if (at < 0) return;
-            focusTile(at);
-            pickUp(at);
-            Toast.makeText(this, R.string.reorder_hint, Toast.LENGTH_LONG).show();
-        });
-        if (appLibraryEnabled) addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
+        if (appLibraryEnabled) destinations.add(new AppContextMenu.Action(getString(R.string.library_remove_shortcut), 0, false, () -> {
             if (LibraryApps.save(this, pkg, false)) reloadApps(false);
             else Toast.makeText(this, R.string.library_save_failed, Toast.LENGTH_LONG).show();
-        });
-        // Some firmware has no App info page at all; a row that only toasts "can't open" helps nobody.
+        }));
+        if (!destinations.isEmpty()) actions.add(new AppContextMenu.Action(getString(R.string.context_move_to), R.drawable.ic_swap_vert, false, null, destinations));
         Intent info = SystemSettings.appInfo(this, pkg);
-        if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info, () -> open(info));
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
-        // Dock tiles sit near the bottom of the screen: open the menu above the tile when it would not fit below.
-        int[] at = new int[2];
-        card.getLocationInWindow(at);
-        int gap = (int) (10 * density), height = panel.getMeasuredHeight();
-        if (at[1] + card.getHeight() + gap + height <= root.getHeight()) {
-            dropIn(popup, panel, card, Gravity.START);
-        } else {
-            panel.setAlpha(0f);
-            panel.setPivotY(height);
-            panel.setScaleY(0.92f);
-            panel.setTranslationY(8 * density);
-            popup.showAtLocation(root, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
-            panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(220)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        if (info != null) actions.add(new AppContextMenu.Action(getString(R.string.library_app_info), R.drawable.ic_settings, false, () -> open(info)));
+        try {
+            ApplicationInfo application = getPackageManager().getApplicationInfo(pkg, 0);
+            Intent uninstall = new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
+            if ((application.flags & ApplicationInfo.FLAG_SYSTEM) == 0 && uninstall.resolveActivity(getPackageManager()) != null)
+                actions.add(new AppContextMenu.Action(getString(R.string.context_uninstall), R.drawable.ic_context_remove, true, () -> open(uninstall)));
+        } catch (PackageManager.NameNotFoundException removed) {
+            return; // Package disappeared after the catalogue snapshot.
         }
-        rows.getChildAt(0).requestFocus();
+        if (actions.isEmpty()) return;
+        appContextMenu = new AppContextMenu(this, root, card, actions, animations, reducedMotion,
+                () -> { if (navigationSound != null) navigationSound.play(); }, () -> appContextMenu = null);
+        appContextMenu.show();
     }
 
     private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, Runnable action) {
@@ -3658,7 +3659,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
      */
     private void showCardPrompt() {
         if (!moduleCards || !tilesReady || promptsPaused || cardPrompt != null || !hasWindowFocus() || isFinishing()
-                || reordering || controlCenter != null) return;
+                || reordering || controlCenter != null || appContextMenu != null) return;
         if (cards.isEmpty() || !CardFeature.working()) return;
         CardFeature.run(() -> {
             showCardPromptNow();

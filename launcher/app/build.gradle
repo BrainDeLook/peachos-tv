@@ -11,8 +11,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 115
-        versionName '1.5.7-overlay-preview'
+        versionCode 116
+        versionName '1.5.7-ui-preview'
     }
 
     buildTypes {

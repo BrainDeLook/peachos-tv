@@ -19,6 +19,14 @@ import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
+import android.widget.ImageView;
+import android.content.res.ColorStateList;
+import androidx.core.graphics.ColorUtils;
+import androidx.dynamicanimation.animation.FloatPropertyCompat;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
+import java.util.ArrayList;
 
 /** One small, blurred launcher snapshot shared by all control tiles. Never captures each frame. */
 final class ControlBackdrop extends Drawable {
@@ -72,6 +80,18 @@ final class ControlBackdrop extends Drawable {
     private boolean focused;
     private float focusAmount;
     private ValueAnimator focusAnimator;
+    private boolean whiteFocus;
+    private SpringAnimation focusSpring;
+    private final Paint selection = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final ArrayList<TextView> focusText = new ArrayList<>();
+    private final ArrayList<Integer> textColors = new ArrayList<>();
+    private final ArrayList<ImageView> focusImages = new ArrayList<>();
+    private final ArrayList<Integer> imageColors = new ArrayList<>();
+    private boolean contentReady;
+    private static final FloatPropertyCompat<ControlBackdrop> FOCUS = new FloatPropertyCompat<ControlBackdrop>("whiteControlFocus") {
+        @Override public float getValue(ControlBackdrop value) { return value.focusAmount; }
+        @Override public void setValue(ControlBackdrop value, float amount) { value.applyWhiteFocus(amount); }
+    };
     private boolean positionFrozen;
     private int sampledX = Integer.MIN_VALUE, sampledY = Integer.MIN_VALUE;
     private int alpha = 255;
@@ -96,6 +116,40 @@ final class ControlBackdrop extends Drawable {
     }
 
     static void trimLightingCache() { LIGHTING_CACHE.evictAll(); }
+
+    ControlBackdrop whiteFocus() { whiteFocus = true; selection.setColor(Color.WHITE); return this; }
+
+    private void rememberContent(View view) {
+        if (view instanceof TextView text) {
+            focusText.add(text); textColors.add(text.getTextColors().getDefaultColor());
+            text.setDuplicateParentStateEnabled(false);
+        } else if (view instanceof ImageView image) {
+            focusImages.add(image);
+            ColorStateList tint = image.getImageTintList();
+            imageColors.add(tint == null ? 0xe6ffffff : tint.getDefaultColor());
+            image.setDuplicateParentStateEnabled(false);
+        }
+        if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) rememberContent(group.getChildAt(i));
+    }
+
+    private void applyWhiteFocus(float value) {
+        focusAmount = value;
+        float fraction = Math.max(0f, Math.min(1f, value));
+        tile.setTranslationZ(fraction * 3 * density);
+        tile.setScaleX(1f + .035f * value); tile.setScaleY(1f + .035f * value);
+        for (int i = 0; i < focusText.size(); i++) {
+            TextView text = focusText.get(i);
+            int color = ColorUtils.blendARGB(textColors.get(i), 0xff151515, fraction);
+            if (text.getCurrentTextColor() != color) text.setTextColor(color);
+        }
+        for (int i = 0; i < focusImages.size(); i++) {
+            ImageView image = focusImages.get(i);
+            int color = ColorUtils.blendARGB(imageColors.get(i), 0xff151515, fraction);
+            ColorStateList tint = image.getImageTintList();
+            if (tint == null || tint.getDefaultColor() != color) image.setImageTintList(ColorStateList.valueOf(color));
+        }
+        invalidateSelf();
+    }
 
     /** Preserve the sampled screen region before a fading page moves into a visual overlay. */
     static void freezePositions(View view) {
@@ -196,6 +250,21 @@ final class ControlBackdrop extends Drawable {
         for (int state : states) if (state == android.R.attr.state_focused) next = true;
         if (focused == next) return false;
         focused = next;
+        if (whiteFocus) {
+            if (!contentReady) { rememberContent(tile); contentReady = true; }
+            if (!animate || !tile.isAttachedToWindow()) jumpToCurrentState();
+            else {
+                if (focusSpring == null) {
+                    focusSpring = new SpringAnimation(this, FOCUS);
+                    focusSpring.setMinimumVisibleChange(.001f);
+                    focusSpring.setSpring(new SpringForce());
+                }
+                focusSpring.getSpring().setStiffness(focused ? 1500f : 1900f)
+                        .setDampingRatio(focused ? .72f : 1f);
+                focusSpring.animateToFinalPosition(focused ? 1f : 0f);
+            }
+            return true;
+        }
         if (!animate || !tile.isAttachedToWindow()) {
             jumpToCurrentState();
         } else {
@@ -215,8 +284,10 @@ final class ControlBackdrop extends Drawable {
         return true;
     }
     @Override public void jumpToCurrentState() {
+        if (focusSpring != null) focusSpring.cancel();
         if (focusAnimator != null) focusAnimator.cancel();
         float target = focused ? 1f : 0f;
+        if (whiteFocus) { if (focusAmount != target) applyWhiteFocus(target); return; }
         if (focusAmount == target) return;
         focusAmount = target;
         tile.setTranslationZ(focusAmount * 3 * density);
@@ -300,10 +371,15 @@ final class ControlBackdrop extends Drawable {
         }
         canvas.drawPath(mask, background);
         canvas.drawPath(mask, tint);
-        focus.setAlpha(Math.round(alpha * (.35f + .65f * focusAmount)));
-        shade.setAlpha(Math.round(alpha * (.55f + .45f * focusAmount)));
+        if (whiteFocus && focusAmount > 0f) {
+            selection.setAlpha(Math.round(alpha * .98f * Math.min(1f, focusAmount)));
+            canvas.drawPath(mask, selection);
+        }
+        float amount = Math.max(0f, Math.min(1f, focusAmount));
+        focus.setAlpha(Math.round(alpha * (.35f + .65f * amount)));
+        shade.setAlpha(Math.round(alpha * (.55f + .45f * amount)));
         for (int i = 0; i < edge.length; i++) {
-            edge[i].setAlpha(Math.round(alpha * EDGE_ALPHA[i] / 255f * (.42f + .58f * focusAmount)));
+            edge[i].setAlpha(Math.round(alpha * EDGE_ALPHA[i] / 255f * (.42f + .58f * amount)));
         }
         if (lighting != null) {
             raster.setColor(Color.WHITE);

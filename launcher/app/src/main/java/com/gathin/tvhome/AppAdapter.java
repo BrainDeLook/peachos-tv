@@ -458,6 +458,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** Lets go of every tile and its artwork (Home is in the background and memory is short). */
     void clear() {
+        AppTile.Glow.trimCache();
         items.clear();
         notifyDataSetChanged();
     }
@@ -518,9 +519,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         Holder h = (Holder) holder;
         h.cancelFocusSpring();
         Entry e = items.get(position);
+        h.glow.animate().cancel();
         if (e.kind == Entry.EMPTY) {
             // A free dock slot keeps its place in the row and the band, but shows nothing and takes no focus.
             h.card.setVisibility(View.INVISIBLE);
+            h.glow.setAlpha(0f);
             h.card.setFocusable(false);
             h.name.setVisibility(View.INVISIBLE);
             h.banner.setImageDrawable(null);
@@ -537,8 +540,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // In a single row every tile is the dock's kind: the big title above names it.
         boolean dockKind = dockRow && (singleRow || position < dockSize);
         h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
-        boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
+        boolean focused = h.card.isFocused() || h.card.isActivated();   // a rebind after reload() can hit the focused tile
         h.sheen.setAlpha(focused ? .22f : .16f);
+        h.glow.animate().cancel();
+        ((AppTile.Glow) h.glow.getBackground()).tint(ambientColorAt(position));
+        h.glow.setAlpha(focused ? .14f : 0f);
+        h.glow.setScaleX(focused ? focusScale() : 1f);
+        h.glow.setScaleY(focused ? focusScale() : 1f);
         h.name.setAlpha(focused ? 1f : restNameAlpha);
         h.card.setScaleX(focused ? focusScale() : 1f);
         h.card.setScaleY(focused ? focusScale() : 1f);
@@ -592,6 +600,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.cancelFocusSpring();
             float scale = h.card.isFocused() ? SELECTED_SCALE : 1f;
             h.card.setScaleX(scale); h.card.setScaleY(scale);
+            h.glow.animate().cancel(); h.glow.setAlpha(0f);
+            h.glow.setScaleX(scale); h.glow.setScaleY(scale);
             h.applyFocusTone(h.card.isFocused());
         }
         super.onViewDetachedFromWindow(holder);
@@ -956,6 +966,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final TextView label;
         final TextView name;
         final View sheen;
+        final View glow;
         final boolean animations;
 
         final boolean reducedMotion;
@@ -974,6 +985,17 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             icon = v.findViewById(R.id.icon);
             label = v.findViewById(R.id.label);
             name = v.findViewById(R.id.name);
+            float pixelDensity = v.getResources().getDisplayMetrics().density;
+            int glowPadding = Math.round(8 * pixelDensity);
+            ViewGroup.LayoutParams cardSize = card.getLayoutParams();
+            glow = new View(v.getContext());
+            glow.setBackground(new AppTile.Glow(cardSize.width, cardSize.height, pixelDensity, glowPadding));
+            glow.setAlpha(0f);
+            glow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams glowSize = new FrameLayout.LayoutParams(cardSize.width + 2 * glowPadding, cardSize.height + 2 * glowPadding);
+            glowSize.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+            glowSize.topMargin = -glowPadding;
+            ((FrameLayout) v).addView(glow, 0, glowSize);
             sheen = new View(v.getContext());
             sheen.setBackground(new AppTile.Edge(v.getResources().getDisplayMetrics().density));
             sheen.setAlpha(0f);
@@ -999,23 +1021,28 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 banner.animate().cancel();
                 name.animate().cancel();
                 sheen.animate().cancel();
-                float target = focused ? SELECTED_SCALE : 1f;
+                boolean selected = focused || view.isActivated();
+                float target = selected ? SELECTED_SCALE : 1f;
+                glow.animate().cancel();
+                glow.animate().alpha(selected ? .14f : 0f).setDuration(animations ? 120 : 0).start();
                 view.setTranslationY(0f); view.setTranslationZ(0f);
                 banner.setScaleX(1f); banner.setScaleY(1f);
                 // The tiny idle tone changes once, not on every spring step. Reapplying image
                 // filters during zoom invalidates the tile texture and defeats its render cache.
-                applyFocusTone(focused);
+                applyFocusTone(selected);
                 if (!animations) {
                     cancelFocusSpring();
                     view.setScaleX(target); view.setScaleY(target);
-                    sheen.setAlpha(focused ? .22f : .16f);
+                    glow.setScaleX(target); glow.setScaleY(target);
+                    sheen.setAlpha(selected ? .22f : .16f);
                 } else {
                     if (reducedMotion) {
                         cancelFocusSpring();
+                        glow.animate().scaleX(target).scaleY(target).setDuration(Motion.REDUCED_MS).start();
                         view.animate().scaleX(target).scaleY(target)
                                 .setDuration(Motion.REDUCED_MS).withLayer().setInterpolator(FOCUS_EASING).start();
-                    } else animateFocusScale(target, focused);
-                    sheen.animate().alpha(focused ? .22f : .16f)
+                    } else animateFocusScale(target, selected);
+                    sheen.animate().alpha(selected ? .22f : .16f)
                             .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
                             .setInterpolator(FOCUS_EASING).start();
                 }
@@ -1040,6 +1067,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 focusSpring.setSpring(new SpringForce(target));
                 focusSpring.setMinimumVisibleChange(.001f); // well below one screen pixel
                 focusSpring.addUpdateListener((animation, value, velocity) -> {
+                    glow.setScaleX(value); glow.setScaleY(value);
                     // ItemDecoration follows the actual zoom, including the outgoing end tile.
                     int position = getBindingAdapterPosition();
                     if ((position == 0 || position == dockSize - 1) && itemView.getParent() instanceof RecyclerView)

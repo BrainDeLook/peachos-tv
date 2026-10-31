@@ -17,4 +17,7 @@
     <string name="settings_idle_clock">Часы при бездействии</string>
     <string name="settings_idle_clock_state">Часы при бездействии: %1$s</string>
     <string name="settings_minutes">%1$d мин.</string>
+    <string name="context_edit_home">Изменить главный экран</string>
+    <string name="context_move_to">Переместить в…</string>
+    <string name="context_uninstall">Удалить приложение</string>
 </resources>

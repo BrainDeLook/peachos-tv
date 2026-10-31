@@ -825,11 +825,6 @@ final class ControlCenter {
         if (large) titleLp.topMargin = dp(4); else titleLp.setMarginStart(dp(5));
         tile.addView(title, titleLp);
         if (action != null) tile.setOnClickListener(v -> action.run());
-        tile.setOnFocusChangeListener((v, focus) -> {
-            if (!animate || reduced) return;
-            v.animate().scaleX(focus ? 1.025f : 1f).scaleY(focus ? 1.025f : 1f)
-                    .setDuration(120).setInterpolator(new DecelerateInterpolator()).start();
-        });
         return tile;
     }
 
@@ -850,7 +845,8 @@ final class ControlCenter {
 
     private Drawable material(View tile, float radius) {
         if (tile != clock) tile.setElevation(dp(2));
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25, animate && !reduced, transparentMaterial);
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25,
+                animate && !reduced, transparentMaterial).whiteFocus();
     }
 
     private TextView text(String value, float size, int color) {

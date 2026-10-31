@@ -2,6 +2,8 @@ package com.gathin.tvhome;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
+import android.graphics.BlurMaskFilter;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
@@ -13,6 +15,7 @@ import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.util.LruCache;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -37,6 +40,38 @@ public final class AppTile extends FrameLayout {
         canvas.clipPath(mask);
         super.draw(canvas);
         canvas.restoreToCount(save);
+    }
+
+    /** Small blurred silhouette, shared by equal-sized tiles; never blurred during animation. */
+    static final class Glow extends Drawable {
+        private static final LruCache<String, Bitmap> MASKS = new LruCache<String, Bitmap>(256 * 1024) {
+            @Override protected int sizeOf(String key, Bitmap bitmap) { return bitmap.getAllocationByteCount(); }
+        };
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final Bitmap mask;
+        Glow(int width, int height, float density, int padding) {
+            String key = width + ":" + height + ":" + density + ":" + padding;
+            Bitmap cached = MASKS.get(key);
+            if (cached == null) {
+                cached = Bitmap.createBitmap(width + padding * 2, height + padding * 2, Bitmap.Config.ALPHA_8);
+                cached.setDensity(Bitmap.DENSITY_NONE);
+                Path contour = new Path();
+                ContinuousCorners.set(contour, padding, padding + density * 1.5f,
+                        padding + width, padding + height + density * 1.5f, AppAdapter.cornerRadius(width, density));
+                Paint soft = new Paint(Paint.ANTI_ALIAS_FLAG);
+                soft.setColor(0xffffffff);
+                soft.setMaskFilter(new BlurMaskFilter(2.5f * density, BlurMaskFilter.Blur.NORMAL));
+                new Canvas(cached).drawPath(contour, soft);
+                MASKS.put(key, cached);
+            }
+            mask = cached;
+        }
+        static void trimCache() { MASKS.evictAll(); }
+        void tint(int color) { paint.setColor(color | 0xff000000); invalidateSelf(); }
+        @Override public void draw(Canvas canvas) { canvas.drawBitmap(mask, null, getBounds(), paint); }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     /** Broad top illumination and feathered edges share the artwork's continuous mask. */
@@ -75,8 +110,8 @@ public final class AppTile extends FrameLayout {
                     new int[]{0x00000000, 0x00000000, 0x10000000},
                     new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
             Shader illumination = new LinearGradient(b.left, b.top, b.right, b.bottom,
-                    new int[]{0x80ffffff, 0x18ffffff, 0x00ffffff, 0x2dffffff},
-                    new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
+                    new int[]{0x90ffffff, 0x16ffffff, 0x00ffffff, 0x60ffffff},
+                    new float[]{0, .18f, .78f, 1}, Shader.TileMode.CLAMP);
             for (int i = 0; i < bands.length; i++) {
                 // Coincident strokes feather from the same silhouette; inset contours read
                 // as several separate borders instead of a single softly lit curved edge.

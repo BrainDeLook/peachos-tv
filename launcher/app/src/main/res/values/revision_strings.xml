@@ -17,4 +17,7 @@
     <string name="settings_idle_clock">Idle clock</string>
     <string name="settings_idle_clock_state">Idle clock: %1$s</string>
     <string name="settings_minutes">%1$d minutes</string>
+    <string name="context_edit_home">Edit Home Screen</string>
+    <string name="context_move_to">Move to…</string>
+    <string name="context_uninstall">Uninstall app</string>
 </resources>
