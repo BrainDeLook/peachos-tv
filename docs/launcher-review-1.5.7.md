@@ -1,5 +1,8 @@
 # Launcher review — 1.5.7 preview, 2026-10-31
 
+This records preview 105. The subsequent implemented overlay/material trial is documented
+in [Control Center overlay preview](control-center-overlay-preview.md).
+
 ## Changes
 
 ### Real app channels

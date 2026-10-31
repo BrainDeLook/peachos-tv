@@ -23,9 +23,9 @@ import android.view.ViewGroup;
 final class ControlBackdrop extends Drawable {
     private final View tile;
     private final float density, radius, screenScale;
-    private final boolean hasBackdrop;
+    private final boolean hasBackdrop, translucent;
     private final boolean animate;
-    private final int tintAlpha;
+    private final int tintAlpha, baseAlpha;
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint surface = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -43,21 +43,23 @@ final class ControlBackdrop extends Drawable {
     private boolean positionFrozen;
     private int alpha = 255;
 
-    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone, boolean animate) {
+    ControlBackdrop(View tile, Bitmap backdrop, float density, float radius, float screenScale, int tone, boolean animate, boolean translucent) {
         this.tile = tile; this.density = density;
-        this.animate = animate;
+        this.animate = animate; this.translucent = translucent;
         this.radius = radius; this.screenScale = screenScale;
         hasBackdrop = backdrop != null;
+        baseAlpha = translucent && hasBackdrop ? 176 : 255;
         if (hasBackdrop) background.setShader(new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
-        else background.setColor(0xff29262f);
+        else background.setColor(translucent ? 0x10ffffff : 0xff29262f);
         // All light bands use the material's exact path. Clipping keeps the feather inside it.
         float[] widths = {1.0f, 3.0f, 7f};
         for (int i = 0; i < edge.length; i++) {
             edge[i].setStyle(Paint.Style.STROKE);
             edge[i].setStrokeWidth(widths[i] * density);
         }
-        tint.setColor(tone);
-        tintAlpha = tone >>> 24;
+        tint.setColor(translucent ? (hasBackdrop ? 0x99211d25 : 0xa6211d25) : tone);
+        tintAlpha = tint.getColor() >>> 24;
+        background.setAlpha(baseAlpha);
     }
 
     /** Preserve the sampled screen region before a fading page moves into a visual overlay. */
@@ -72,8 +74,10 @@ final class ControlBackdrop extends Drawable {
     }
 
     static Bitmap snapshot(View content) {
-        if (content.getWidth() <= 0 || content.getHeight() <= 0) return null;
-        int width = 160, height = Math.max(1, Math.round(content.getHeight() * (160f / content.getWidth())));
+        android.util.DisplayMetrics screen = content.getResources().getDisplayMetrics();
+        int sourceWidth = content.getWidth() > 0 ? content.getWidth() : screen.widthPixels;
+        int sourceHeight = content.getHeight() > 0 ? content.getHeight() : screen.heightPixels;
+        int width = 160, height = Math.max(1, Math.round(sourceHeight * (160f / sourceWidth)));
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         // Also serves as the matte fallback when the window has no readable frame yet.
         bitmap.eraseColor(0xff29262f);
@@ -165,6 +169,8 @@ final class ControlBackdrop extends Drawable {
     @Override protected void onBoundsChange(Rect area) {
         bounds.set(area); bounds.inset(density, density);
         ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
+        if (translucent && !hasBackdrop) background.setShader(new LinearGradient(bounds.left, bounds.top, bounds.left, bounds.bottom,
+                0x10ffffff, 0x0affffff, Shader.TileMode.CLAMP));
         surface.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
                 new int[]{0x20ffffff, 0x07ffffff, 0x02ffffff, 0x08000000},
                 new float[]{0, .32f, .68f, 1}, Shader.TileMode.CLAMP));
@@ -205,7 +211,7 @@ final class ControlBackdrop extends Drawable {
     }
     @Override public void setAlpha(int value) {
         alpha = value;
-        background.setAlpha(value); tint.setAlpha(value * tintAlpha / 255);
+        background.setAlpha(value * baseAlpha / 255); tint.setAlpha(value * tintAlpha / 255);
         surface.setAlpha(value);
         invalidateSelf();
     }

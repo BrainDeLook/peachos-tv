@@ -1,8 +1,9 @@
 package com.gathin.tvhome;
 
 import android.animation.ValueAnimator;
-import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.Context;
+import android.view.Window;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -16,7 +17,6 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.VpnService;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
@@ -44,7 +44,21 @@ import java.util.Map;
 
 /** Compact controls with one shared frosted backdrop and a reversible capsule-to-header transition. */
 final class ControlCenter {
-    private final MainActivity host;
+    interface Actions {
+        void settingsGearHeld();
+        boolean remoteSettingsHoldEnabled();
+        void controlCenterDismissed(ControlCenter center, boolean returnToGear);
+        void controlInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate);
+        void controlOpen(Intent intent);
+        boolean controlBackdropReady();
+        String controlBackdropKey();
+        void controlSleep();
+    }
+    private final Context host;
+    private final Actions actions;
+    private final Window captureWindow;
+    private final boolean floating;
+    private final boolean transparentMaterial;
     private final FrameLayout stage;
     private final ViewGroup home;
     private int homeFocusability, homeAccessibility;
@@ -64,6 +78,15 @@ final class ControlCenter {
     private final boolean animate, reduced;
     private final Typeface regular, medium;
     private final Bitmap backdrop;
+    private final boolean captureNeeded;
+    private final String backdropKey;
+    private static final class PreparedBackdrop {
+        final Bitmap bitmap;
+        final long at = android.os.SystemClock.uptimeMillis();
+        PreparedBackdrop(Bitmap bitmap) { this.bitmap = bitmap; }
+    }
+    // Six 160-pixel images occupy about 0.33 MiB at 16:9; no full-size frame is retained.
+    private static final android.util.LruCache<String, PreparedBackdrop> HOME_GLASS = new android.util.LruCache<>(6);
     private final float backdropScale;
     private final List<View> tabViews = new ArrayList<>();
     private final Map<String, Intent> vpnApps = new LinkedHashMap<>();
@@ -94,16 +117,28 @@ final class ControlCenter {
     };
 
     ControlCenter(MainActivity host, View anchor, boolean inputs, boolean animate, boolean reduced, String vpnApp) {
-        this.host = host; this.anchor = anchor; this.animate = animate; this.reduced = reduced;
-        stage = host.findViewById(android.R.id.content);
-        home = host.findViewById(R.id.root);
-        capsule = host.findViewById(R.id.topButtons);
-        sourceClock = host.findViewById(R.id.compactClock);
+        this(host, host, host.findViewById(android.R.id.content), host.findViewById(R.id.root),
+                anchor, host.findViewById(R.id.topButtons), host.findViewById(R.id.compactClock),
+                host.getWindow(), null, inputs, animate, reduced, vpnApp);
+    }
+
+    ControlCenter(Context host, Actions actions, FrameLayout stage, ViewGroup home, View anchor,
+                  View capsule, TextClock sourceClock, Window captureWindow, Bitmap captured,
+                  boolean inputs, boolean animate, boolean reduced, String vpnApp) {
+        this.host = host; this.actions = actions; this.stage = stage; this.home = home;
+        this.anchor = anchor; this.capsule = capsule; this.sourceClock = sourceClock;
+        this.captureWindow = captureWindow; floating = captureWindow == null;
+        this.animate = animate; this.reduced = reduced;
         density = host.getResources().getDisplayMetrics().density;
-        View content = stage;
         boolean glass = host.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true);
-        backdrop = glass ? ControlBackdrop.snapshot(content) : null;
-        backdropScale = backdrop == null ? 1f : content.getWidth() / (float) backdrop.getWidth();
+        transparentMaterial = glass;
+        backdropKey = floating ? "" : actions.controlBackdropKey();
+        PreparedBackdrop cached = floating ? null : HOME_GLASS.get(backdropKey);
+        boolean fresh = cached != null && android.os.SystemClock.uptimeMillis() - cached.at < 60_000;
+        backdrop = !glass ? null : floating ? captured : fresh ? cached.bitmap : ControlBackdrop.snapshot(stage);
+        captureNeeded = glass && !floating && !fresh;
+        int width = stage.getWidth() > 0 ? stage.getWidth() : host.getResources().getDisplayMetrics().widthPixels;
+        backdropScale = backdrop == null ? 1f : width / (float) backdrop.getWidth();
         regular = host.getResources().getFont(R.font.inter_regular);
         medium = host.getResources().getFont(R.font.inter_medium);
         connectivity = host.getSystemService(ConnectivityManager.class);
@@ -184,7 +219,7 @@ final class ControlCenter {
         addTab("overview", R.drawable.ic_settings, R.string.cc_title);
         overviewTab = tabViews.get(tabViews.size() - 1);
         overviewTab.setOnLongClickListener(v -> {
-            host.settingsGearHeld();
+            actions.settingsGearHeld();
             return true;
         });
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
@@ -208,6 +243,8 @@ final class ControlCenter {
 
     boolean isShowing() { return showing; }
 
+    static void trimBackdropCache() { HOME_GLASS.evictAll(); }
+
     boolean dispatchKeyEvent(KeyEvent event) { return root.dispatchKeyEvent(event); }
 
     void show() {
@@ -222,6 +259,7 @@ final class ControlCenter {
             gearDx = from[0] + anchor.getWidth() * anchor.getScaleX() * .5f - to[0] - overviewTab.getWidth() * .5f;
             gearDy = from[1] + anchor.getHeight() * anchor.getScaleY() * .5f - to[1] - overviewTab.getHeight() * .5f;
             gearScale = anchor.getWidth() * anchor.getScaleX() / overviewTab.getWidth();
+            if (floating) { clockDx = clockDy = gearDx = gearDy = 0f; gearScale = 1f; }
             body.setPivotX(body.getWidth() * .5f); body.setPivotY(body.getHeight() * .5f);
             if (animate && !reduced) {
                 // Build the static controls once before the spring, rather than rasterizing all their
@@ -250,16 +288,21 @@ final class ControlCenter {
             }
             overviewTab.requestFocusFromTouch();
         };
-        if (backdrop != null) {
+        long captureDeadline = android.os.SystemClock.uptimeMillis() + 900;
+        if (backdrop != null && captureNeeded) {
             captureFrame = new Runnable() {
                 @Override public void run() {
                     if (!showing || closing) return;
+                    if (!actions.controlBackdropReady() && android.os.SystemClock.uptimeMillis() < captureDeadline) {
+                        stage.postOnAnimation(this);
+                        return;
+                    }
                     int[] location = new int[2]; stage.getLocationInWindow(location);
                     Rect source = new Rect(location[0], location[1],
                             location[0] + stage.getWidth(), location[1] + stage.getHeight());
                     captureAttempts++;
                     try {
-                        PixelCopy.request(host.getWindow(), source, backdrop, result -> {
+                        PixelCopy.request(captureWindow, source, backdrop, result -> {
                             if (closing) return;
                             android.util.Log.d("PeachControls", "Window copy " + result + " attempt " + captureAttempts);
                             if (result != PixelCopy.SUCCESS) {
@@ -270,7 +313,12 @@ final class ControlCenter {
                             GLASS_WORK.execute(() -> {
                                 if (closing) return;
                                 ControlBackdrop.blur(backdrop);
-                                panel.post(revealFrame);
+                                panel.post(() -> {
+                                    if (!closing) {
+                                        if (actions.controlBackdropReady()) HOME_GLASS.put(backdropKey, new PreparedBackdrop(backdrop));
+                                        revealFrame.run();
+                                    }
+                                });
                             });
                         }, new Handler(Looper.getMainLooper()));
                     } catch (IllegalArgumentException noWindowFrame) {
@@ -289,7 +337,7 @@ final class ControlCenter {
         home.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         showing = true;
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
-        if (backdrop == null) panel.post(revealFrame);
+        if (backdrop == null || !captureNeeded) panel.post(revealFrame);
         else stage.postOnAnimation(() -> {
             // Home resumed from another app has not necessarily submitted a readable frame yet.
             // Wait for its first presentation rather than retaining the matte bitmap for this whole opening.
@@ -311,7 +359,7 @@ final class ControlCenter {
         // The moving header keeps the glyphs through its final frame. finishDismiss restores the
         // original and removes this overlay before the same window's next draw.
         float handoff = closing || visible > 0f ? 1f : 0f;
-        clock.setAlpha(handoff); overviewTab.setAlpha(handoff);
+        clock.setAlpha(floating ? headerAlpha : handoff); overviewTab.setAlpha(floating ? headerAlpha : handoff);
         sourceClock.setAlpha(1f - handoff); anchor.setAlpha(1f - handoff);
         clock.setTranslationX(clockDx * (1f - value)); clock.setTranslationY(clockDy * (1f - value));
         overviewTab.setTranslationX(gearDx * (1f - value)); overviewTab.setTranslationY(gearDy * (1f - value));
@@ -330,7 +378,7 @@ final class ControlCenter {
             return;
         }
         closing = true; returnToGear = action == null; afterClose = action;
-        if (returnToGear && !host.remoteSettingsHoldEnabled()) {
+        if (returnToGear && !actions.remoteSettingsHoldEnabled()) {
             overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
         }
         if (!revealed || !animate) { finishDismiss(); return; }
@@ -365,8 +413,8 @@ final class ControlCenter {
         home.setImportantForAccessibility(homeAccessibility);
         sourceClock.setAlpha(1f); anchor.setAlpha(1f);
         capsule.setAlpha(1f); capsule.setVisibility(View.VISIBLE);
-        if (!returnToGear && afterClose == null && homeFocus != null && host.hasWindowFocus()) homeFocus.requestFocusFromTouch();
-        host.controlCenterDismissed(this, returnToGear);
+        if (!returnToGear && afterClose == null && homeFocus != null && home.hasWindowFocus()) homeFocus.requestFocusFromTouch();
+        actions.controlCenterDismissed(this, returnToGear);
         stage.removeView(root);
         Runnable action = afterClose; afterClose = null;
         if (action != null) action.run();
@@ -494,7 +542,7 @@ final class ControlCenter {
 
     private void populatePage(String page, LinearLayout column) {
         if ("inputs".equals(page)) {
-            host.controlInputRows(column, this::closeThen);
+            actions.controlInputRows(column, this::closeThen);
             for (int i = 0; i < column.getChildCount(); i++) {
                 View row = column.getChildAt(i);
                 if (row.findViewById(R.id.title) == null) continue;
@@ -602,18 +650,10 @@ final class ControlCenter {
         return false;
     }
 
-    private void sleep() {
-        closeThen(() -> {
-        if (Build.VERSION.SDK_INT >= 28 && StandbyService.sleep()) return;
-        new AlertDialog.Builder(host).setTitle(R.string.cc_sleep)
-                .setMessage(Build.VERSION.SDK_INT >= 28 ? R.string.cc_standby_help : R.string.cc_sleep_unavailable)
-                .setPositiveButton(R.string.settings, (d, w) -> host.controlOpen(SystemSettings.intent(host, Settings.ACTION_ACCESSIBILITY_SETTINGS)))
-                .setNegativeButton(android.R.string.cancel, null).show();
-        });
-    }
+    private void sleep() { closeThen(actions::controlSleep); }
 
     private void launch(Intent intent) {
-        closeThen(() -> host.controlOpen(intent));
+        closeThen(() -> actions.controlOpen(intent));
     }
 
     private TextView info(LinearLayout column, int icon, int title) {
@@ -671,7 +711,7 @@ final class ControlCenter {
 
     private Drawable material(View tile, float radius) {
         if (tile != clock) tile.setElevation(dp(2));
-        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25, animate && !reduced);
+        return new ControlBackdrop(tile, backdrop, density, dp(radius), backdropScale, 0x33211d25, animate && !reduced, transparentMaterial);
     }
 
     private TextView text(String value, float size, int color) {

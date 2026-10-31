@@ -64,6 +64,7 @@
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_section_remote" android:textSize="24sp" android:textColor="#FFFFFFFF" android:layout_marginBottom="12dp" />
                     <TextView android:id="@+id/settingsHoldChoice" style="@style/SettingsRow" android:layout_marginTop="10dp" android:text="@string/settings_hold_title" />
                     <TextView android:id="@+id/settingsKeyChoice" style="@style/SettingsRow" android:layout_marginTop="10dp" android:text="@string/settings_key_choose" />
+                    <TextView android:id="@+id/controlOverlayChoice" style="@style/SettingsRow" android:layout_marginTop="10dp" android:text="@string/control_overlay" />
                     <TextView android:id="@+id/settingsHoldHelp" style="@style/SettingsRow" android:layout_height="wrap_content" android:minHeight="64dp" android:paddingTop="10dp" android:paddingBottom="10dp" android:textSize="14sp" android:text="@string/settings_hold_help" />
                     <TextView android:id="@+id/gearHoldChoice" style="@style/SettingsRow" android:layout_marginTop="10dp" android:text="@string/gear_hold_settings_title" />
                     <TextView android:id="@+id/navigationSoundChoice" style="@style/SettingsRow" android:layout_marginTop="10dp" android:text="@string/navigation_sound" />

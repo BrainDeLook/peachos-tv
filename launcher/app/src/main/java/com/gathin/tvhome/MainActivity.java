@@ -3,6 +3,7 @@ package com.gathin.tvhome;
 import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -98,7 +99,16 @@ import java.util.concurrent.TimeUnit;
 /**
  * tvOS style home: black, a pinned dock row, an app grid, and one glass highlight that springs between tiles.
  */
-public class MainActivity extends Activity implements AppAdapter.TileListener {
+public class MainActivity extends Activity implements AppAdapter.TileListener, ControlCenter.Actions {
+    private static final java.lang.ref.WeakReference<MainActivity> NO_HOME = new java.lang.ref.WeakReference<>(null);
+    private static java.lang.ref.WeakReference<MainActivity> foregroundHome = NO_HOME;
+
+    static boolean showForegroundControls() {
+        MainActivity home = foregroundHome.get();
+        if (home == null || !home.hasWindowFocus()) return false;
+        home.remoteSettingsHeld();
+        return true;
+    }
 
     private static final int LAUNCHER_SETTINGS_REQUEST = 42;
     /** Sent by QuickSettingsActivity: open Launcher settings from here so Home rebuilds when they close. */
@@ -1031,6 +1041,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        foregroundHome = new java.lang.ref.WeakReference<>(this);
         boolean playAppReturn = appSoundState.resumed();
         if (metadataBackdrop != null) metadataBackdrop.resume();
         if (topShelf != null) topShelf.resume();
@@ -1341,6 +1352,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (foregroundHome.get() == this) foregroundHome = NO_HOME;
         remoteSettingsButton.cancel();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
@@ -1390,6 +1402,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // RUNNING_LOW and CRITICAL also arrive while Home is visible when an accessibility service keeps the
         // process in the foreground; never blank the screen the owner is looking at.
         if (!MemoryTrimPolicy.shouldRelease(level, started)) return;
+        ControlCenter.trimBackdropCache();
         cancelCatalogueLoad();
         adapter.clear();
         // Detach the adapter too: with Home stopped no layout pass runs, so the tile views (and the bitmaps
@@ -3120,18 +3133,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** `input_sources` in config.xml: "HW5=23" maps the framework input whose id ends in /HW5 to a vendor
      *  source number; "HW8=-" leaves that input out of the Inputs menu (a port the board reports but the set
      *  does not have). Returns the number, -1 for a left-out input, or null when the input is not listed. */
-    private Integer mappedSource(String inputId) {
-        if (inputId == null) return null;
-        String hw = inputId.substring(inputId.lastIndexOf('/') + 1);
-        for (String m : getResources().getStringArray(R.array.input_sources)) {
-            int eq = m.indexOf('=');
-            if (eq <= 0 || !m.substring(0, eq).trim().equals(hw)) continue;
-            String v = m.substring(eq + 1).trim();
-            if (v.equals("-")) return -1;
-            try { return Integer.parseInt(v); } catch (NumberFormatException e) { return null; }
-        }
-        return null;
-    }
+    private Integer mappedSource(String inputId) { return InputLaunch.mappedSource(this, inputId); }
 
     /** Switches to a passthrough input (HDMI, AV). An input mapped in `input_sources` is opened by sending
      *  `input_action` with its source number as the int extra "input" (Xiaomi China firmware, whose tvplayer
@@ -3143,51 +3145,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *  throws SecurityException, which used to take Home down with it (YaOS before the manifest asked
      *  for ACCESS_TV_SOURCE). */
     private void openInput(String inputId) {
-        // A CEC device is a child input of its HDMI port; the vendor source number belongs to the port
-        // (MiTV-MFFU0). Only that lookup uses the parent: the generic path below still opens the child.
-        String sourceId = inputId;
-        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
-        if (tim != null) {
-            try {
-                TvInputInfo info = tim.getTvInputInfo(inputId);
-                if (info != null && info.getParentId() != null) sourceId = info.getParentId();
-            } catch (RuntimeException ignored) {
-            }
-        }
-        Integer source = mappedSource(sourceId);
-        if (source != null && source >= 0 && !inputAction.isEmpty()) {
-            try {
-                startActivity(new Intent(inputAction).putExtra("input", source.intValue())
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                return;
-            } catch (ActivityNotFoundException | SecurityException e) {
-                // fall through to the standard way
-            }
-        }
-        Uri uri = TvContract.buildChannelUriForPassthroughInput(inputId);
-        Intent view = (inputUriScheme.isEmpty()
-                ? new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "vnd.android.cursor.item/channel")
-                : new Intent(Intent.ACTION_VIEW, uri.buildUpon().scheme(inputUriScheme).build()))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        // Aim it at the TV app first: apps installed later (a streaming app, a file manager) can claim the same
-        // channel URI too, and with two or more handlers Android shows a chooser instead of the input (WhaleOS).
-        if (!liveTvPkg.isEmpty()) {
-            try {
-                startActivity(new Intent(view).setPackage(liveTvPkg));
-                return;
-            } catch (ActivityNotFoundException | SecurityException ignored) {
-            }
-        }
-        try {
-            startActivity(view);
-            return;
-        } catch (ActivityNotFoundException | SecurityException e) {
-            if (inputAction.isEmpty()) {
-                Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
-        open(new Intent(inputAction).setDataAndType(uri, "vnd.android.cursor.item/channel"));
+        InputLaunch.openInput(this, inputId, inputAction, inputUriScheme, liveTvPkg);
     }
 
     /** Dropdown menu under the Inputs pill: HDMI ports (with connection state), AV and Live TV. */
@@ -3224,7 +3182,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         rows.getChildAt(0).requestFocus();
     }
 
-    boolean remoteSettingsHoldEnabled() { return remoteSettingsHoldMode; }
+    public boolean remoteSettingsHoldEnabled() { return remoteSettingsHoldMode; }
 
     void remoteSettingsHeld() {
         if (controlCenter == null) showControlCenter();
@@ -3233,7 +3191,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    void settingsGearHeld() {
+    public void settingsGearHeld() {
         if (!gearHoldLauncherSettings) return;
         Runnable openSettings = () -> startActivityForResult(
                 new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
@@ -3252,7 +3210,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         controlCenter.show();
     }
 
-    void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
+    public void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
         if (controlCenter == center) controlCenter = null;
         if (returnToGear) {
             if (remoteSettingsHoldMode) {
@@ -3270,9 +3228,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    void controlOpen(Intent intent) { open(intent); }
+    public void controlOpen(Intent intent) { open(intent); }
 
-    void controlInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate) {
+    @Override public String controlBackdropKey() {
+        return lastFocusedKey + "\n" + settingsRevision() + "\n"
+                + getSharedPreferences("top_shelf", MODE_PRIVATE).getString(lastFocusedKey, "auto");
+    }
+
+    @Override public boolean controlBackdropReady() {
+        return catalogueLoad == null && tilesReady && (topShelf == null || topShelf.backdropReady());
+    }
+
+    @Override public void controlSleep() {
+        if (Build.VERSION.SDK_INT >= 28 && StandbyService.sleep()) return;
+        new AlertDialog.Builder(this).setTitle(R.string.cc_sleep)
+                .setMessage(Build.VERSION.SDK_INT >= 28 ? R.string.cc_standby_help : R.string.cc_sleep_unavailable)
+                .setPositiveButton(R.string.settings, (d, w) -> controlOpen(SystemSettings.intent(this, Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    public void controlInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate) {
         populateInputRows(rows, activate, coocaaSources ? CoocaaSources.list(this) : Collections.emptyList());
         styleSourcePicker(rows, rows);
         rows.setBackground(null);

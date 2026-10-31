@@ -1,4 +1,6 @@
 <resources>
+    <string name="control_overlay">Панель поверх приложений (пробный режим)</string>
+    <string name="control_overlay_state">Панель поверх приложений (пробный режим): %1$s</string>
     <string name="shelf_sync">Синхронизировать каналы приложений</string>
     <string name="shelf_loading">Читаем опубликованные каналы Android TV…</string>
     <string name="shelf_synced">Здесь только источники, опубликованные самими приложениями. Изменения обновляются автоматически.</string>

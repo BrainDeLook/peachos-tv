@@ -84,6 +84,15 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
         });
         findViewById(R.id.settingsHoldHelp).setOnClickListener(v -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        TextView overlayChoice = findViewById(R.id.controlOverlayChoice);
+        overlayChoice.setText(getString(R.string.control_overlay_state,
+                getString(choices.getBoolean(OverlayControls.KEY, false) ? R.string.on : R.string.off)));
+        overlayChoice.setOnClickListener(v -> {
+            boolean enabled = !choices.getBoolean(OverlayControls.KEY, false);
+            choices.edit().putBoolean(OverlayControls.KEY, enabled).apply();
+            overlayChoice.setText(getString(R.string.control_overlay_state, getString(enabled ? R.string.on : R.string.off)));
+            changed();
+        });
         findViewById(R.id.settingsKeyChoice).setOnClickListener(v -> {
             SettingsKeyBinding.begin((code, scan) -> {
                 choices.edit().putInt(SettingsKeyBinding.CODE, code).putInt(SettingsKeyBinding.SCAN, scan).apply();

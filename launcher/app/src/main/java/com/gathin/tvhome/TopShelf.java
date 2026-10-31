@@ -686,6 +686,13 @@ final class TopShelf {
         return b.tile.getRight() >= scroll.getScrollX() - spare
                 && b.tile.getLeft() <= scroll.getScrollX() + scroll.getWidth() + spare;
     }
+    boolean backdropReady() {
+        if (!active || suspended || !cardMode) return true;
+        if (awaitingRow || rowExiting || panel.getAlpha() < .99f) return false;
+        for (Binding b : bindings) if (inWindow(b, 0) && !b.item.image.isEmpty() && b.failedAt == 0
+                && (!b.loaded || b.image.getImageAlpha() < 250)) return false;
+        return true;
+    }
     private void scheduleVisible() {
         if (refreshQueued || !active || suspended || awaitingRow || rowExiting
                 || panel.getVisibility() != View.VISIBLE) return;
