@@ -1,4 +1,4 @@
-# Control Center overlay — preview 110
+# Control Center overlay — preview 111
 
 This follows the [preview 105 review](launcher-review-1.5.7.md). It is an experimental
 feature, not a stable release or a claim of validation on every TV firmware.
@@ -10,8 +10,9 @@ the trial is enabled on the owner's Homatics. It uses the existing remote-button
 accessibility service and the existing Settings-hold option. On Home the capsule/header
 transition remains in the activity's window. Over another app a temporary, focusable
 `TYPE_ACCESSIBILITY_OVERLAY` window hosts the same Control Center UI and springs.
-The service does not launch Home to open it. Back closes only the overlay; Home closes
-it and performs the normal global Home action. The launcher's settings/sound options,
+The service does not launch Home to open it. Back and Home smoothly close only the
+overlay, leaving the underlying app active. Once closed, a subsequent Home press follows
+the normal Home handling. The launcher's settings/sound options,
 network and VPN intents, clock, sleep and source actions remain available.
 
 The Home/overlay hosts share actions through a small interface, not through an invisible
@@ -30,6 +31,9 @@ Home keeps its original sampled material and 20% tint, without overlay transpare
 extra darkening. With a readable image in the overlay,
 the blurred texture is partially transparent, so it no longer becomes an opaque dark tile.
 The existing volume filters are preserved; transparency is not described as a real blur.
+
+Preview 111 raises only the in-app overlay's overall background scrim from 31% to 40%
+for readability. Home retains its previous 31% scrim; button materials are unchanged.
 
 Home's previous Settings-hold defect was reproduced with the physical remote. PixelCopy
 succeeded **before** the poster row appeared, permanently freezing a plain dark background

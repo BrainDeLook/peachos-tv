@@ -180,7 +180,7 @@ final class ControlCenter {
                 return super.dispatchKeyEvent(event);
             }
         };
-        scrim = new View(host); scrim.setBackgroundColor(0x50000000);
+        scrim = new View(host); scrim.setBackgroundColor(floating ? 0x66000000 : 0x50000000);
         root.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
         root.setOnClickListener(v -> close());
         root.setFocusable(false);

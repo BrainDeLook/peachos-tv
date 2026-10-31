@@ -155,8 +155,8 @@ final class OverlayControls implements ControlCenter.Actions {
         if (stage == null && !pending) return false;
         if (event.getKeyCode() != KeyEvent.KEYCODE_HOME && event.getKeyCode() != KeyEvent.KEYCODE_ALL_APPS) return false;
         if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
-            if (panel != null) panel.closeThen(() -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME));
-            else { cancel(); service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); }
+            if (panel != null) panel.close();
+            else cancel();
         }
         return true;
     }
