@@ -57,7 +57,7 @@ final class ControlBackdrop extends Drawable {
             edge[i].setStyle(Paint.Style.STROKE);
             edge[i].setStrokeWidth(widths[i] * density);
         }
-        tint.setColor(translucent ? (hasBackdrop ? 0x99211d25 : 0xa6211d25) : tone);
+        tint.setColor(translucent ? (hasBackdrop ? 0x66211d25 : 0x80211d25) : tone);
         tintAlpha = tint.getColor() >>> 24;
         background.setAlpha(baseAlpha);
     }

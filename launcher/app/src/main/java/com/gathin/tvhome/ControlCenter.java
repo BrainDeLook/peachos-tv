@@ -131,7 +131,8 @@ final class ControlCenter {
         this.animate = animate; this.reduced = reduced;
         density = host.getResources().getDisplayMetrics().density;
         boolean glass = host.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true);
-        transparentMaterial = glass;
+        // Home keeps its original sampled material; transparency belongs only to the in-app window.
+        transparentMaterial = floating && glass;
         backdropKey = floating ? "" : actions.controlBackdropKey();
         PreparedBackdrop cached = floating ? null : HOME_GLASS.get(backdropKey);
         boolean fresh = cached != null && android.os.SystemClock.uptimeMillis() - cached.at < 60_000;

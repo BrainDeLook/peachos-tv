@@ -1,4 +1,4 @@
-# Control Center overlay — preview 109
+# Control Center overlay — preview 110
 
 This follows the [preview 105 review](launcher-review-1.5.7.md). It is an experimental
 feature, not a stable release or a claim of validation on every TV firmware.
@@ -24,7 +24,10 @@ Those TV-specific overlay source paths have not been tested on TCL in this previ
 
 All button materials retain their continuous corner mask, broad upper light, lower shade,
 soft rim and animated focus depth. The clock's quiet `#10FFFFFF → #0AFFFFFF` translucent
-gradient is the base where a readable blurred image is unavailable. With a readable image,
+gradient is the overlay base where a readable blurred image is unavailable. Its contrast
+tint is 40% with a readable backdrop and 50% without one; the 60–65% trial was too dark.
+Home keeps its original sampled material and 20% tint, without overlay transparency or
+extra darkening. With a readable image in the overlay,
 the blurred texture is partially transparent, so it no longer becomes an opaque dark tile.
 The existing volume filters are preserved; transparency is not described as a real blur.
 
