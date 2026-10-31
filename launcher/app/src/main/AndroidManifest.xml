@@ -8,6 +8,7 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.gathin.peachos.airplay.CONTROL" />
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -27,6 +28,7 @@
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
     <queries>
+        <package android:name="com.gathin.peachos.airplay" />
         <intent><action android:name="android.search.action.GLOBAL_SEARCH" /></intent>
         <intent><action android:name="com.nes.intent.action.ACCESSORIES" /></intent>
         <intent><action android:name="android.net.VpnService" /></intent>

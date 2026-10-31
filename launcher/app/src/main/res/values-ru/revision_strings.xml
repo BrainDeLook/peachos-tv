@@ -20,4 +20,9 @@
     <string name="context_edit_home">Изменить главный экран</string>
     <string name="context_move_to">Переместить в…</string>
     <string name="context_uninstall">Удалить приложение</string>
+    <string name="cc_airplay">AirPlay</string>
+    <string name="cc_airplay_on">AirPlay: включён</string>
+    <string name="cc_airplay_off">AirPlay: выключен</string>
+    <string name="cc_airplay_wait">AirPlay: подождите</string>
+    <string name="cc_airplay_error">Приёмник AirPlay недоступен. Попробуйте ещё раз.</string>
 </resources>

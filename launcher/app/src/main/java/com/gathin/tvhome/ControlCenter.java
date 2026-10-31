@@ -135,6 +135,7 @@ final class ControlCenter {
             }, "PeachGlass"), new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
     private String selected = "";
     private View selectedTab;
+    private AirPlayControl airPlay;
     private final ConnectivityManager connectivity;
     private String networkTransport;
     private boolean networkOnline, networkEthernet, vpnConnected;
@@ -486,6 +487,7 @@ final class ControlCenter {
         if (!showing) return;
         showing = false;
         closing = true;
+        if (airPlay != null) { airPlay.close(); airPlay = null; }
         if (captureFrame != null) stage.removeCallbacks(captureFrame);
         if (revealFrame != null) panel.removeCallbacks(revealFrame);
         if (revealPreDraw != null) {
@@ -742,7 +744,25 @@ final class ControlCenter {
         roundShortcut(shortcuts, R.drawable.cc_controls, R.string.cc_launcher_settings,
                 () -> launch(new Intent(host, LauncherSettingsActivity.class)));
         Intent search = new Intent(android.app.SearchManager.INTENT_ACTION_GLOBAL_SEARCH);
-        if (search.resolveActivity(host.getPackageManager()) != null) {
+        if (AirPlayControl.available(host)) {
+            ImageView button = roundShortcut(shortcuts, R.drawable.cc_airplay, R.string.cc_airplay,
+                    () -> airPlay.toggle());
+            ((ControlBackdrop) button.getBackground()).preserveImageTint();
+            button.setEnabled(false);
+            airPlay = new AirPlayControl(host, state -> {
+                boolean on = state == AirPlayControl.ON;
+                boolean waiting = state == AirPlayControl.STARTING || state == AirPlayControl.STOPPING;
+                button.setEnabled(!waiting);
+                button.setAlpha(waiting ? .55f : 1f);
+                button.setImageTintList(new android.content.res.ColorStateList(
+                        new int[][]{new int[]{android.R.attr.state_focused}, new int[0]},
+                        new int[]{on ? 0xff0a84ff : 0xff151515, on ? 0xff0a84ff : 0xe6ffffff}));
+                int label = waiting ? R.string.cc_airplay_wait : on ? R.string.cc_airplay_on : R.string.cc_airplay_off;
+                button.setContentDescription(host.getString(label));
+                if (state == AirPlayControl.ERROR) android.widget.Toast.makeText(host,
+                        R.string.cc_airplay_error, android.widget.Toast.LENGTH_SHORT).show();
+            });
+        } else if (search.resolveActivity(host.getPackageManager()) != null) {
             roundShortcut(shortcuts, R.drawable.cc_search, R.string.cc_search, () -> launch(search));
         }
     }
@@ -833,7 +853,7 @@ final class ControlCenter {
         return tile;
     }
 
-    private void roundShortcut(LinearLayout parent, int icon, int label, Runnable action) {
+    private ImageView roundShortcut(LinearLayout parent, int icon, int label, Runnable action) {
         FrameLayout slot = new FrameLayout(host);
         slot.setClipChildren(false); slot.setClipToPadding(false);
         LinearLayout.LayoutParams slotLp = new LinearLayout.LayoutParams(0, -1, 1f);
@@ -847,6 +867,7 @@ final class ControlCenter {
         button.setBackground(material(button, 24));
         slot.addView(button, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
         button.setOnClickListener(v -> action.run());
+        return button;
     }
 
     private Drawable material(View tile, float radius) {

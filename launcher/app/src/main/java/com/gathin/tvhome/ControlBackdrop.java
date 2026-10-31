@@ -118,12 +118,14 @@ final class ControlBackdrop extends Drawable {
     static void trimLightingCache() { LIGHTING_CACHE.evictAll(); }
 
     ControlBackdrop whiteFocus() { whiteFocus = true; selection.setColor(Color.WHITE); return this; }
+    private boolean preserveImageTint;
+    ControlBackdrop preserveImageTint() { preserveImageTint = true; return this; }
 
     private void rememberContent(View view) {
         if (view instanceof TextView text) {
             focusText.add(text); textColors.add(text.getTextColors().getDefaultColor());
             text.setDuplicateParentStateEnabled(false);
-        } else if (view instanceof ImageView image) {
+        } else if (view instanceof ImageView image && !preserveImageTint) {
             focusImages.add(image);
             ColorStateList tint = image.getImageTintList();
             imageColors.add(tint == null ? 0xe6ffffff : tint.getDefaultColor());
