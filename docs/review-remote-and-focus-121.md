@@ -14,7 +14,7 @@ A device comparison temporarily disabled only the Remote buttons helper and rest
 
 The AOSP Android 12 input path explains the conflict: [KeyboardInterceptor](https://android.googlesource.com/platform/frameworks/base/+/android-12.0.0_r1/services/accessibility/java/com/android/server/accessibility/KeyboardInterceptor.java) asks window policy about volume before notifying accessibility services. On TV, [PhoneWindowManager](https://android.googlesource.com/platform/frameworks/base/+/android-12.0.0_r1/services/core/java/com/android/server/policy/PhoneWindowManager.java) consumes the event for direct audio handling. Neither the launcher key callback nor the dispatcher's native repeat sees this consumed event. AudioService START/END log entries alone must not be counted as volume steps.
 
-There is no per-key exclusion in the public accessibility key-filter API. The user chose to preserve normal HDMI volume holding: the Hold Settings option and Remote buttons helper were both disabled. Verified `InputFilterEnabled: false`, no bound key helper, and a focusable, clickable Home gear. Do not replace the active media session, guess a hold from volume broadcasts, or enable a firmware profile globally.
+There is no per-key exclusion in the public accessibility key-filter API. Disabling the helper was verified to remove the input filter and restore native volume holding. The final installation retains the Remote buttons helper, Settings hold, and Control Center over apps at the user's request; the existing HDMI volume limitation is accepted. No further workaround is applied. Do not replace the active media session, guess a hold from volume broadcasts, or enable a firmware profile globally.
 
 ## Existing firmware-specific repeat helper
 
