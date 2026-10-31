@@ -1073,8 +1073,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             }
             if (name.getVisibility() == View.VISIBLE) {
                 name.setTranslationY(density * 4f);
-                if (!animations || reducedMotion) name.setAlpha(selected ? 1f : restNameAlpha);
-                else name.animate().alpha(selected ? 1f : restNameAlpha)
+                if (!animations || reducedMotion) name.setAlpha(focused ? 1f : restNameAlpha);
+                else name.animate().alpha(focused ? 1f : restNameAlpha)
                         .setDuration(180).setInterpolator(FOCUS_EASING).start();
             }
         }

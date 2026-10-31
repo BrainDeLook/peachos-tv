@@ -43,8 +43,6 @@ public class InputKeyService extends AccessibilityService {
         if (repairRecord) ServiceRepair.connected(this, getClass());
         inputKeycodes = config.inputKeycodes;
         consumeVolumeKeys = config.consumeVolumeKeys;
-        android.util.Log.i("PeachRemote", "Input key filter=" + config.keyFilter + " volumeRepeat="
-                + consumeVolumeKeys);
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
         RemoteKeys.applyKeyFilter(this, config.keyFilter);
@@ -97,7 +95,7 @@ public class InputKeyService extends AccessibilityService {
 
     private void stopHelpers() {
         if (gamepads != null) { gamepads.stop(); gamepads = null; }
-        VolumeKeys.stop();
+        if (consumeVolumeKeys) VolumeKeys.stop();
         consumeVolumeKeys = false;
     }
 
@@ -107,6 +105,5 @@ public class InputKeyService extends AccessibilityService {
 
     @Override
     public void onInterrupt() {
-        VolumeKeys.stop();
     }
 }

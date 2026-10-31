@@ -125,7 +125,7 @@ public class HomeKeyService extends AccessibilityService {
         handler.removeCallbacksAndMessages(null);
         stopWaitingForUnlock();
         if (gamepads != null) { gamepads.stop(); gamepads = null; }
-        VolumeKeys.stop();
+        if (consumeVolumeKeys) VolumeKeys.stop();
         consumeVolumeKeys = false;
     }
 
@@ -139,8 +139,6 @@ public class HomeKeyService extends AccessibilityService {
         settingsKeycodes = config.settingsKeycodes;
         settingsPanel = config.settingsKeyPanel;
         consumeVolumeKeys = config.consumeVolumeKeys;
-        android.util.Log.i("PeachRemote", "Home key filter=" + config.keyFilter + " volumeRepeat="
-                + consumeVolumeKeys);
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
         RemoteKeys.applyKeyFilter(this, config.keyFilter);
@@ -294,6 +292,5 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     public void onInterrupt() {
-        VolumeKeys.stop();
     }
 }

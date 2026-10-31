@@ -63,7 +63,7 @@ The option is off by default. Disabling it lets directional navigation reach the
 
 The separate **Hold gear for launcher settings** option controls holding OK on either the top gear or the gear tab inside the panel, as well as holding Settings again while the panel is open. It is on by default. When off, these holds do nothing; the dedicated launcher settings button in the panel stays available.
 
-Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some Android TV firmware, including tested TCL and Homatics devices, global key filtering can stop held-volume repeat, including HDMI-CEC soundbars. If affected, turn off the Hold Settings option and the Remote buttons accessibility helper, then use the on-screen gear. Alternatively, configure the remote to control the soundbar directly through IR if supported. The sleep helper is separate and is not required for this feature.
+Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some TCL firmware, filtering can break held-volume repeat; disable the helper and use the on-screen gear if this happens. The sleep helper is a separate service and is not required for this feature.
 
 ## Install
 
