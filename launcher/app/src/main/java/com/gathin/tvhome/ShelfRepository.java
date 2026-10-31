@@ -89,10 +89,15 @@ final class ShelfRepository {
     }
 
     private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps) {
+        return readChannels(context, apps, null);
+    }
+
+    private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps,
+            android.os.CancellationSignal cancellation) {
         java.util.Map<String, Result> result = new java.util.LinkedHashMap<>();
         for (String app : apps) result.put(app, new Result());
         try (Cursor c = context.getContentResolver().query(TvContract.Channels.CONTENT_URI,
-                CHANNEL_COLUMNS, null, null, null)) {
+                CHANNEL_COLUMNS, null, null, null, cancellation)) {
             if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
             int visited = 0;
             while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 4000) {
@@ -106,6 +111,8 @@ final class ShelfRepository {
                 channel.history = ShelfSelection.isHistory(pkg, channel.providerId, textOrBlob(c, 4), text(c, 5), channel.name);
                 result.get(pkg).channels.add(channel);
             }
+        } catch (android.os.OperationCanceledException cancelled) {
+            throw cancelled;
         } catch (RuntimeException e) {
             for (Result value : result.values()) value.unavailable = true;
             Log.w("TopShelf", "Channel provider unavailable: " + e.getClass().getSimpleName());
@@ -119,7 +126,11 @@ final class ShelfRepository {
     }
 
     static Result read(Context context, String pkg, String source) {
-        Result result = readChannels(context, Collections.singleton(pkg)).get(pkg);
+        return read(context, pkg, source, null);
+    }
+
+    static Result read(Context context, String pkg, String source, android.os.CancellationSignal cancellation) {
+        Result result = readChannels(context, Collections.singleton(pkg), cancellation).get(pkg);
         Set<Long> historyChannels = new HashSet<>();
         Set<Long> appChannels = new HashSet<>();
         String resolvedSource = source;
@@ -136,7 +147,7 @@ final class ShelfRepository {
             if (watch ? !ShelfSelection.usesWatchNext(source) : !ShelfSelection.usesPreview(source)) continue;
             Uri table = watch ? TvContract.WatchNextPrograms.CONTENT_URI : TvContract.PreviewPrograms.CONTENT_URI;
             try (Cursor c = context.getContentResolver().query(table, watch ? WATCH_COLUMNS : PREVIEW_COLUMNS,
-                    null, null, null)) {
+                    null, null, null, cancellation)) {
                 if (c == null) { result.unavailable = true; continue; }
                 int packageColumn = c.getColumnIndexOrThrow("package_name");
                 int idColumn = c.getColumnIndexOrThrow("_id");
@@ -179,6 +190,8 @@ final class ShelfRepository {
                     item.rank = number(c, rankColumn, 0);
                     result.items.add(item);
                 }
+            } catch (android.os.OperationCanceledException cancelled) {
+                throw cancelled;
             } catch (RuntimeException e) {
                 result.unavailable = true;
                 Log.w("TopShelf", "Program provider unavailable: " + e.getClass().getSimpleName());

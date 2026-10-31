@@ -42,8 +42,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 /** On-demand installed-app picker. Uses the launcher's glass resources; no backdrop capture or blur. */
@@ -52,7 +55,11 @@ final class AppLibraryDialog {
      * The catalogue, the labels and the icons load here, off the UI thread: each label and icon opens the app's
      * resources, and on a TCL G09 that froze Home for 60-140 ms (2 to 4 janky frames) every time the library opened.
      */
-    private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
+    private static final ThreadPoolExecutor LOADER = new ThreadPoolExecutor(0, 1, 2, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(), task -> new Thread(() -> {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                task.run();
+            }, "PeachLibrary"));
     /** Labels kept between openings (LOADER thread only), until the app is updated. */
     private static final Map<String, Known> KNOWN = new HashMap<>();
 
@@ -68,7 +75,14 @@ final class AppLibraryDialog {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     /** Icons loaded for this opening, dropped with it. */
-    private final Map<String, Drawable> icons = new HashMap<>();
+    private final android.util.LruCache<String, Drawable> icons = new android.util.LruCache<>(2 * 1024 * 1024) {
+        @Override protected int sizeOf(String key, Drawable icon) {
+            if (icon instanceof android.graphics.drawable.BitmapDrawable bitmap) return bitmap.getBitmap().getAllocationByteCount();
+            long pixels = (long) Math.max(1, icon.getIntrinsicWidth()) * Math.max(1, icon.getIntrinsicHeight());
+            return (int) Math.min(Integer.MAX_VALUE, pixels * 4);
+        }
+    };
+    private final Set<FutureTask<Void>> jobs = ConcurrentHashMap.newKeySet();
     private final Set<String> iconsLoading = new HashSet<>();
     private final Runnable dismissed;
     private volatile boolean closed;
@@ -168,10 +182,9 @@ final class AppLibraryDialog {
         popup.setOutsideTouchable(true);
         popup.setAnimationStyle(0);
         popup.setOnDismissListener(() -> {
-            closed = true;
+            cancelLoads();
             dismissActions();
             stopHighlight();
-            icons.clear();
             dismissed.run();
         });
     }
@@ -181,9 +194,30 @@ final class AppLibraryDialog {
         if (popup.isShowing()) {
             popup.dismiss();
         } else if (!closed) {
-            closed = true;   // still loading: it never shows
+            cancelLoads();   // still loading: it never shows
             dismissed.run();
         }
+    }
+
+    private void enqueue(Runnable action) {
+        FutureTask<Void> job = new FutureTask<Void>(action, null) {
+            @Override protected void done() { jobs.remove(this); }
+        };
+        jobs.add(job);
+        LOADER.execute(job);
+    }
+
+    private void cancelLoads() {
+        closed = true;
+        for (FutureTask<Void> job : jobs) {
+            job.cancel(true);
+            LOADER.remove(job);
+        }
+        jobs.clear();
+        main.removeCallbacksAndMessages(null);
+        iconsLoading.clear();
+        icons.evictAll();
+        panel.animate().cancel();
     }
 
     void show() {
@@ -216,11 +250,12 @@ final class AppLibraryDialog {
      * appears once the latest load has filled it, even when a refresh replaced the opening's own load.
      */
     private void load(boolean reveal) {
+        if (closed) return;
         dismissActions();
         int load = loads.start(reveal);
         PackageManager pm = activity.getPackageManager();
         String self = activity.getPackageName();
-        LOADER.execute(() -> {
+        enqueue(() -> {
             if (closed || !loads.isLatest(load)) return;
             Map<String, ResolveInfo> unique = new LinkedHashMap<>();
             Set<String> tv = new HashSet<>();
@@ -255,6 +290,7 @@ final class AppLibraryDialog {
                 names.put(pkg, known.label);
             }
             KNOWN.keySet().retainAll(unique.keySet());
+            if (closed || !loads.isLatest(load)) return;
             main.post(() -> {
                 if (closed || !loads.isLatest(load)) return;
                 tvPackages.clear();
@@ -315,11 +351,12 @@ final class AppLibraryDialog {
         icon.setImageDrawable(cached);
         if (cached != null || !iconsLoading.add(pkg)) return;
         PackageManager pm = activity.getPackageManager();
-        LOADER.execute(() -> {
+        enqueue(() -> {
             if (closed) return;
             Drawable loaded;
             try { loaded = app.loadIcon(pm); }
             catch (RuntimeException unavailable) { loaded = null; }
+            if (closed) return;
             Drawable result = loaded;
             main.post(() -> {
                 iconsLoading.remove(pkg);

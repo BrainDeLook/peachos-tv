@@ -74,6 +74,8 @@ class Adb:
 
 def wait_for_device(adb, target, cancelled, progress=lambda text: None, timeout=120):
     """Connection/authentication boundary; never issues commands to Android itself."""
+    if cancelled.is_set():
+        raise InterruptedError('Подключение отменено. Изменения на устройстве не выполнялись.')
     if target and not re.fullmatch(r'[A-Za-z0-9_.:\[\]-]+', target):
         raise ValueError('Укажите IP:порт или USB-серийный номер без пробелов')
     network = target and ('.' in target or ':' in target)
@@ -265,7 +267,7 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         journal['changes'].append({'package': package, 'original': state, 'confirmed': False})
         save_json(path, journal)
         adb.shell('pm', 'disable-user', '--user', current.user, package)
-        disabled = packages(adb.shell('pm', 'list', 'packages', '-d', '--user', current.user))
+        disabled = packages(adb.shell('pm', 'list', 'packages', '-d', '--user', current.user, package))
         if package not in disabled:
             raise RuntimeError('Отключение не подтверждено: ' + package + '. Восстановление: ' + str(path))
         journal['changes'][-1]['confirmed'] = True
@@ -276,6 +278,8 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
 
 
 def read_restore(path):
+    if path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError('Файл восстановления слишком большой')
     raw = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(raw, dict) or raw.get('version') != 1:
         raise ValueError('Неизвестный формат резервной копии')

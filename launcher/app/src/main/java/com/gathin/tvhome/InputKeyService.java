@@ -35,6 +35,7 @@ public class InputKeyService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        stopHelpers();
         // From config.xml or a theme's config.json; theme.sh rebinds this service after a push.
         Config config = Config.load(this);
         // restore_key_services: note that this helper runs, so Home can put it back after a force stop.
@@ -81,15 +82,21 @@ public class InputKeyService extends AccessibilityService {
     /** Unbound by Android: the user turned the helper off, so Home doesn't put it back (ServiceRepair). */
     @Override
     public boolean onUnbind(Intent intent) {
+        stopHelpers();
         if (repairRecord) ServiceRepair.disconnected(this, getClass());
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
-        if (gamepads != null) gamepads.stop();
-        if (consumeVolumeKeys) VolumeKeys.stop();
+        stopHelpers();
         super.onDestroy();
+    }
+
+    private void stopHelpers() {
+        if (gamepads != null) { gamepads.stop(); gamepads = null; }
+        if (consumeVolumeKeys) VolumeKeys.stop();
+        consumeVolumeKeys = false;
     }
 
     @Override

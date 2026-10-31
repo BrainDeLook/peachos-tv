@@ -45,21 +45,34 @@ final class ShelfDiskCache {
     private File file(String url) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(url.getBytes(StandardCharsets.UTF_8));
-            StringBuilder name = new StringBuilder();
-            for (byte b : digest) name.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+            StringBuilder name = new StringBuilder(digest.length * 2);
+            String hex = "0123456789abcdef";
+            for (byte b : digest) name.append(hex.charAt((b & 255) >>> 4)).append(hex.charAt(b & 15));
             return new File(root, name + ".jpg");
         } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
     private void prune() {
         File[] files = root.listFiles((dir, name) -> name.endsWith(".jpg") || name.endsWith(".tmp"));
         if (files == null) return;
-        Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+        class CachedFile {
+            final File file;
+            final long size;
+            long modified;
+            CachedFile(File file) { this.file = file; this.size = file.length(); }
+        }
+        CachedFile[] entries = new CachedFile[files.length];
         long total = 0;
-        for (File file : files) total += file.length();
-        for (File file : files) {
+        for (int i = 0; i < files.length; i++) {
+            entries[i] = new CachedFile(files[i]);
+            total += entries[i].size;
+        }
+        if (total <= limit) return;
+        // Query filesystem metadata once per file, never from the O(n log n) sort comparator.
+        for (CachedFile entry : entries) entry.modified = entry.file.lastModified();
+        Arrays.sort(entries, Comparator.comparingLong(entry -> entry.modified));
+        for (CachedFile entry : entries) {
             if (total <= limit) break;
-            long size = file.length();
-            if (file.delete()) total -= size;
+            if (entry.file.delete()) total -= entry.size;
         }
     }
 }

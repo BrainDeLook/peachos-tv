@@ -58,6 +58,8 @@ final class TopShelf {
     private final android.graphics.Typeface bodyFace;
     private final boolean animateRows;
     private ExecutorService queries;
+    private java.util.concurrent.Future<?> metadataQuery;
+    private android.os.CancellationSignal metadataCancellation;
     private final ThreadPoolExecutor downloads = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(), task -> new Thread(() -> {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
@@ -250,22 +252,17 @@ final class TopShelf {
         int ticket = generation;
         // Provider notifications may concern another app, or only a playback timestamp. Keep the
         // visible row until a real content change is known instead of fading/rebuilding on every ping.
-        queries.execute(() -> {
-            if (!valid(ticket, pkg)) return;
-            ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
-            activity.runOnUiThread(() -> {
-                if (!valid(ticket, pkg)) return;
-                lists.put(pkg + "\n" + source, new Snapshot(result));
-                if (ShelfRepository.sameContent(renderedResult, result)) return;
-                if (rowFocused || navigation.settling()) {
-                    metadataDirty = true;
-                    metadataHandler.removeCallbacks(refreshMetadata);
-                    metadataHandler.postDelayed(refreshMetadata, 120);
-                    return;
-                }
-                requested = null;
-                show(pkg, label, dockTop);
-            });
+        readMetadata(ticket, pkg, source, result -> {
+            lists.put(pkg + "\n" + source, new Snapshot(result));
+            if (ShelfRepository.sameContent(renderedResult, result)) return;
+            if (rowFocused || navigation.settling()) {
+                metadataDirty = true;
+                metadataHandler.removeCallbacks(refreshMetadata);
+                metadataHandler.postDelayed(refreshMetadata, 120);
+                return;
+            }
+            requested = null;
+            show(pkg, label, dockTop);
         });
     }
 
@@ -297,6 +294,7 @@ final class TopShelf {
         // Unknown results stay hidden while loading; a known empty list uses the ordinary app title.
         cardMode = !ShelfSelection.OFF.equals(source) && (!fresh || !cached.result.items.isEmpty());
         int ticket = ++generation;
+        cancelMetadataQuery();
         awaitingRow = true;
         dismissRow(ticket, pkg);
         if (hero.getVisibility() != View.GONE) {
@@ -313,17 +311,36 @@ final class TopShelf {
         // A short debounce avoids building lists for every app crossed while holding Right.
         panel.postDelayed(() -> {
             if (!valid(ticket, pkg)) return;
-            queries.execute(() -> {
-                if (!valid(ticket, pkg)) return;
-                ShelfRepository.Result result = ShelfRepository.read(activity, pkg, source);
-                activity.runOnUiThread(() -> {
-                    if (valid(ticket, pkg)) {
-                        lists.put(key, new Snapshot(result));
-                        whenSettled(ticket, pkg, () -> render(pkg, result, ticket));
-                    }
-                });
+            readMetadata(ticket, pkg, source, result -> {
+                lists.put(key, new Snapshot(result));
+                whenSettled(ticket, pkg, () -> render(pkg, result, ticket));
             });
         }, 120);
+    }
+
+    private void readMetadata(int ticket, String pkg, String source,
+            java.util.function.Consumer<ShelfRepository.Result> ready) {
+        cancelMetadataQuery();
+        android.os.CancellationSignal cancellation = new android.os.CancellationSignal();
+        metadataCancellation = cancellation;
+        metadataQuery = queries.submit(() -> {
+            if (!valid(ticket, pkg)) return;
+            ShelfRepository.Result result;
+            try {
+                result = ShelfRepository.read(activity, pkg, source, cancellation);
+            } catch (android.os.OperationCanceledException cancelled) {
+                return; // The provider can release its Binder/database work before the next app's query.
+            }
+            if (cancellation.isCanceled()) return;
+            activity.runOnUiThread(() -> {
+                if (valid(ticket, pkg) && !cancellation.isCanceled()) ready.accept(result);
+            });
+        });
+    }
+
+    private void cancelMetadataQuery() {
+        if (metadataQuery != null) { metadataQuery.cancel(true); metadataQuery = null; }
+        if (metadataCancellation != null) { metadataCancellation.cancel(); metadataCancellation = null; }
     }
 
     private void dismissRow(int ticket, String pkg) {
@@ -598,6 +615,7 @@ final class TopShelf {
         headingHold.reset();
         headingSpring.cancel(); headingTarget = Float.NaN;
         suspended = true; generation++;
+        cancelMetadataQuery();
         panel.animate().cancel(); rowExiting = false;
         downloads.getQueue().clear();
         for (Binding b : bindings) {
@@ -615,6 +633,7 @@ final class TopShelf {
         metadataHandler.removeCallbacksAndMessages(null);
         metadataDirty = false;
         active = false; generation++; clear();
+        cancelMetadataQuery();
         dim.animate().cancel(); dimTarget = 0f; dim.setAlpha(0f); dim.setVisibility(View.GONE);
         if (queries != null) queries.shutdownNow();
         downloads.getQueue().clear();

@@ -27,8 +27,11 @@ def portable_adb():
     target.mkdir(parents=True, exist_ok=True)
     for name in ('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'NOTICE.txt'):
         source, destination = ASSETS / 'platform-tools' / name, target / name
-        if not destination.exists() or hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(destination.read_bytes()).digest():
-            shutil.copyfile(source, destination)
+        if destination.exists():
+            with source.open('rb') as original, destination.open('rb') as cached:
+                if hashlib.file_digest(original, 'sha256').digest() == hashlib.file_digest(cached, 'sha256').digest():
+                    continue
+        shutil.copyfile(source, destination)
     return target / 'adb.exe'
 
 
@@ -410,6 +413,9 @@ class Wizard:
                              rule.title if rule else package, rule.category if rule else 'CleanYourTV — требуется проверка' if package in REFERENCE['packages'] else 'Неизвестные системные пакеты', package),
                              tags=('blocked',) if reason else ('danger',) if self.expert.get() and package not in self.rows else ())
         if focus and self.tree.exists(focus[0]): self.tree.selection_set(focus[0])
+        self.selection_summary()
+
+    def selection_summary(self):
         self.status.set(f'Отключить: {len(self.selected)} · Установлено пакетов: {len(self.device.installed)} · ' + ('Экспертный режим — защита отключена' if self.expert.get() else 'Обычный режим — защита включена'))
 
     def toggle(self, event):
@@ -426,7 +432,8 @@ class Wizard:
         if reason: self.detail.set(reason); return
         if package in self.selected: self.selected.remove(package)
         else: self.selected.add(package)
-        self.refresh()
+        self.tree.set(package, 'check', '☑' if package in self.selected else '☐')
+        self.selection_summary()
 
     def details(self, event=None):
         if not self.tree.selection(): return

@@ -83,6 +83,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final String name;
         /** Ambient glow colour; 0 until sampled from the banner, or the card's accent from the start. */
         int ambient;
+        /** Cache identity carries no banner/icon references after this catalogue is replaced. */
+        final Object glowIdentity = new Object();
         /** uniform_tiles card fill, top and bottom colour; null until sampled from the icon. */
         int[] backdrop;
 
@@ -574,7 +576,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
-        ((AppTile.Glow) h.glow.getBackground()).artwork(e, e.banner, h.card.getBackground());
+        ((AppTile.Glow) h.glow.getBackground()).artwork(e.glowIdentity, e.banner, h.card.getBackground());
         h.toneStep = -1; // The rebound holder may now contain another banner or background.
         h.applyFocusTone(focused);
         h.card.setOnClickListener(v -> launch(e));

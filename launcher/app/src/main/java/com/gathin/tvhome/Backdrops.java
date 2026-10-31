@@ -230,6 +230,9 @@ final class Backdrops {
         generation.incrementAndGet();
         worker.shutdownNow();
         builder.shutdownNow();
+        main.removeCallbacksAndMessages(null);
+        incoming.clear();
+        watchingChanged = null;
         plex.close();
     }
 
@@ -355,14 +358,17 @@ final class Backdrops {
             if (e == null) return;
             Bitmap bitmap, logo;
             try {
-                bitmap = BitmapFactory.decodeFile(e.still.getPath());
+                bitmap = decodeStill(e.still);
                 logo = e.logo != null ? decodeLogo(e.logo) : null;
             } catch (RuntimeException | OutOfMemoryError x) {
                 return;   // a bad file or no memory: stay on the one showing
             }
             if (bitmap == null) return;
             Bitmap l = logo;
-            main.post(() -> callback.onBackdrop(pkg, bitmap, l, e.title, e.link));
+            if (worker.isShutdown()) return;
+            main.post(() -> {
+                if (!worker.isShutdown()) callback.onBackdrop(pkg, bitmap, l, e.title, e.link);
+            });
         });
     }
 
@@ -442,7 +448,7 @@ final class Backdrops {
             Bitmap bitmap = null, logo = null;
             if (first != null) {
                 try {
-                    bitmap = BitmapFactory.decodeFile(first.still.getPath());
+                    bitmap = decodeStill(first.still);
                     logo = first.logo != null ? decodeLogo(first.logo) : null;
                 } catch (RuntimeException | OutOfMemoryError x) {
                     bitmap = null;
@@ -450,7 +456,10 @@ final class Backdrops {
             }
             Bitmap b = bitmap, l = logo;
             Entry e = first;
-            main.post(() -> callback.onBackdrop(pkg, b, l, e != null ? e.title : null, e != null ? e.link : null));
+            if (worker.isShutdown()) return;
+            main.post(() -> {
+                if (!worker.isShutdown()) callback.onBackdrop(pkg, b, l, e != null ? e.title : null, e != null ? e.link : null);
+            });
             if (pkg.equals(PLEX)) {
                 // Plex's progress is the server's: asked again in the background, and the order and time left
                 // follow once it's in (the picture showing stays).
@@ -521,14 +530,17 @@ final class Backdrops {
             if (e == null) return;
             Bitmap bitmap, logo;
             try {
-                bitmap = BitmapFactory.decodeFile(e.still.getPath());
+                bitmap = decodeStill(e.still);
                 logo = e.logo != null ? decodeLogo(e.logo) : null;
             } catch (RuntimeException | OutOfMemoryError x) {
                 return;   // a bad file or no memory: the next one in ten seconds
             }
             if (bitmap == null) return;
             Bitmap l = logo;
-            main.post(() -> callback.onSlide(owner[0], e, bitmap, l));
+            if (worker.isShutdown()) return;
+            main.post(() -> {
+                if (!worker.isShutdown()) callback.onSlide(owner[0], e, bitmap, l);
+            });
         });
     }
 
@@ -1235,8 +1247,9 @@ final class Backdrops {
     private static String sha1(String s) {
         try {
             byte[] d = MessageDigest.getInstance("SHA-1").digest(s.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : d) sb.append(String.format("%02x", b));
+            StringBuilder sb = new StringBuilder(d.length * 2);
+            String hex = "0123456789abcdef";
+            for (byte b : d) sb.append(hex.charAt((b & 255) >>> 4)).append(hex.charAt(b & 15));
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
             return Integer.toHexString(s.hashCode());
@@ -1293,11 +1306,7 @@ final class Backdrops {
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(file.getPath(), options);
         options.inJustDecodeBounds = false;
-        options.inSampleSize = 1;
-        while (options.outWidth / (options.inSampleSize * 2) >= targetWidth
-                && options.outHeight / (options.inSampleSize * 2) >= targetHeight) {
-            options.inSampleSize *= 2;
-        }
+        options.inSampleSize = ArtworkSampling.forTarget(options.outWidth, options.outHeight, targetWidth, targetHeight);
         return BitmapFactory.decodeFile(file.getPath(), options);
     }
 
@@ -1340,7 +1349,13 @@ final class Backdrops {
         Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         int cellW = (targetWidth - WALL_GAP) / 2, cellH = (targetHeight - WALL_GAP) / 2;
         for (int i = 0; i < files.size(); i++) {
-            Bitmap card = BitmapFactory.decodeFile(files.get(i).getPath());
+            File file = files.get(i);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(file.getPath(), options);
+            options.inJustDecodeBounds = false;
+            options.inSampleSize = ArtworkSampling.forTarget(options.outWidth, options.outHeight, cellW, cellH);
+            Bitmap card = BitmapFactory.decodeFile(file.getPath(), options);
             if (card == null) continue;
             int left = (i % 2) * (cellW + WALL_GAP), top = (i / 2) * (cellH + WALL_GAP);
             canvas.drawBitmap(card, centreCrop(card.getWidth(), card.getHeight(), cellW, cellH),

@@ -124,6 +124,7 @@ final class ControlCenter {
     private Runnable afterClose;
     private Runnable captureFrame, revealFrame;
     private ViewTreeObserver.OnPreDrawListener revealPreDraw;
+    private final ViewTreeObserver.OnPreDrawListener pagePositionListener;
     private int captureAttempts;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(1),
@@ -274,14 +275,15 @@ final class ControlCenter {
             }
         };
         body.setClipChildren(false); scroll.addView(body);
-        root.getViewTreeObserver().addOnPreDrawListener(() -> {
+        pagePositionListener = () -> {
             if (pagePositionsDirty && currentPage != null) {
                 // Sample after ScrollView has clamped its old scroll offset to the new page.
                 ControlBackdrop.restorePositions(currentPage.content);
                 pagePositionsDirty = false;
             }
             return true;
-        });
+        };
+        root.getViewTreeObserver().addOnPreDrawListener(pagePositionListener);
         select("overview");
     }
 
@@ -489,6 +491,7 @@ final class ControlCenter {
             root.getViewTreeObserver().removeOnPreDrawListener(revealPreDraw);
             revealPreDraw = null;
         }
+        root.getViewTreeObserver().removeOnPreDrawListener(pagePositionListener);
         if (spring != null) spring.cancel();
         bodyLayerRequested = false;
         updateAnimationLayer(body, false);

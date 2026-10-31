@@ -329,16 +329,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private RecyclerView.OnScrollListener pendingFocusScroll;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshNetworkPill = () -> {
+        if (started && !isDestroyed()) updateWifiLabel();
+    };
+    private void scheduleNetworkRefresh() {
+        handler.removeCallbacks(refreshNetworkPill);
+        handler.post(refreshNetworkPill);
+    }
+
     /** Refreshes the network pill when the connection changes: at boot Wi-Fi often connects after Home is shown. */
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            scheduleNetworkRefresh();
         }
 
         @Override
         public void onLost(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            scheduleNetworkRefresh();
         }
 
         /** wifi_status_warnings follows validation; signal-strength updates also land here, so skip those. */
@@ -349,7 +357,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             boolean validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
             if (validated == lastValidated) return;
             lastValidated = validated;
-            if (wifiNoInternetTint != null) handler.post(MainActivity.this::updateWifiLabel);
+            if (wifiNoInternetTint != null) scheduleNetworkRefresh();
         }
     };
     /** Shows the Inputs pill once the TV registers an input: at boot HDMI inputs can appear after Home is shown. */
@@ -368,12 +376,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private final ConnectivityManager.NetworkCallback vpnCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            scheduleNetworkRefresh();
         }
 
         @Override
         public void onLost(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            scheduleNetworkRefresh();
         }
     };
     private final IntentFilter packageFilter = new IntentFilter();
@@ -1448,6 +1456,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             cm.unregisterNetworkCallback(networkCallback);
             cm.unregisterNetworkCallback(vpnCallback);
         }
+        handler.removeCallbacksAndMessages(null);
     }
 
     /**

@@ -5,10 +5,16 @@ param(
     [string]$Output = (Join-Path $PSScriptRoot 'dist')
 )
 $ErrorActionPreference = 'Stop'
+$Apk = (Resolve-Path -LiteralPath $Apk).Path
+$AdbDirectory = (Resolve-Path -LiteralPath $AdbDirectory).Path
+$Output = [System.IO.Path]::GetFullPath($Output)
 $buildDir = Join-Path $Output 'build'
-New-Item -ItemType Directory -Force $Output,$buildDir | Out-Null
+$assetDir = Join-Path $buildDir 'portable-assets'
+New-Item -ItemType Directory -Force $Output,$buildDir,$assetDir | Out-Null
+$bundledApk = Join-Path $assetDir 'PeachOS-TV.apk'
+if ($Apk -ne $bundledApk) { Copy-Item -LiteralPath $Apk -Destination $bundledApk -Force }
 $repo = Split-Path (Split-Path $PSScriptRoot)
-$assets = @('--add-data', "$Apk;.", '--add-data', "$(Join-Path $PSScriptRoot 'README.ru.md');.")
+$assets = @('--add-data', "$bundledApk;.", '--add-data', "$(Join-Path $PSScriptRoot 'README.ru.md');.")
 foreach ($name in @('peachos.ico','peachos.png','reference-catalog.json')) {
     $assets += @('--add-data', "$(Join-Path $PSScriptRoot $name);.")
 }

@@ -1,13 +1,16 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
 import threading
 import zipfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
 from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, wait_for_device
+from wizard import Wizard, portable_adb
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
 
@@ -93,6 +96,78 @@ class SetupTests(unittest.TestCase):
         class UsbAdb:
             def run(self, *args, **kwargs): raise AssertionError('No calls after cancellation')
         with self.assertRaises(InterruptedError): wait_for_device(UsbAdb(), '', event)
+
+    def test_cancelled_network_connection_does_not_start_adb(self):
+        event = threading.Event(); event.set()
+        adb = Mock()
+        with self.assertRaises(InterruptedError):
+            wait_for_device(adb, '192.168.1.5', event)
+        adb.run.assert_not_called()
+
+    def test_disable_confirmation_queries_only_changed_package(self):
+        adb = FakeAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=device()):
+            apply_plan(adb, device(), ['com.miui.tv.analytics'], set(), None, False, Path(folder))
+        self.assertIn(('pm', 'list', 'packages', '-d', '--user', 0, 'com.miui.tv.analytics'), adb.calls)
+
+    def test_oversized_restore_is_rejected_before_loading_json(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'restore.json'
+            with path.open('wb') as stream:
+                stream.truncate(4 * 1024 * 1024 + 1)
+            with patch('core.json.loads') as loads:
+                with self.assertRaisesRegex(ValueError, 'слишком большой'):
+                    read_restore(path)
+                loads.assert_not_called()
+
+    def test_package_toggle_preserves_table_and_changes_only_checkbox(self):
+        wizard = Wizard.__new__(Wizard)
+        wizard.blocked = Mock(return_value='')
+        wizard.selected = set()
+        wizard.device = device()
+        wizard.expert = Mock(); wizard.expert.get.return_value = False
+        wizard.status, wizard.tree, wizard.refresh = Mock(), Mock(), Mock()
+        wizard.toggle_package('com.miui.tv.analytics')
+        wizard.tree.set.assert_called_once_with('com.miui.tv.analytics', 'check', '☑')
+        wizard.refresh.assert_not_called()
+        wizard.toggle_package('com.miui.tv.analytics')
+        self.assertEqual(set(), wizard.selected)
+        wizard.tree.set.assert_called_with('com.miui.tv.analytics', 'check', '☐')
+        wizard.tree.delete.assert_not_called()
+
+    def test_portable_adb_hashes_streams_and_preserves_unchanged_cached_executable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assets, data = Path(folder) / 'assets', Path(folder) / 'data'
+            (assets / 'platform-tools').mkdir(parents=True)
+            for name in ('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'NOTICE.txt'):
+                (assets / 'platform-tools' / name).write_bytes(name.encode())
+            with patch('wizard.ASSETS', assets), patch('wizard.DATA', data), patch.object(Path, 'read_bytes', side_effect=AssertionError('Whole-file hash')):
+                executable = portable_adb()
+                with patch('wizard.shutil.copyfile') as copy:
+                    self.assertEqual(executable, portable_adb())
+                    copy.assert_not_called()
+                (assets / 'platform-tools' / 'NOTICE.txt').write_text('updated', encoding='utf-8')
+                portable_adb()
+            self.assertEqual('updated', (data / 'platform-tools' / 'NOTICE.txt').read_text(encoding='utf-8'))
+
+    @unittest.skipUnless(shutil.which('powershell') or shutil.which('pwsh'), 'PowerShell unavailable')
+    def test_portable_build_embeds_arbitrary_apk_name_under_expected_launcher_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source, adb, output = root / 'my launcher-release.apk', root / 'platform tools', root / 'portable output'
+            source.write_bytes(b'APK fixture')
+            adb.mkdir()
+            fake_python = root / 'fake-python.ps1'
+            fake_python.write_text("$args | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'args.txt')\n$global:LASTEXITCODE = 0\n", encoding='utf-8')
+            result = subprocess.run([shutil.which('powershell') or shutil.which('pwsh'), '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                     '-File', str(Path(__file__).with_name('build.ps1')), '-Apk', str(source),
+                                     '-AdbDirectory', str(adb), '-Python', str(fake_python), '-Output', str(output)],
+                                    capture_output=True, text=True, timeout=30,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            bundled = output / 'build' / 'portable-assets' / 'PeachOS-TV.apk'
+            self.assertEqual(source.read_bytes(), bundled.read_bytes())
+            self.assertIn(str(bundled) + ';.', (root / 'args.txt').read_text(encoding='utf-8-sig'))
 
     def test_expert_mode_can_disable_protected_package_and_restore_it(self):
         adb = FakeAdb()

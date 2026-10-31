@@ -83,6 +83,7 @@ final class Http {
      * arrives: an APK (SmartTube's is up to 35 MB) held in memory whole could run a small TV out of it.
      */
     static String download(String url, File to, int maxBytes) throws IOException {
+        if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Cancelled");
         MessageDigest sha;
         try {
             sha = MessageDigest.getInstance("SHA-256");
@@ -98,9 +99,11 @@ final class Http {
             try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(to)) {
                 byte[] buf = new byte[65536];
                 long total = 0;
-                int n;
-                while ((n = in.read(buf)) > 0) {
+                for (;;) {
                     if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Cancelled");
+                    int n = in.read(buf);
+                    if (n < 0) break;
+                    if (n == 0) continue;
                     total += n;
                     if (total > maxBytes) throw new IOException("over " + maxBytes + " bytes");
                     sha.update(buf, 0, n);
@@ -110,8 +113,9 @@ final class Http {
         } finally {
             c.disconnect();
         }
-        StringBuilder hex = new StringBuilder();
-        for (byte b : sha.digest()) hex.append(String.format("%02x", b));
+        StringBuilder hex = new StringBuilder(64);
+        String digits = "0123456789abcdef";
+        for (byte b : sha.digest()) hex.append(digits.charAt((b & 255) >>> 4)).append(digits.charAt(b & 15));
         return hex.toString();
     }
 

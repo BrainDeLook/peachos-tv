@@ -23,4 +23,14 @@ public class ShelfDiskCacheTest {
         assertArrayEquals(new byte[]{5,6,7,8}, cache.get("new", 3000));
         assertNull(cache.get("new", 4L * 24 * 60 * 60 * 1000));
     }
+    @Test public void replacingAnEntryCountsOnlyItsNewSizeAndKeepsHashNamesCompatible() throws Exception {
+        java.io.File root = temporary.newFolder();
+        ShelfDiskCache cache = new ShelfDiskCache(root, 6);
+        cache.put("old", new byte[]{1,2,3}, 1000);
+        cache.put("new", new byte[]{4,5,6}, 2000);
+        cache.put("new", new byte[]{7}, 3000);
+        assertArrayEquals(new byte[]{1,2,3}, cache.get("old", 4000));
+        assertArrayEquals(new byte[]{7}, cache.get("new", 4000));
+        assertTrue(new java.io.File(root, "11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437.jpg").isFile());
+    }
 }

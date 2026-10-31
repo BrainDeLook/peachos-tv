@@ -133,8 +133,9 @@ final class ControlBackdrop extends Drawable {
     }
 
     private void applyWhiteFocus(float value) {
-        focusAmount = value;
         float fraction = Math.max(0f, Math.min(1f, value));
+        boolean surfaceChanged = focusAmount != fraction;
+        focusAmount = fraction;
         tile.setTranslationZ(fraction * 3 * density);
         tile.setScaleX(1f + .035f * value); tile.setScaleY(1f + .035f * value);
         for (int i = 0; i < focusText.size(); i++) {
@@ -148,7 +149,7 @@ final class ControlBackdrop extends Drawable {
             ColorStateList tint = image.getImageTintList();
             if (tint == null || tint.getDefaultColor() != color) image.setImageTintList(ColorStateList.valueOf(color));
         }
-        invalidateSelf();
+        if (surfaceChanged) invalidateSelf();
     }
 
     /** A mutable snapshot changed after these backgrounds recorded their initial matte frame. */

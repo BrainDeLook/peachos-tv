@@ -1,6 +1,7 @@
 package com.gathin.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
 import android.os.Build;
 import android.view.accessibility.AccessibilityEvent;
 
@@ -21,8 +22,13 @@ public final class StandbyService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
     @Override public void onInterrupt() { }
 
+    @Override public boolean onUnbind(Intent intent) {
+        if (connected == this) connected = null;
+        return super.onUnbind(intent);
+    }
+
     @Override public void onDestroy() {
-        connected = null;
+        if (connected == this) connected = null;
         super.onDestroy();
     }
 }

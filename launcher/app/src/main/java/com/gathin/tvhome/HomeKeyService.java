@@ -66,8 +66,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        if (overlayControls != null) overlayControls.close();
-        if (settingsButton != null) settingsButton.cancel();
+        stopHelpers();
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
         overlayControls = new OverlayControls(this);
         settingsButton = new SettingsButton(() -> {
@@ -116,13 +115,18 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
-        if (overlayControls != null) overlayControls.close();
-        if (settingsButton != null) settingsButton.cancel();
+        stopHelpers();
+        super.onDestroy();
+    }
+
+    private void stopHelpers() {
+        if (overlayControls != null) { overlayControls.close(); overlayControls = null; }
+        if (settingsButton != null) { settingsButton.cancel(); settingsButton = null; }
         handler.removeCallbacksAndMessages(null);
         stopWaitingForUnlock();
-        if (gamepads != null) gamepads.stop();
+        if (gamepads != null) { gamepads.stop(); gamepads = null; }
         if (consumeVolumeKeys) VolumeKeys.stop();
-        super.onDestroy();
+        consumeVolumeKeys = false;
     }
 
     private void loadConfig() {
@@ -217,9 +221,9 @@ public class HomeKeyService extends AccessibilityService {
     /** Unbound by Android: the user turned the helper off, so Home doesn't put it back (ServiceRepair). */
     @Override
     public boolean onUnbind(Intent intent) {
-        if (overlayControls != null) overlayControls.close();
-        if (settingsButton != null) settingsButton.cancel();
-        handler.removeCallbacksAndMessages(null);
+        // A disconnected service may remain alive or reconnect before onDestroy. Nothing from its
+        // previous configuration may keep filtering keys, repeating volume, or waiting for unlock.
+        stopHelpers();
         if (repairRecord) ServiceRepair.disconnected(this, getClass());
         return super.onUnbind(intent);
     }
@@ -259,6 +263,7 @@ public class HomeKeyService extends AccessibilityService {
     /** Lets the system see the key, so a long press still does what the firmware gives it. */
     private static final long HOME_KEY_DELAY_MS = 250;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable redirectHome = this::openHome;
 
     /** stock_home_redirect on the Home key: when the stock home is already on screen (it came up at boot, before
      *  Android bound this service), Home brings it up again with no window change, so the redirect above never
@@ -268,7 +273,8 @@ public class HomeKeyService extends AccessibilityService {
     private void redirectHomeKey(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()
                 && isShortPress(event.getDownTime(), event.getEventTime(), ViewConfiguration.getLongPressTimeout())) {
-            handler.postDelayed(this::openHome, HOME_KEY_DELAY_MS);
+            handler.removeCallbacks(redirectHome);
+            handler.postDelayed(redirectHome, HOME_KEY_DELAY_MS);
         }
     }
 
@@ -277,6 +283,9 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private void openHome() {
+        // The stock Home window event can beat the delayed key fallback. Handle that same press
+        // once, without a second HOME intent resetting focus or replaying the transition later.
+        handler.removeCallbacks(redirectHome);
         startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(getPackageName())
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
     }

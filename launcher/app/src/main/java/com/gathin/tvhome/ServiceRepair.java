@@ -11,6 +11,7 @@ import android.provider.Settings;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Android takes an app's accessibility services off the enabled list when the app is force-stopped (Settings, a
@@ -22,6 +23,7 @@ import java.util.Objects;
  */
 final class ServiceRepair {
     private static final String PREFS = "accessibility_helpers";
+    private static final AtomicBoolean repairing = new AtomicBoolean();
 
     private ServiceRepair() {
     }
@@ -35,6 +37,7 @@ final class ServiceRepair {
     }
 
     static void restore(Context context) {
+        if (repairing.get()) return;
         if (context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS)
                 != PackageManager.PERMISSION_GRANTED) return;
         try {
@@ -77,6 +80,9 @@ final class ServiceRepair {
             // that way instead of being overwritten by a snapshot.
             final String without = others.toString();
             final String with = updated.toString();
+            // Another Home instance can start during the temporary removal below. One repair
+            // owns that sequence; a second cycle would prolong the outage and invalidate its CAS.
+            if (!repairing.compareAndSet(false, true)) return;
             new Thread(() -> {
                 try {
                     if (!replaceList(cr, list, with)) return;
@@ -87,6 +93,8 @@ final class ServiceRepair {
                     Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1);
                 } catch (RuntimeException | InterruptedException ignored) {
                     // The setting is the system's; a refusal leaves the helper off, as before.
+                } finally {
+                    repairing.set(false);
                 }
             }, "ServiceRepair").start();
         } catch (RuntimeException ignored) {
