@@ -298,6 +298,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private PopupWindow openPopup;
     private AppContextMenu appContextMenu;
     private ControlCenter controlCenter;
+    private AppAdapter.Holder controlCenterTile;
     private boolean dashboardHasInputs;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
@@ -3221,25 +3222,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         }
         if (openPopup != null) openPopup.dismiss();
         updateInputsButton();
+        int focusedTile = focusedTilePosition();
+        if (focusedTile >= 0) {
+            controlCenterTile = (AppAdapter.Holder) grid.findViewHolderForAdapterPosition(focusedTile);
+            // ControlCenter blocks Home's descendants before taking focus. Keep the icon's
+            // scale, artwork tone and contour glow selected throughout that hand-off.
+            controlCenterTile.holdSelection(true);
+        }
         controlCenter = new ControlCenter(this, findViewById(R.id.btnSettings), dashboardHasInputs, animations, reducedMotion, vpnApp);
         controlCenter.show();
     }
 
     public void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
-        if (controlCenter == center) controlCenter = null;
+        if (controlCenter != center) return;
+        controlCenter = null;
         if (returnToGear) {
             if (remoteSettingsHoldMode) {
                 int position = adapter.positionOf(lastFocusedKey);
                 focusTile(position >= 0 ? position : lastFocused);
-                return;
+            } else {
+                View gear = findViewById(R.id.btnSettings);
+                gear.requestFocusFromTouch();
+                // The panel now shares Home's window: settle the selected button in this same frame,
+                // without a second focus/scale change after the closing header has disappeared.
+                gear.animate().cancel();
+                gear.setScaleX(advancedEffects ? 1.04f : 1f);
+                gear.setScaleY(advancedEffects ? 1.04f : 1f);
             }
-            View gear = findViewById(R.id.btnSettings);
-            gear.requestFocusFromTouch();
-            // The panel now shares Home's window: settle the selected button in this same frame,
-            // without a second focus/scale change after the closing header has disappeared.
-            gear.animate().cancel();
-            gear.setScaleX(advancedEffects ? 1.04f : 1f);
-            gear.setScaleY(advancedEffects ? 1.04f : 1f);
+        }
+        if (controlCenterTile != null) {
+            // Restore real focus first, then release the visual hold without a one-frame shrink.
+            // Actions that leave Home also clear it, so no stale selected tile survives a close.
+            controlCenterTile.holdSelection(false);
+            controlCenterTile = null;
         }
     }
 

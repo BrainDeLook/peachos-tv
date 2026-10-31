@@ -88,6 +88,7 @@ final class ControlCenter {
             };
             content.setOrientation(LinearLayout.VERTICAL);
             content.setClipChildren(false);
+            content.setClipToPadding(false);
         }
     }
     // Reuse the small, static pages during this opening. Input rows are rebuilt because their

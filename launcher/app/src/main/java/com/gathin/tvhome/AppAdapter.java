@@ -612,7 +612,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     @Override
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
-        if (holder instanceof Holder) ((Holder) holder).cancelFocusSpring();
+        if (holder instanceof Holder) {
+            Holder tile = (Holder) holder;
+            tile.cancelFocusSpring();
+            tile.card.setActivated(false);
+        }
         super.onViewRecycled(holder);
     }
 
@@ -973,6 +977,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean animations;
 
         final boolean reducedMotion;
+        private final float density;
         private SpringAnimation focusSpring;
         private int toneStep = -1;
         /** Alpha of the name while the tile is not focused (always_show_names). */
@@ -1010,7 +1015,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
 
-            final float density = v.getResources().getDisplayMetrics().density;
+            density = pixelDensity;
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN
@@ -1020,46 +1025,58 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             });
 
             card.setOnFocusChangeListener((view, focused) -> {
-                view.animate().cancel();
-                banner.animate().cancel();
-                name.animate().cancel();
-                sheen.animate().cancel();
-                boolean selected = focused || view.isActivated();
-                float target = selected ? SELECTED_SCALE : 1f;
-                glow.animate().cancel();
-                glow.animate().alpha(selected ? SELECTED_GLOW_ALPHA : 0f).setDuration(animations ? 120 : 0).start();
-                view.setTranslationY(0f); view.setTranslationZ(0f);
-                banner.setScaleX(1f); banner.setScaleY(1f);
-                // The tiny idle tone changes once, not on every spring step. Reapplying image
-                // filters during zoom invalidates the tile texture and defeats its render cache.
-                applyFocusTone(selected);
-                if (!animations) {
-                    cancelFocusSpring();
-                    view.setScaleX(target); view.setScaleY(target);
-                    glow.setScaleX(target); glow.setScaleY(target);
-                    sheen.setAlpha(selected ? .22f : .16f);
-                } else {
-                    if (reducedMotion) {
-                        cancelFocusSpring();
-                        glow.animate().scaleX(target).scaleY(target).setDuration(Motion.REDUCED_MS).start();
-                        view.animate().scaleX(target).scaleY(target)
-                                .setDuration(Motion.REDUCED_MS).withLayer().setInterpolator(FOCUS_EASING).start();
-                    } else animateFocusScale(target, selected);
-                    sheen.animate().alpha(selected ? .22f : .16f)
-                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
-                            .setInterpolator(FOCUS_EASING).start();
-                }
-                if (name.getVisibility() == View.VISIBLE) {
-                    name.setTranslationY(density * 4f);
-                    if (!animations || reducedMotion) name.setAlpha(focused ? 1f : restNameAlpha);
-                    else name.animate().alpha(focused ? 1f : restNameAlpha)
-                            .setDuration(180).setInterpolator(FOCUS_EASING).start();
-                }
+                updateSelection(focused);
                 int pos = getBindingAdapterPosition();
                 if (focused && listener != null && pos != RecyclerView.NO_POSITION) {
                     listener.onTileFocused(pos, view);
                 }
             });
+        }
+
+        /** Preserve the selected tile while a same-window panel owns keyboard focus. */
+        void holdSelection(boolean held) {
+            if (card.isActivated() == held) return;
+            card.setActivated(held);
+            if (!card.isFocused()) updateSelection(false);
+        }
+
+        private void updateSelection(boolean focused) {
+            View view = card;
+            view.animate().cancel();
+            banner.animate().cancel();
+            name.animate().cancel();
+            sheen.animate().cancel();
+            boolean selected = focused || view.isActivated();
+            float target = selected ? SELECTED_SCALE : 1f;
+            glow.animate().cancel();
+            glow.animate().alpha(selected ? SELECTED_GLOW_ALPHA : 0f).setDuration(animations ? 120 : 0).start();
+            view.setTranslationY(0f); view.setTranslationZ(0f);
+            banner.setScaleX(1f); banner.setScaleY(1f);
+            // The tiny idle tone changes once, not on every spring step. Reapplying image
+            // filters during zoom invalidates the tile texture and defeats its render cache.
+            applyFocusTone(selected);
+            if (!animations) {
+                cancelFocusSpring();
+                view.setScaleX(target); view.setScaleY(target);
+                glow.setScaleX(target); glow.setScaleY(target);
+                sheen.setAlpha(selected ? .22f : .16f);
+            } else {
+                if (reducedMotion) {
+                    cancelFocusSpring();
+                    glow.animate().scaleX(target).scaleY(target).setDuration(Motion.REDUCED_MS).start();
+                    view.animate().scaleX(target).scaleY(target)
+                            .setDuration(Motion.REDUCED_MS).withLayer().setInterpolator(FOCUS_EASING).start();
+                } else animateFocusScale(target, selected);
+                sheen.animate().alpha(selected ? .22f : .16f)
+                        .setDuration(reducedMotion ? Motion.REDUCED_MS : 120)
+                        .setInterpolator(FOCUS_EASING).start();
+            }
+            if (name.getVisibility() == View.VISIBLE) {
+                name.setTranslationY(density * 4f);
+                if (!animations || reducedMotion) name.setAlpha(selected ? 1f : restNameAlpha);
+                else name.animate().alpha(selected ? 1f : restNameAlpha)
+                        .setDuration(180).setInterpolator(FOCUS_EASING).start();
+            }
         }
 
         private void animateFocusScale(float target, boolean focused) {

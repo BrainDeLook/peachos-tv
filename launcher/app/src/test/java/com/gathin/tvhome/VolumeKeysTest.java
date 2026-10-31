@@ -2,8 +2,6 @@ package com.gathin.tvhome;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 public class VolumeKeysTest {
     // Android's values, written out: android.view.KeyEvent and AudioManager aren't available in JVM tests.
@@ -30,11 +28,62 @@ public class VolumeKeysTest {
     }
 
     @Test
-    public void onlyTheFirstDownAndTheUpChangeThePress() {
-        assertTrue(VolumeKeys.changesPress(ACTION_DOWN, 0));
-        assertTrue(VolumeKeys.changesPress(ACTION_UP, 0));
-        // A remote that sends its own repeats must not restart the 500 ms delay on every one.
-        assertFalse(VolumeKeys.changesPress(ACTION_DOWN, 1));
-        assertFalse(VolumeKeys.changesPress(ACTION_DOWN, 12));
+    public void repeatedDownsWithZeroRepeatCountDoNotRestartTheDelay() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+        for (int i = 0; i < 20; i++)
+            assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.END, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
+    }
+
+    @Test
+    public void nativeRepeatsDoNotCreateASecondTimer() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 1, false));
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 12, false));
+    }
+
+    @Test
+    public void oldDirectionReleaseDoesNotCancelTheNewHold() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false);
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_DOWN, 7, 0, false));
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.END, press.update(ACTION_UP, KEYCODE_VOLUME_DOWN, 7, 0, false));
+    }
+
+    @Test
+    public void releaseFromAnotherRemoteDoesNotCancelTheHold() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false);
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 8, 0, false));
+        assertEquals(VolumeKeys.Press.END, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
+    }
+
+    @Test
+    public void canceledPressAndServiceCleanupAllowANewHold() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false);
+        assertEquals(VolumeKeys.Press.END, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, true));
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+        press.clear();
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+    }
+
+    @Test
+    public void releasingATapAllowsTheNextTapWithoutAddingASoftwareFirstStep() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.END, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
+        assertEquals(VolumeKeys.Press.START, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 0, false));
+    }
+
+    @Test
+    public void aRepeatWithoutAnInitialDownDoesNotStartSyntheticRepeating() {
+        VolumeKeys.Press press = new VolumeKeys.Press();
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_DOWN, KEYCODE_VOLUME_UP, 7, 1, false));
+        assertEquals(VolumeKeys.Press.NONE, press.update(ACTION_UP, KEYCODE_VOLUME_UP, 7, 0, false));
     }
 }
