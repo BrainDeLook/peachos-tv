@@ -24,7 +24,7 @@ final class SettingsButton {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             if (gesture.down(event.getDownTime())) {
                 handler.removeCallbacks(held);
-                handler.postDelayed(held, Math.max(0, timeout - (event.getEventTime() - event.getDownTime())));
+                handler.postAtTime(held, event.getDownTime() + timeout);
             }
         } else if (event.getAction() == KeyEvent.ACTION_UP) {
             handler.removeCallbacks(held);

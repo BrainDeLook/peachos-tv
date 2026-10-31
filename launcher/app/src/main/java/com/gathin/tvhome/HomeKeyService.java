@@ -66,6 +66,8 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        if (overlayControls != null) overlayControls.close();
+        if (settingsButton != null) settingsButton.cancel();
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
         overlayControls = new OverlayControls(this);
         settingsButton = new SettingsButton(() -> {
@@ -105,9 +107,18 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        // The in-app controller can run without any launcher Activity receiving memory callbacks.
+        if (level >= TRIM_MEMORY_RUNNING_LOW && level != TRIM_MEMORY_UI_HIDDEN)
+            ControlCenter.trimBackdropCache();
+    }
+
+    @Override
     public void onDestroy() {
         if (overlayControls != null) overlayControls.close();
         if (settingsButton != null) settingsButton.cancel();
+        handler.removeCallbacksAndMessages(null);
         stopWaitingForUnlock();
         if (gamepads != null) gamepads.stop();
         if (consumeVolumeKeys) VolumeKeys.stop();
@@ -208,6 +219,7 @@ public class HomeKeyService extends AccessibilityService {
     public boolean onUnbind(Intent intent) {
         if (overlayControls != null) overlayControls.close();
         if (settingsButton != null) settingsButton.cancel();
+        handler.removeCallbacksAndMessages(null);
         if (repairRecord) ServiceRepair.disconnected(this, getClass());
         return super.onUnbind(intent);
     }

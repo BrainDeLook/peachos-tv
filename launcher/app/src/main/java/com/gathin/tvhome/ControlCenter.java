@@ -26,6 +26,7 @@ import android.view.KeyEvent;
 import android.view.PixelCopy;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -72,9 +73,33 @@ final class ControlCenter {
     private final View scrim;
     private final LinearLayout panel, tabs;
     private final FrameLayout body;
-    private LinearLayout pageContent;
+    private static final class Page {
+        final LinearLayout content;
+        boolean interactive;
+        boolean layerRequested;
+        int networkRevision = -1;
+        TextView overviewNetwork, networkStatus, vpnStatus;
+        ImageView overviewNetworkIcon, networkStatusIcon;
+        Page(Context context) {
+            content = new LinearLayout(context) {
+                @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+                    return interactive && super.dispatchTouchEvent(event);
+                }
+            };
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setClipChildren(false);
+        }
+    }
+    // Reuse the small, static pages during this opening. Input rows are rebuilt because their
+    // connection state can change while the panel is open.
+    private final Map<String, Page> pages = new LinkedHashMap<>();
+    private Page currentPage;
     private View outgoingPage;
+    private boolean pagePositionsDirty;
+    private boolean bodyLayerRequested;
     private final float density;
+    private final int maxBodyHeight;
+    private static final long MAX_LAYER_BYTES = 2L * 1024 * 1024;
     private final boolean animate, reduced;
     private final Typeface regular, medium;
     private final Bitmap backdrop;
@@ -98,6 +123,7 @@ final class ControlCenter {
     private boolean returnToGear;
     private Runnable afterClose;
     private Runnable captureFrame, revealFrame;
+    private ViewTreeObserver.OnPreDrawListener revealPreDraw;
     private int captureAttempts;
     private static final java.util.concurrent.Executor GLASS_WORK = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 2, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(1),
@@ -107,9 +133,10 @@ final class ControlCenter {
             }, "PeachGlass"), new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
     private String selected = "";
     private View selectedTab;
-    private TextView overviewNetwork, networkStatus, vpnStatus;
-    private ImageView overviewNetworkIcon, networkStatusIcon;
     private final ConnectivityManager connectivity;
+    private String networkTransport;
+    private boolean networkOnline, networkEthernet, vpnConnected;
+    private int networkRevision;
 
     private static final FloatPropertyCompat<ControlCenter> REVEAL = new FloatPropertyCompat<ControlCenter>("controlReveal") {
         @Override public float getValue(ControlCenter center) { return center.reveal; }
@@ -125,6 +152,13 @@ final class ControlCenter {
     ControlCenter(Context host, Actions actions, FrameLayout stage, ViewGroup home, View anchor,
                   View capsule, TextClock sourceClock, Window captureWindow, Bitmap captured,
                   boolean inputs, boolean animate, boolean reduced, String vpnApp) {
+        this(host, actions, stage, home, anchor, capsule, sourceClock, captureWindow, captured,
+                inputs, animate, reduced, vpnApp, null);
+    }
+
+    ControlCenter(Context host, Actions actions, FrameLayout stage, ViewGroup home, View anchor,
+                  View capsule, TextClock sourceClock, Window captureWindow, Bitmap captured,
+                  boolean inputs, boolean animate, boolean reduced, String vpnApp, Map<String, Intent> preparedVpnApps) {
         this.host = host; this.actions = actions; this.stage = stage; this.home = home;
         this.anchor = anchor; this.capsule = capsule; this.sourceClock = sourceClock;
         this.captureWindow = captureWindow; floating = captureWindow == null;
@@ -143,20 +177,8 @@ final class ControlCenter {
         regular = host.getResources().getFont(R.font.inter_regular);
         medium = host.getResources().getFont(R.font.inter_medium);
         connectivity = host.getSystemService(ConnectivityManager.class);
-        PackageManager pm = host.getPackageManager();
-        // Installed clients are not presented as saved profiles: only the owning app can read those.
-        for (ResolveInfo info : pm.queryIntentServices(new Intent(VpnService.SERVICE_INTERFACE), 0)) {
-            String pkg = info.serviceInfo.packageName;
-            if (!"android.permission.BIND_VPN_SERVICE".equals(info.serviceInfo.permission)) continue;
-            Intent target = pm.getLeanbackLaunchIntentForPackage(pkg);
-            if (target == null) target = pm.getLaunchIntentForPackage(pkg);
-            if (target != null) vpnApps.put(String.valueOf(info.serviceInfo.applicationInfo.loadLabel(pm)), target);
-        }
-        if (!vpnApp.isEmpty()) {
-            Intent target = pm.getLeanbackLaunchIntentForPackage(vpnApp);
-            if (target == null) target = pm.getLaunchIntentForPackage(vpnApp);
-            if (target != null) vpnApps.put(host.getString(R.string.cc_vpn_app), target);
-        }
+        refreshNetwork();
+        vpnApps.putAll(preparedVpnApps == null ? discoverVpnApps(host, vpnApp) : preparedVpnApps);
 
         root = new FrameLayout(host) {
             @Override public View focusSearch(View focused, int direction) {
@@ -216,7 +238,7 @@ final class ControlCenter {
         tabs = new LinearLayout(host); tabs.setGravity(Gravity.CENTER_VERTICAL);
         tabs.setClipChildren(false); tabs.setClipToPadding(false);
         header.addView(tabs);
-        if (hasVpn() || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
+        if (vpnConnected || !vpnApps.isEmpty()) addTab("vpn", R.drawable.cc_vpn, R.string.cc_vpn);
         addTab("overview", R.drawable.ic_settings, R.string.cc_title);
         overviewTab = tabViews.get(tabViews.size() - 1);
         overviewTab.setOnLongClickListener(v -> {
@@ -226,7 +248,7 @@ final class ControlCenter {
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
         addTab("network", R.drawable.ic_wifi, R.string.quick_network);
 
-        final int maxBodyHeight = Math.min(dp(320), host.getResources().getDisplayMetrics().heightPixels - dp(96));
+        maxBodyHeight = Math.min(dp(320), host.getResources().getDisplayMetrics().heightPixels - dp(96));
         ScrollView scroll = new ScrollView(host) {
             @Override protected void onMeasure(int w, int h) {
                 super.onMeasure(w, MeasureSpec.makeMeasureSpec(maxBodyHeight, MeasureSpec.AT_MOST));
@@ -238,17 +260,61 @@ final class ControlCenter {
         scroll.setVerticalScrollBarEnabled(false); scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, -2);
         scrollLp.topMargin = dp(8); panel.addView(scroll, scrollLp);
-        body = new FrameLayout(host); body.setClipChildren(false); scroll.addView(body);
+        body = new FrameLayout(host) {
+            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+                // Invisible cached pages retain their RenderNodes, but their old height must not
+                // stretch the selected page or keep the scroll range of an inactive page.
+                int height = currentPage == null ? 0 : currentPage.content.getMeasuredHeight();
+                if (outgoingPage != null) height = Math.max(height, outgoingPage.getMeasuredHeight());
+                height = Math.max(getMinimumHeight(), height + getPaddingTop() + getPaddingBottom());
+                setMeasuredDimension(getMeasuredWidthAndState(), resolveSizeAndState(height, heightMeasureSpec, 0));
+                for (Page page : pages.values()) updateAnimationLayer(page.content, page.layerRequested);
+                updateAnimationLayer(this, bodyLayerRequested);
+            }
+        };
+        body.setClipChildren(false); scroll.addView(body);
+        root.getViewTreeObserver().addOnPreDrawListener(() -> {
+            if (pagePositionsDirty && currentPage != null) {
+                // Sample after ScrollView has clamped its old scroll offset to the new page.
+                ControlBackdrop.restorePositions(currentPage.content);
+                pagePositionsDirty = false;
+            }
+            return true;
+        });
         select("overview");
     }
 
     boolean isShowing() { return showing; }
 
-    static void trimBackdropCache() { HOME_GLASS.evictAll(); }
+    static Map<String, Intent> discoverVpnApps(Context context, String configuredApp) {
+        Map<String, Intent> result = new LinkedHashMap<>();
+        PackageManager pm = context.getPackageManager();
+        // Installed clients are not presented as saved profiles: only the owning app can read those.
+        for (ResolveInfo info : pm.queryIntentServices(new Intent(VpnService.SERVICE_INTERFACE), 0)) {
+            String pkg = info.serviceInfo.packageName;
+            if (!"android.permission.BIND_VPN_SERVICE".equals(info.serviceInfo.permission)) continue;
+            Intent target = pm.getLeanbackLaunchIntentForPackage(pkg);
+            if (target == null) target = pm.getLaunchIntentForPackage(pkg);
+            if (target != null) result.put(String.valueOf(info.serviceInfo.applicationInfo.loadLabel(pm)), target);
+        }
+        if (!configuredApp.isEmpty()) {
+            Intent target = pm.getLeanbackLaunchIntentForPackage(configuredApp);
+            if (target == null) target = pm.getLaunchIntentForPackage(configuredApp);
+            if (target != null) result.put(context.getString(R.string.cc_vpn_app), target);
+        }
+        return result;
+    }
+
+    static void trimBackdropCache() {
+        HOME_GLASS.evictAll();
+        ControlBackdrop.trimLightingCache();
+    }
 
     boolean dispatchKeyEvent(KeyEvent event) { return root.dispatchKeyEvent(event); }
 
     void show() {
+        long showStarted = android.os.SystemClock.uptimeMillis();
         panel.setAlpha(0f); scrim.setAlpha(0f);
         revealFrame = () -> {
             if (!showing || closing) return;
@@ -265,8 +331,9 @@ final class ControlCenter {
             if (animate && !reduced) {
                 // Build the static controls once before the spring, rather than rasterizing all their
                 // clipped glass paths during every alpha/scale frame. Released as soon as motion ends.
-                body.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                body.buildLayer();
+                bodyLayerRequested = true;
+                updateAnimationLayer(body, true);
+                if (body.getLayerType() == View.LAYER_TYPE_HARDWARE) body.buildLayer();
             }
             revealed = true;
             applyReveal(animate ? 0f : 1f);
@@ -277,7 +344,8 @@ final class ControlCenter {
                 spring.setMinimumVisibleChange(.001f);
                 spring.addEndListener((animation, canceled, value, velocity) -> {
                     if (!canceled) {
-                        body.setLayerType(View.LAYER_TYPE_NONE, null);
+                        bodyLayerRequested = false;
+                        updateAnimationLayer(body, false);
                         if (closing) finishDismiss();
                     }
                 });
@@ -288,6 +356,8 @@ final class ControlCenter {
                 panel.animate().alpha(1f).setDuration(100).start();
             }
             overviewTab.requestFocusFromTouch();
+            if (floating) android.util.Log.d("PeachOverlay", "Reveal prepared "
+                    + (android.os.SystemClock.uptimeMillis() - showStarted) + "ms");
         };
         long captureDeadline = android.os.SystemClock.uptimeMillis() + 900;
         if (backdrop != null && captureNeeded) {
@@ -338,7 +408,19 @@ final class ControlCenter {
         home.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         showing = true;
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
-        if (backdrop == null || !captureNeeded) panel.post(revealFrame);
+        if (floating) {
+            // The temporary window and controls join the same first traversal. Prepare the spring
+            // after layout, without posting a second traversal behind an otherwise empty frame.
+            revealPreDraw = new ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    root.getViewTreeObserver().removeOnPreDrawListener(this);
+                    revealPreDraw = null;
+                    revealFrame.run();
+                    return true;
+                }
+            };
+            root.getViewTreeObserver().addOnPreDrawListener(revealPreDraw);
+        } else if (backdrop == null || !captureNeeded) panel.post(revealFrame);
         else stage.postOnAnimation(() -> {
             // Home resumed from another app has not necessarily submitted a readable frame yet.
             // Wait for its first presentation rather than retaining the matte bitmap for this whole opening.
@@ -393,7 +475,8 @@ final class ControlCenter {
             return;
         }
         // Retarget the running spring: Back during opening preserves both position and velocity.
-        body.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        bodyLayerRequested = true;
+        updateAnimationLayer(body, true);
         spring.getSpring().setStiffness(900f).setDampingRatio(1f);
         spring.animateToFinalPosition(0f);
     }
@@ -404,11 +487,19 @@ final class ControlCenter {
         closing = true;
         if (captureFrame != null) stage.removeCallbacks(captureFrame);
         if (revealFrame != null) panel.removeCallbacks(revealFrame);
+        if (revealPreDraw != null) {
+            root.getViewTreeObserver().removeOnPreDrawListener(revealPreDraw);
+            revealPreDraw = null;
+        }
         if (spring != null) spring.cancel();
-        body.setLayerType(View.LAYER_TYPE_NONE, null);
+        bodyLayerRequested = false;
+        updateAnimationLayer(body, false);
         capsule.animate().cancel();
         clearOutgoingPage();
-        if (pageContent != null) pageContent.animate().cancel();
+        for (Page page : pages.values()) {
+            ControlBackdrop.finishAnimations(page.content);
+            page.content.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
         for (View tab : tabViews) tab.getBackground().jumpToCurrentState();
         home.setDescendantFocusability(homeFocusability);
         home.setImportantForAccessibility(homeAccessibility);
@@ -439,7 +530,7 @@ final class ControlCenter {
         tab.setOnFocusChangeListener((v, focus) -> { if (focus) select(key); });
         tab.setOnClickListener(v -> {
             select(key);
-            View first = body.findViewWithTag("firstControl");
+            View first = currentPage.content.findViewWithTag("firstControl");
             if (first != null) first.requestFocus();
         });
     }
@@ -500,45 +591,87 @@ final class ControlCenter {
             tab.setSelected(active);
             if (active) selectedTab = tab;
         }
-        overviewNetwork = null; networkStatus = null; vpnStatus = null;
-        overviewNetworkIcon = null; networkStatusIcon = null;
         clearOutgoingPage();
-        LinearLayout previous = pageContent;
+        LinearLayout previous = currentPage == null ? null : currentPage.content;
         boolean crossfade = previous != null && previous.isLaidOut() && revealed && animate && !reduced && !closing;
         // A shorter destination must not clip the fading bottom rows of the previous page.
         if (crossfade) {
             body.setMinimumHeight(body.getHeight());
             ControlBackdrop.freezePositions(previous);
         }
-        if (previous != null) previous.animate().cancel();
-        body.removeAllViews();
-        LinearLayout column = column(); pageContent = column;
-        body.addView(column, new FrameLayout.LayoutParams(-1, -2));
-        populatePage(page, column);
+        if (previous != null) {
+            previous.animate().cancel();
+            currentPage.interactive = false;
+            previous.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            previous.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            if (!crossfade) previous.setVisibility(View.INVISIBLE);
+        }
+        Page next = "inputs".equals(page) ? null : pages.get(page);
+        boolean populate = next == null;
+        if (populate) next = new Page(host);
+        currentPage = next;
+        LinearLayout column = next.content;
+        column.animate().cancel();
+        column.setAlpha(1f);
+        column.setVisibility(View.VISIBLE);
+        column.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);
+        column.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        next.interactive = true;
+        if (populate) {
+            body.addView(column, new FrameLayout.LayoutParams(-1, -2));
+            populatePage(page, column);
+            Page obsolete = pages.put(page, next);
+            if (obsolete != null) {
+                ControlBackdrop.finishAnimations(obsolete.content);
+                obsolete.content.setLayerType(View.LAYER_TYPE_NONE, null);
+                body.removeView(obsolete.content);
+            }
+        }
+        // Retain at most two small page textures. Repeated A/B switches no longer detach the
+        // pages or synchronously build and destroy both layers at every alpha transition.
+        for (Page cached : pages.values()) {
+            cached.layerRequested = animate && !reduced && (cached.content == column || cached.content == previous);
+            updateAnimationLayer(cached.content, cached.layerRequested);
+        }
+        pagePositionsDirty = true;
+        body.requestLayout();
+        applyNetworkStatus();
         if (!crossfade) return;
         // A visual-only overlay cannot receive focus, clicks or accessibility traversal.
         // Keep at most the previous and current pages, even when keys repeat during a transition.
         outgoingPage = previous;
-        body.getOverlay().add(previous);
-        previous.animate().alpha(0f).setDuration(140).withLayer()
+        // Match the former visual overlay order; the outgoing page rejects all touch and focus.
+        previous.bringToFront();
+        previous.animate().alpha(0f).setDuration(140)
                 .setInterpolator(new DecelerateInterpolator())
                 .withEndAction(() -> {
-                    body.getOverlay().remove(previous);
                     if (outgoingPage == previous) {
+                        ControlBackdrop.finishAnimations(previous);
+                        previous.setVisibility(View.INVISIBLE);
                         outgoingPage = null;
                         body.setMinimumHeight(0);
                     }
                 }).start();
         column.setAlpha(0f);
-        column.animate().alpha(1f).setDuration(140).withLayer().setInterpolator(new DecelerateInterpolator()).start();
+        column.animate().alpha(1f).setDuration(140).setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void clearOutgoingPage() {
         if (outgoingPage == null) return;
         outgoingPage.animate().cancel();
-        body.getOverlay().remove(outgoingPage);
+        ControlBackdrop.finishAnimations(outgoingPage);
+        outgoingPage.setVisibility(View.INVISIBLE);
         outgoingPage = null;
         body.setMinimumHeight(0);
+    }
+
+    /** Bound retained GPU surfaces to the visible page height and two MiB of RGBA pixels. */
+    private void updateAnimationLayer(View view, boolean requested) {
+        int width = view.getMeasuredWidth(), height = view.getMeasuredHeight();
+        boolean fits = width > 0 && height > 0 && height <= maxBodyHeight
+                && (long) width * height * 4 <= MAX_LAYER_BYTES;
+        int type = requested && fits ? View.LAYER_TYPE_HARDWARE : View.LAYER_TYPE_NONE;
+        if (view.getLayerType() != type) view.setLayerType(type, null);
     }
 
     private void populatePage(String page, LinearLayout column) {
@@ -554,18 +687,18 @@ final class ControlCenter {
             return;
         }
         if ("network".equals(page)) {
-            networkStatus = info(column, R.drawable.ic_wifi, R.string.quick_network);
-            networkStatusIcon = (ImageView) ((LinearLayout) networkStatus.getParent()).getChildAt(0);
+            currentPage.networkStatus = info(column, R.drawable.ic_wifi, R.string.quick_network);
+            currentPage.networkStatusIcon = (ImageView) ((LinearLayout) currentPage.networkStatus.getParent()).getChildAt(0);
             row(column, R.drawable.ic_wifi, R.string.cc_network_settings,
                     () -> launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS)));
             Intent vpn = new Intent(Settings.ACTION_VPN_SETTINGS);
             if (vpn.resolveActivity(host.getPackageManager()) != null) {
                 row(column, R.drawable.cc_vpn, R.string.cc_system_vpn, () -> launch(vpn));
             }
-            refreshNetwork(); return;
+            return;
         }
         if ("vpn".equals(page)) {
-            vpnStatus = info(column, R.drawable.cc_vpn, R.string.cc_vpn);
+            currentPage.vpnStatus = info(column, R.drawable.cc_vpn, R.string.cc_vpn);
             for (Map.Entry<String, Intent> app : vpnApps.entrySet()) {
                 LinearLayout tile = tile(R.drawable.cc_vpn, app.getKey(), false, () -> launch(new Intent(app.getValue())));
                 addRow(column, tile, 44);
@@ -577,15 +710,15 @@ final class ControlCenter {
                 TextView note = text(host.getString(R.string.cc_vpn_client_hint), 11, 0xbfffffff);
                 column.addView(note);
             }
-            refreshNetwork(); return;
+            return;
         }
         LinearLayout top = horizontal(); column.addView(top, new LinearLayout.LayoutParams(-1, dp(104)));
         LinearLayout sleep = tile(R.drawable.cc_power, host.getString(R.string.cc_sleep), true, this::sleep);
         sleep.setTag("firstControl"); addHalf(top, sleep, false);
         LinearLayout right = column(); addHalf(top, right, true);
         LinearLayout network = tile(R.drawable.ic_wifi, host.getString(R.string.quick_network), false, () -> selectAndFocus("network"));
-        overviewNetwork = (TextView) network.getChildAt(1);
-        overviewNetworkIcon = (ImageView) network.getChildAt(0);
+        currentPage.overviewNetwork = (TextView) network.getChildAt(1);
+        currentPage.overviewNetworkIcon = (ImageView) network.getChildAt(0);
         right.addView(network, new LinearLayout.LayoutParams(-1, dp(48)));
         LinearLayout settings = tile(R.drawable.cc_settings, host.getString(R.string.settings), false,
                 () -> launch(SystemSettings.intent(host, Settings.ACTION_SETTINGS)));
@@ -607,7 +740,6 @@ final class ControlCenter {
         if (search.resolveActivity(host.getPackageManager()) != null) {
             roundShortcut(shortcuts, R.drawable.cc_search, R.string.cc_search, () -> launch(search));
         }
-        refreshNetwork();
     }
 
     private void selectAndFocus(String page) {
@@ -616,22 +748,36 @@ final class ControlCenter {
 
     void refreshNetwork() {
         String transport = host.getString(R.string.not_connected);
-        boolean online = false, ethernet = false;
+        boolean online = false, ethernet = false, vpn = false;
+        boolean foundTransport = false;
         if (connectivity != null) for (Network network : connectivity.getAllNetworks()) {
             NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
-            if (caps == null || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
-            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) || caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+            if (caps == null) continue;
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                vpn = true;
+            } else if (!foundTransport && (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                    || caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))) {
                 ethernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET);
                 transport = ethernet ? "Ethernet" : "Wi-Fi";
                 online = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-                break;
+                foundTransport = true;
             }
         }
-        if (overviewNetwork != null) overviewNetwork.setText(transport);
-        if (overviewNetworkIcon != null) transportIcon(overviewNetworkIcon, ethernet, 20);
-        if (networkStatusIcon != null) transportIcon(networkStatusIcon, ethernet, 36);
-        if (networkStatus != null) networkStatus.setText(host.getString(R.string.cc_network_status, transport, host.getString(online ? R.string.cc_online : R.string.cc_no_internet)));
-        if (vpnStatus != null) vpnStatus.setText(host.getString(hasVpn() ? R.string.cc_vpn_connected : R.string.cc_vpn_disconnected));
+        if (TextUtils.equals(networkTransport, transport) && networkOnline == online
+                && networkEthernet == ethernet && vpnConnected == vpn) return;
+        networkTransport = transport; networkOnline = online; networkEthernet = ethernet; vpnConnected = vpn;
+        networkRevision++;
+        applyNetworkStatus();
+    }
+
+    private void applyNetworkStatus() {
+        if (currentPage == null || currentPage.networkRevision == networkRevision) return;
+        currentPage.networkRevision = networkRevision;
+        if (currentPage.overviewNetwork != null) currentPage.overviewNetwork.setText(networkTransport);
+        if (currentPage.overviewNetworkIcon != null) transportIcon(currentPage.overviewNetworkIcon, networkEthernet, 20);
+        if (currentPage.networkStatusIcon != null) transportIcon(currentPage.networkStatusIcon, networkEthernet, 36);
+        if (currentPage.networkStatus != null) currentPage.networkStatus.setText(host.getString(R.string.cc_network_status, networkTransport, host.getString(networkOnline ? R.string.cc_online : R.string.cc_no_internet)));
+        if (currentPage.vpnStatus != null) currentPage.vpnStatus.setText(host.getString(vpnConnected ? R.string.cc_vpn_connected : R.string.cc_vpn_disconnected));
     }
 
     private void transportIcon(ImageView image, boolean ethernet, int heightDp) {
@@ -641,14 +787,6 @@ final class ControlCenter {
             image.getLayoutParams().width = width;
             image.requestLayout();
         }
-    }
-
-    private boolean hasVpn() {
-        if (connectivity != null) for (Network network : connectivity.getAllNetworks()) {
-            NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
-            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return true;
-        }
-        return false;
     }
 
     private void sleep() { closeThen(actions::controlSleep); }

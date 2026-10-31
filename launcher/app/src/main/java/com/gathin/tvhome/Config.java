@@ -17,6 +17,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -587,16 +588,18 @@ final class Config {
                 : string(json, "wallpaper_order", WallpaperRotation.ORDER_SHUFFLE);
         // An unknown order must not silently change how an existing collection rotates.
         if (!WallpaperRotation.validOrder(wallpaperOrder)) wallpaperOrder = WallpaperRotation.ORDER_SHUFFLE;
+        String wallpaperChoice = choices.getString(WALLPAPER_CHOICE_KEY, null);
+        boolean rotating = rotationMinutes > 0 && wallpaperEnabled
+                && !WallpaperRotation.CHOICE_NONE.equals(wallpaperChoice);
+        boolean pickingImage = wallpaperChoice != null && !WallpaperRotation.CHOICE_NONE.equals(wallpaperChoice);
+        List<File> collection = dir != null && (rotating || pickingImage)
+                ? WallpaperRotation.images(new File(dir, "wallpapers")) : Collections.emptyList();
         List<File> wallpapers = new ArrayList<>();
-        if (rotationMinutes > 0 && dir != null && wallpaperEnabled) {
-            wallpapers.addAll(WallpaperRotation.images(new File(dir, "wallpapers")));
-        }
+        if (rotating) wallpapers.addAll(collection);
         if (wallpapers.isEmpty() && wallpaper != null) wallpapers.add(wallpaper);
         // An on-TV wallpaper pick overrides the theme: a filename from the wallpapers/
         // collection, or "none". Unset means the theme decides (off by default).
-        String wallpaperChoice = choices.getString(WALLPAPER_CHOICE_KEY, null);
-        List<File> chosen = WallpaperRotation.chosen(dir == null ? Collections.emptyList()
-                : WallpaperRotation.images(new File(dir, "wallpapers")), wallpaper, wallpaperChoice);
+        List<File> chosen = WallpaperRotation.chosen(collection, wallpaper, wallpaperChoice);
         if (chosen != null) {
             wallpapers.clear();
             wallpapers.addAll(chosen);
@@ -694,15 +697,23 @@ final class Config {
      * start before the card is mounted (seen at every boot on a Xiaomi MiTV-MTEQ0), and without the copy it comes
      * up with the built-in dock order. A missing file on mounted storage still means no overlay.
      */
-    private static JSONObject readOverlay(Context ctx, File file, boolean mounted) {
+    private static synchronized JSONObject readOverlay(Context ctx, File file, boolean mounted) {
         File copy = new File(ctx.getFilesDir(), FILE_NAME);
         if (!mounted) return read(copy);
         JSONObject json = read(file);
         if (json == null) {
             copy.delete();
         } else {
-            try (FileOutputStream out = new FileOutputStream(copy)) {
-                out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            byte[] encoded = json.toString().getBytes(StandardCharsets.UTF_8);
+            // Home and the accessibility service may load concurrently. The method lock keeps the
+            // fallback copy whole, and unchanged settings no longer rewrite flash on every hold.
+            try {
+                if (!copy.isFile() || copy.length() != encoded.length
+                        || !Arrays.equals(encoded, Files.readAllBytes(copy.toPath()))) {
+                    try (FileOutputStream out = new FileOutputStream(copy)) {
+                        out.write(encoded);
+                    }
+                }
             } catch (IOException e) {
                 Log.w(TAG, "could not keep a copy of " + file + ": " + e.getMessage());
             }
