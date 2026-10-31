@@ -3282,7 +3282,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         populateInputRows(rows, activate, coocaaSources ? CoocaaSources.list(this) : Collections.emptyList());
         styleSourcePicker(rows, rows);
         rows.setBackground(null);
-        rows.setPadding(0, 0, 0, 0);
+        // Keep the focus inset: the page's hardware layer must fit an enlarged source row.
     }
 
     private void populateInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate, List<CoocaaSources.Source> coocaa) {
