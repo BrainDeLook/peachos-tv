@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.8 — 2026-10-31
+
+### Русский
+
+- Исправлено обрезание увеличенной кнопки во вкладке «Источники» контрол-панели: список больше не сбрасывает отступ, необходимый для выделения. Скругления первой и последней строк остаются полностью видимыми.
+- Проверено на TCL с навигацией пультом. Стиль панели, индикаторы подключённых входов и переключение источников не изменены.
+- Обновлён портативный Windows-установщик со встроенным APK v1.5.8 и ADB. Устанавливайте поверх предыдущей версии для сохранения настроек.
+
+Проверки: 289 Android-тестов, release lint и 41 тест мастера ПК.
+
+### English
+
+- Fix clipped focused buttons in Control Center's Inputs tab. The source list now preserves the inset required for focus zoom, keeping the first and last rows' rounded edges fully visible.
+- Verified on TCL using remote navigation. Panel styling, connected-input indicators and source switching are unchanged.
+- Update the portable Windows installer with the v1.5.8 APK and bundled ADB. Install over the existing version to preserve preferences.
+
+Validation: 289 Android unit tests, release lint and 41 PC setup tests.
+
 ## 1.5.7 — 2026-10-31
 
 ### Русский
