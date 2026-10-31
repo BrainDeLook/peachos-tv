@@ -1005,7 +1005,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
-        if (controlCenter != null) { controlCenter.closeThen(this::returnToFirstDock); return; }
+        // Home dismisses the panel like Back, preserving the selection from before it opened.
+        if (controlCenter != null) { controlCenter.close(); return; }
         if (appContextMenu != null) { appContextMenu.closeThen(this::returnToFirstDock); return; }
         if (!returningFromBackground) {
             returnToFirstDock();
