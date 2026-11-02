@@ -215,6 +215,12 @@ final class OverlayControls implements ControlCenter.Actions {
                 + (android.os.SystemClock.uptimeMillis() - openingStartedAt) + "ms");
     }
 
+    int baseEvents(int events) {
+        if (stage == null) return events;
+        previousEvents = events;
+        return events | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
+    }
+
     boolean handle(KeyEvent event) {
         int code = event.getKeyCode();
         if (code != KeyEvent.KEYCODE_HOME && code != KeyEvent.KEYCODE_ALL_APPS

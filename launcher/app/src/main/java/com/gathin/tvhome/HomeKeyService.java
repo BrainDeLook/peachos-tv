@@ -62,6 +62,9 @@ public class HomeKeyService extends AccessibilityService {
     private final Set<String> stockHome = new HashSet<>();
     /** Stops key filtering while a game controller is connected; null unless gamepad_passthrough and key_filter, or before the unlock. */
     private GamepadPassthrough gamepads;
+    private ConfigRefresh.Request configurationRefresh;
+    private String appliedThemeKey;
+    private Map<String, ?> appliedPreferences;
 
     @Override
     protected void onServiceConnected() {
@@ -73,8 +76,10 @@ public class HomeKeyService extends AccessibilityService {
             if (MainActivity.showForegroundControls()) return;
             if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(OverlayControls.KEY, false))
                 overlayControls.held();
-            else startActivity(new Intent(this, MainActivity.class)
-                    .setAction(MainActivity.ACTION_CONTROL_CENTER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            // Use the HOME entry, not a custom-action Activity task beside the existing Home.
+            else startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .setPackage(getPackageName()).putExtra(MainActivity.EXTRA_CONTROL_CENTER, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         });
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
@@ -120,6 +125,8 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private void stopHelpers() {
+        if (configurationRefresh != null) { configurationRefresh.cancel(); configurationRefresh = null; }
+        appliedThemeKey = null; appliedPreferences = null;
         if (overlayControls != null) { overlayControls.close(); overlayControls = null; }
         if (settingsButton != null) { settingsButton.cancel(); settingsButton = null; }
         handler.removeCallbacksAndMessages(null);
@@ -131,13 +138,27 @@ public class HomeKeyService extends AccessibilityService {
 
     private void loadConfig() {
         // Keycodes and the panel choice can also come from a theme; theme.sh restarts this service.
-        Config config = Config.load(this);
+        long since = SystemClock.uptimeMillis();
+        Config cached = Config.loadCached(this);
+        if (cached != null) applyConfig(cached);
+        configurationRefresh = ConfigRefresh.request(this, since, fresh -> {
+            if (settingsButton != null && (fresh.themeVerified && ThemeSnapshot.isCurrent(fresh.themeSnapshot)
+                    || appliedPreferences == null)) applyConfig(fresh);
+        });
+    }
+
+    private void applyConfig(Config config) {
+        String key = config.themeSnapshot == null ? null : config.themeSnapshot.key;
+        Map<String, ?> preferences = Config.visualPreferences(this);
+        if (key != null && key.equals(appliedThemeKey) && preferences.equals(appliedPreferences)) return;
+        appliedThemeKey = key; appliedPreferences = preferences;
         // restore_key_services: note that this helper runs, so Home can put it back after a force stop. Here, not
         // in onServiceConnected: the note is in credential-protected storage too, readable only after the unlock.
         repairRecord = config.restoreKeyServices;
         if (repairRecord) ServiceRepair.connected(this, getClass());
         settingsKeycodes = config.settingsKeycodes;
         settingsPanel = config.settingsKeyPanel;
+        if (consumeVolumeKeys && !config.consumeVolumeKeys) VolumeKeys.stop();
         consumeVolumeKeys = config.consumeVolumeKeys;
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
@@ -151,8 +172,11 @@ public class HomeKeyService extends AccessibilityService {
         }
         // home_key_service.xml subscribes to no events, so the redirect asks for window changes only when it is on.
         AccessibilityServiceInfo info = getServiceInfo();
-        if (info != null && !stockHome.isEmpty()) {
-            info.eventTypes |= AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
+        if (info != null) {
+            // A rebound service can retain its previous runtime subscription even when the new
+            // config no longer redirects stock Home. OverlayControls adds this event temporarily.
+            int baseEvents = stockHome.isEmpty() ? 0 : AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
+            info.eventTypes = overlayControls == null ? baseEvents : overlayControls.baseEvents(baseEvents);
             setServiceInfo(info);
         }
         if (!stockHome.isEmpty()) probeAtBoot();
@@ -162,6 +186,8 @@ public class HomeKeyService extends AccessibilityService {
         if (config.gamepadPassthrough && config.keyFilter && gamepads == null) {
             gamepads = new GamepadPassthrough(this);
             gamepads.start();
+        } else if ((!config.gamepadPassthrough || !config.keyFilter) && gamepads != null) {
+            gamepads.stop(); gamepads = null;
         }
     }
 

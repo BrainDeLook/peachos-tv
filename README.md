@@ -20,6 +20,8 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 - **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
 - **Lightweight glass.** Restrained translucent materials. The control center uses one small, blurred snapshot when opened, with no continuous screen capture. Glass can be turned off.
 - **A compact control center.** Press the gear for quick settings, network status, available TV inputs and detected VPN clients. It unfolds from the clock capsule and returns within the same window to avoid a flashing header.
+- **Wi-Fi selection.** The Network tab lists nearby networks while it is open and hands connection/password entry to Android's system dialog. Android can require Location permission and the system Location switch for scanning. Ethernet keeps its connected view and wired icon. [Details](docs/wifi-controls.md).
+- **Faster Home startup.** A verified internal theme snapshot avoids external-storage waits on subsequent starts; changes are checked in the background without resetting the selected app. [Implementation and limits](docs/startup-cache.md).
 - **Your layout.** Rearrange apps in Launcher settings → Reorder apps. Fresh installs default to six columns and fill the dock from the first six available apps. The dock keeps its configured width even when some slots are empty; existing layouts are preserved on upgrade.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
 
@@ -30,6 +32,12 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 On TVs with available inputs, open the gear and choose the **Inputs** tab for the compact HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs do not show that tab.
 
 CEC device names are preserved. On supported TCL firmware, a confirmed physical HDMI connection is used when its sole CEC child incorrectly reports standby. The remote's native Input button keeps its existing behaviour.
+
+## Optional AirPlay receiver
+
+The Windows installer offers an initially unchecked **AirPlay from iPhone** module. Without it, the Search button remains. With a trusted module installed, the same slot toggles reception; blue means ready for discovery. Incoming mirroring/video opens fullscreen, and stopping the cast returns to the previous screen. Video playback supports remote pause/play and accelerated timeline seeking.
+
+The separate GPL receiver remains a **preview**, tested on Homatics Box R 4K Plus with iPhone mirroring, YouTube and VK. It currently requires an ARMv7-compatible Android OS (API 24+) and user-granted overlay permission. Compatibility with every sender, firmware, audio format or protected video is not guaranteed. [Setup, source and limitations](docs/airplay-prototype.md). The standalone launcher APK does not include the receiver.
 
 ## Controls
 

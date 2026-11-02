@@ -37,6 +37,10 @@ import java.util.Set;
  * Read once in {@link MainActivity#onCreate}; nothing here touches the network.
  */
 final class Config {
+    final ThemeSnapshot themeSnapshot;
+    final boolean themeVerified;
+    final Map<String, String> wallpaperCaptionNames;
+    private static long overlaySequence;
     private static final String TAG = "TvHome.Config";
     static final String FILE_NAME = "config.json";
     static final String WALLPAPER_NAME = "wallpaper.jpg";
@@ -238,7 +242,7 @@ final class Config {
     /** With single_row, the band runs behind every app in the row, not only the dock apps (config.xml, dock_band_all). */
     final boolean dockBandAll;
 
-    private Config(List<String> dockApps, boolean fillDock, List<String> hiddenApps, List<String> libraryApps, String liveTvPackage,
+    private Config(ThemeSnapshot themeSnapshot, boolean themeVerified, List<String> dockApps, boolean fillDock, List<String> hiddenApps, List<String> libraryApps, String liveTvPackage,
                    String liveTvAction, String liveTvInputId, Map<String, String> launchActions, Map<String, String> appLabels,
                    Map<String, String> appBanners, String sourcePanelService, String sourcePanelAction,
                    String sourcePanelExtra, boolean coocaaSources, String inputAction,
@@ -253,6 +257,11 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset) {
         this.handleViewInputs = handleViewInputs;
+        this.themeSnapshot = themeSnapshot;
+        this.themeVerified = themeVerified;
+        this.wallpaperCaptionNames = themeSnapshot == null || wallpapers.isEmpty() ? Collections.emptyMap()
+                : wallpapers.get(0).getParentFile().equals(themeSnapshot.directory)
+                ? themeSnapshot.singleCaptions : themeSnapshot.collectionCaptions;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
         this.appKeys = Collections.unmodifiableList(appKeys);
@@ -365,10 +374,31 @@ final class Config {
 
     /** The folder the theme tools push into; null when external storage is unavailable. */
     static File dir(Context ctx) {
+        // getExternalFilesDir may ask the storage service to create directories. During boot,
+        // use the retained internal theme until the external volume is actually mounted.
+        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) return null;
         return ctx.getExternalFilesDir(null);
     }
 
     static Config load(Context ctx) {
+        return load(ctx, null);
+    }
+
+    /** Null means that the previous installation has no usable bootstrap snapshot yet. */
+    static Config loadCached(Context ctx) {
+        ThemeSnapshot snapshot = ThemeSnapshot.read(new File(ctx.getFilesDir(), ThemeSnapshot.FILE_NAME),
+                ctx.getPackageName(), android.os.Process.myUid());
+        return snapshot == null ? null : load(ctx, snapshot);
+    }
+
+    static Map<String, ?> visualPreferences(Context ctx) {
+        Map<String, Object> result = new HashMap<>(ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE).getAll());
+        result.remove(THEME_SIGNATURE_KEY);
+        return result;
+    }
+
+    private static Config load(Context ctx, ThemeSnapshot cached) {
+        long loadStep = android.os.SystemClock.uptimeMillis();
         Resources res = ctx.getResources();
         List<String> dock = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.dock_apps)));
         boolean fillDock = res.getBoolean(R.bool.fill_dock);
@@ -458,10 +488,12 @@ final class Config {
         boolean dockBandAll = res.getBoolean(R.bool.dock_band_all);
         boolean applied = false;
 
-        File dir = dir(ctx);
+        File dir = cached == null ? dir(ctx) : cached.directory;
+        loadStep = logSlowLoadStep("storage", loadStep);
         File file = dir != null ? new File(dir, FILE_NAME) : null;
-        boolean mounted = Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState());
-        JSONObject json = readOverlay(ctx, file, mounted);
+        Overlay overlay = cached == null ? readOverlay(ctx, file, dir != null) : new Overlay(cached.overlay, false, 0);
+        JSONObject json = overlay.json;
+        loadStep = logSlowLoadStep("overlay", loadStep);
         if (json != null) {
             applied = true;
             dock = stringList(json, "dock_apps", dock);
@@ -567,7 +599,8 @@ final class Config {
             dock = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.legacy_dock_apps)));
         }
         // Unmounted storage looks like a theme reset; compare only once the file is readable.
-        if (mounted) syncThemeChoices(choices, dir, file);
+        if (overlay.verified) syncThemeChoices(choices, dir, file);
+        loadStep = logSlowLoadStep("preferences", loadStep);
         int chosenColumns = choices.getInt("columns", columns);
         if (chosenColumns >= 4 && chosenColumns <= 7) columns = chosenColumns;
         int chosenRows = choices.getInt(ROWS_BELOW_DOCK_KEY, rowsBelow);
@@ -575,8 +608,9 @@ final class Config {
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
         idleClockMinutes = Math.max(0, Math.min(1440, choices.getInt("home_idle_clock_minutes", idleClockMinutes)));
-        File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
-        if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
+        File single = cached != null ? cached.wallpaper : dir != null ? new File(dir, WALLPAPER_NAME) : null;
+        if (cached == null && single != null && !(single.isFile() && single.length() > 0)) single = null;
+        File wallpaper = single;
         // A theme can also switch the wallpaper off while the file is still there.
         boolean wallpaperEnabled = json == null || bool(json, "wallpaper", true);
         if (!wallpaperEnabled) wallpaper = null;
@@ -591,8 +625,8 @@ final class Config {
         String wallpaperChoice = choices.getString(WALLPAPER_CHOICE_KEY, null);
         boolean rotating = rotationMinutes > 0 && wallpaperEnabled
                 && !WallpaperRotation.CHOICE_NONE.equals(wallpaperChoice);
-        boolean pickingImage = wallpaperChoice != null && !WallpaperRotation.CHOICE_NONE.equals(wallpaperChoice);
-        List<File> collection = dir != null && (rotating || pickingImage)
+        // Keep a complete, bounded inventory so local settings can pick an image without rescanning storage.
+        List<File> collection = cached != null ? cached.collection : dir != null
                 ? WallpaperRotation.images(new File(dir, "wallpapers")) : Collections.emptyList();
         List<File> wallpapers = new ArrayList<>();
         if (rotating) wallpapers.addAll(collection);
@@ -610,7 +644,12 @@ final class Config {
         Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
 
-        return new Config(dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+        logSlowLoadStep("remaining files", loadStep);
+        ThemeSnapshot snapshot = cached != null ? cached : dir == null ? null
+                : ThemeSnapshot.capture(dir, json, single, collection, ctx.getPackageName(), android.os.Process.myUid());
+        boolean verified = overlay.verified && snapshot != null && ThemeSnapshot.publish(
+                new File(ctx.getFilesDir(), ThemeSnapshot.FILE_NAME), snapshot, overlay.sequence);
+        return new Config(snapshot, verified, dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
                 packageMap(appBanners), panelService,
                 panelAction, panelExtra, coocaaSources, inputAction, inputUriScheme,
                 Math.max(1, columns), Math.max(0, rowsBelow), animations, advancedEffects,
@@ -619,6 +658,12 @@ final class Config {
                 wallpapers, rotationMinutes, wallpaperDim, dockOpacity, wallpaperOrder, applied,
                 festival, inputKeycodes, appKeys, stockHomeRedirect, json == null ? Collections.emptyList() : raceCalendar(json), cinematic, ambientGlow, appGlow, fadeRows,
                 Math.max(0, idleClockMinutes), keyFilter, dockGlass, glowStyle, wallpaperCaptions, handleViewInputs, tileMenu, dockEvenPadding, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough, consumeVolumeKeys, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper, Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset);
+    }
+
+    private static long logSlowLoadStep(String stage, long since) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - since >= 50) Log.d("PeachStartup", "Config " + stage + " waited " + (now - since) + "ms");
+        return now;
     }
 
     /**
@@ -697,10 +742,21 @@ final class Config {
      * start before the card is mounted (seen at every boot on a Xiaomi MiTV-MTEQ0), and without the copy it comes
      * up with the built-in dock order. A missing file on mounted storage still means no overlay.
      */
-    private static synchronized JSONObject readOverlay(Context ctx, File file, boolean mounted) {
+    private static final class Overlay {
+        final JSONObject json;
+        final boolean verified;
+        final long sequence;
+        Overlay(JSONObject json, boolean verified, long sequence) {
+            this.json = json; this.verified = verified; this.sequence = sequence;
+        }
+    }
+
+    private static synchronized Overlay readOverlay(Context ctx, File file, boolean mounted) {
         File copy = new File(ctx.getFilesDir(), FILE_NAME);
-        if (!mounted) return read(copy);
+        if (!mounted) return new Overlay(read(copy), false, 0);
+        boolean exists = file.exists();
         JSONObject json = read(file);
+        if (exists && json == null) return new Overlay(read(copy), false, 0);
         if (json == null) {
             copy.delete();
         } else {
@@ -718,7 +774,7 @@ final class Config {
                 Log.w(TAG, "could not keep a copy of " + file + ": " + e.getMessage());
             }
         }
-        return json;
+        return new Overlay(json, true, ++overlaySequence);
     }
 
     private static JSONObject read(File file) {

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.5.9 — 2026-11-02
+
+### Русский
+
+- Ускорен запуск Home: внутренняя копия проверенной темы включает сведения об обоях и подписях. Внешнее хранилище проверяется в фоне общей задачей Home и службы пульта. Неизменённая тема не пересоздаёт экран; при изменении сохраняется выбранное приложение. Повреждённый или отсутствующий снимок безопасно возвращает обычную загрузку.
+- Во вкладке сети добавлен список доступных Wi-Fi с текущим подключением. Поиск работает только при открытой вкладке; запросы ограничены и объединяются. Подключение и ввод пароля передаются штатному окну Android. При Ethernet остаётся проводной статус с соответствующей иконкой. Строки сетей показываются целиком, без обрезанных снизу кнопок.
+- Добавлен отдельный необязательный AirPlay-приёмник: с ним лупа становится переключателем приёма, готовое состояние отмечено синим. Без модуля лупа остаётся. Исправлено повторное включение без перезахода в панель. Сам приёмник остаётся preview и устанавливается только по выбору пользователя.
+- Модуль поддерживает повтор экрана iPhone и отдельную передачу видео. Исправлены совместимость HLS YouTube/VK, повторные остановки/подключения и возврат к прежнему экрану. Добавлены пауза/продолжение и плавная ускоряющаяся перемотка с пульта. Исправлен разбор пустых EXTINF в некоторых потоках VK.
+- Исправлены подтверждение удаления приложения из контекстного меню и выход из перемещения кнопкой Назад. Сокращены лишние декодирования и операции загрузки иконок/постеров; отложено создание невидимых эффектов, освобождаются устаревшие ресурсы и задачи.
+- Портативный Windows EXE содержит APK v1.5.9, ADB, среду выполнения и опциональный модуль с соответствующими исходниками/лицензиями. Обычный APK лаунчера остаётся самостоятельным. ID пакета и подпись сохранены; обновление поверх предыдущей версии сохраняет настройки.
+
+Проверки: 306 JVM-тестов лаунчера, release build/lint, 49 тестов ПК-мастера, 41 нативная проверка снимка/обновления Home, проверки сетевых границ, жизненного цикла плеера/кодеков, перемотки и HLS. На Homatics каталог Home после ребута появился за 1,59 с против 2,46 с в предыдущем замере; это небольшая выборка, не гарантия FPS или времени запуска на других устройствах. Визуал и параметры анимаций сохранены.
+
+Ограничения: Wi-Fi-сканирование может требовать системное «Местоположение» и разрешение Android; без них доступен штатный сетевой экран. AirPlay preview проверен на Homatics Box R 4K Plus, требует ARMv7-совместимую ОС/API 24+ и разрешение поверх приложений. Совместимость со всеми сервисами, прошивками, защищённым видео и аудиоформатами не заявляется. Обработка громкости не менялась.
+
+### English
+
+- Speed up Home initialization using an internal verified-theme snapshot containing wallpaper metadata and captions. Home and the remote helper share background external-storage verification. Unchanged themes do not rebuild Home; changed themes preserve the selected app. Missing or invalid snapshots fall back to the ordinary loader.
+- Add nearby Wi-Fi networks and the current connection to the Network tab. Scanning runs only while visible, with bounded/coalesced requests; Android's system UI handles connection and password entry. Ethernet retains its wired status and icon. Network rows fit as complete bubbles without clipped bottom buttons.
+- Offer a separate optional AirPlay receiver. Installing it replaces Search with an on/off reception shortcut, blue when discovery is ready; without it, Search remains. Fix repeated toggling without reopening Control Center. The receiver itself remains a preview and is opt-in.
+- Support iPhone mirroring and native video casting, with YouTube/VK HLS compatibility fixes, repeated stop/reconnect handling and return to the previous screen. Add remote pause/play and smooth accelerating timeline seeking. Handle orphaned empty EXTINF tags in affected VK streams.
+- Fix app-uninstall confirmation from the context menu and Back while rearranging apps. Reduce redundant icon/poster loading and decoding, defer invisible effects, and release obsolete resources and work.
+- Bundle v1.5.9, ADB, runtime and the optional receiver's matching source/licenses in one portable Windows EXE. The standalone launcher APK remains independent. Preserve package identity, signing certificate and in-place upgrade preferences.
+
+Validation: 306 launcher JVM tests, release build/lint, 49 PC setup tests, 41 native Home snapshot/refresh checks, network-boundary tests and player/codec lifecycle, seeking and HLS checks. On Homatics, Home's catalogue appeared 1.59 seconds after Activity creation following reboot, versus 2.46 seconds in the preceding sample. This small sample does not guarantee FPS or startup timing elsewhere. Visual design and animation parameters are preserved.
+
+Limits: Wi-Fi scanning can require Android Location permission and the system Location switch; system network settings remain available without them. AirPlay preview was tested on Homatics Box R 4K Plus and requires an ARMv7-compatible OS/API 24+ plus overlay permission. Universal provider/firmware, protected-video and audio-format compatibility is not claimed. Volume handling is unchanged.
+
 ## 1.5.8 — 2026-10-31
 
 ### Русский

@@ -76,6 +76,7 @@ public final class AppTile extends FrameLayout {
             mask = cached;
         }
         static void trimCache() { MASKS.evictAll(); COLORS.evictAll(); }
+        void clearArtwork() { colored = null; }
         void artwork(Object entry, Drawable banner, Drawable background) {
             java.util.List<Object> key = java.util.Arrays.asList(entry, width, height, padding);
             colored = COLORS.get(key);

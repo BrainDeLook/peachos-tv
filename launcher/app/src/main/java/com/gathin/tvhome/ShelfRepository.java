@@ -68,10 +68,11 @@ final class ShelfRepository {
         context.getSharedPreferences("top_shelf", Context.MODE_PRIVATE).edit().putString(pkg, source).apply();
     }
 
-    static java.util.Map<String, Result> catalogue(Context context, Set<String> apps) {
-        java.util.Map<String, Result> result = readChannels(context, apps);
+    static java.util.Map<String, Result> catalogue(Context context, Set<String> apps,
+            android.os.CancellationSignal cancellation) {
+        java.util.Map<String, Result> result = readChannels(context, apps, cancellation);
         try (Cursor c = context.getContentResolver().query(TvContract.WatchNextPrograms.CONTENT_URI,
-                new String[]{"package_name", "watch_next_type", "browsable", "title"}, null, null, null)) {
+                new String[]{"package_name", "watch_next_type", "browsable", "title"}, null, null, null, cancellation)) {
             if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
             int visited = 0;
             while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 6000) {
@@ -81,15 +82,13 @@ final class ShelfRepository {
                     result.get(pkg).continueWatching = true;
                 }
             }
+        } catch (android.os.OperationCanceledException cancelled) {
+            throw cancelled;
         } catch (RuntimeException e) {
             for (Result value : result.values()) value.unavailable = true;
             Log.w("TopShelf", "Watch Next catalogue unavailable: " + e.getClass().getSimpleName());
         }
         return result;
-    }
-
-    private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps) {
-        return readChannels(context, apps, null);
     }
 
     private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps,

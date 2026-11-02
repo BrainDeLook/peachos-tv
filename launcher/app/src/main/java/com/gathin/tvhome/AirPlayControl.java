@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -27,7 +28,8 @@ final class AirPlayControl implements AutoCloseable {
     private IntConsumer listener;
     private int generation, state = STARTING;
     private volatile boolean closed;
-    private boolean refreshing, refreshAgain, commandPending;
+    private boolean refreshing, refreshAgain, commandPending, stateDelivered;
+    private Future<?> statusWork;
     private final Runnable timeout = this::refresh;
     private final ContentObserver changes = new ContentObserver(main) {
         @Override public void onChange(boolean selfChange) { refresh(); }
@@ -66,9 +68,11 @@ final class AirPlayControl implements AutoCloseable {
         if (refreshing) { refreshAgain = true; return; }
         refreshing = true;
         int ticket = generation;
-        IO.execute(() -> {
+        statusWork = IO.submit(() -> {
             int result = closed ? OFF : request("status");
+            if (closed) return;
             main.post(() -> {
+                statusWork = null;
                 refreshing = false;
                 if (!closed && ticket == generation && !commandPending) deliver(result);
                 if (refreshAgain) { refreshAgain = false; refresh(); }
@@ -115,15 +119,26 @@ final class AirPlayControl implements AutoCloseable {
     }
 
     private void deliver(int value) {
+        boolean changed = !stateDelivered || state != value;
         state = value;
         main.removeCallbacks(timeout);
         if (state == STARTING || state == STOPPING) main.postDelayed(timeout, 20000);
+        if (!changed) return;
+        stateDelivered = true;
         listener.accept(state);
     }
 
     @Override public void close() {
+        if (closed) return;
         closed = true;
         ++generation;
+        // Obsolete status reads must not queue behind another opening's provider call. A read
+        // already in Binder may finish, but accepted enable/disable commands still run normally.
+        if (statusWork != null) {
+            statusWork.cancel(false);
+            IO.purge();
+            statusWork = null;
+        }
         context.getContentResolver().unregisterContentObserver(changes);
         main.removeCallbacksAndMessages(null);
         listener = null;

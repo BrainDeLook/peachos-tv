@@ -164,4 +164,18 @@
     <string name="settings_key_status">Обработка кнопки пульта: %1$s</string>
     <string name="gear_hold_settings_title">Настройки лаунчера по удержанию шестерёнки</string>
     <string name="gear_hold_settings_state">Настройки по удержанию шестерёнки: %1$s</string>
+    <string name="cc_wifi_loading">Поиск сетей Wi-Fi…</string>
+    <string name="cc_wifi_available">Доступные сети</string>
+    <string name="cc_wifi_empty">Пока не найдено сетей</string>
+    <string name="cc_wifi_connected">Подключено</string>
+    <string name="cc_wifi_refresh">Обновить список</string>
+    <string name="cc_wifi_permission">Разрешите поиск Wi-Fi для показа сетей поблизости.</string>
+    <string name="cc_wifi_allow">Разрешить поиск Wi-Fi</string>
+    <string name="cc_wifi_permission_help">Для списка сетей Android требует разрешение на точное местоположение. PeachOS TV не считывает и не сохраняет координаты. Разрешите доступ для PeachOS TV и снова откройте вкладку сети.</string>
+    <string name="cc_wifi_open_permissions">Открыть разрешения</string>
+    <string name="cc_wifi_location">Включите местоположение для поиска сетей Wi-Fi.</string>
+    <string name="cc_wifi_location_action">Настройки местоположения</string>
+    <string name="cc_wifi_disabled">Wi-Fi выключен</string>
+    <string name="cc_wifi_unavailable">На устройстве нет адаптера Wi-Fi</string>
+    <string name="cc_wifi_error">Не удалось прочитать список сетей. Обновите его или откройте настройки сети.</string>
 </resources>

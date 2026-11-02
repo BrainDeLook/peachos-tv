@@ -35,6 +35,7 @@ public final class TopShelfSettingsActivity extends Activity {
     private TextView status;
     private ScrollView scroll;
     private Future<?> pending;
+    private android.os.CancellationSignal cancellation;
     private int generation;
     private boolean resumed;
     private AlertDialog chooser;
@@ -74,17 +75,20 @@ public final class TopShelfSettingsActivity extends Activity {
 
     private void load() {
         if (!resumed) return;
-        if (pending != null) pending.cancel(true);
+        cancelLoad();
+        android.os.CancellationSignal signal = new android.os.CancellationSignal();
+        cancellation = signal;
         int ticket = ++generation;
         status.setText(R.string.shelf_loading);
         pending = worker.submit(() -> {
             Map<String, String> labels = new LinkedHashMap<>();
             for (android.content.pm.ResolveInfo app : getPackageManager().queryIntentActivities(
                     new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)) {
+                signal.throwIfCanceled();
                 String pkg = app.activityInfo.packageName;
                 if (!pkg.equals(getPackageName())) labels.putIfAbsent(pkg, app.loadLabel(getPackageManager()).toString());
             }
-            Map<String, ShelfRepository.Result> catalogue = ShelfRepository.catalogue(this, labels.keySet());
+            Map<String, ShelfRepository.Result> catalogue = ShelfRepository.catalogue(this, labels.keySet(), signal);
             List<String> packages = new ArrayList<>(labels.keySet());
             packages.sort((a, b) -> labels.get(a).compareToIgnoreCase(labels.get(b)));
             main.post(() -> {
@@ -160,12 +164,16 @@ public final class TopShelfSettingsActivity extends Activity {
         TextView text = new TextView(this); text.setText(value); text.setTextSize(size); text.setTextColor(0xffffffff); return text;
     }
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private void cancelLoad() {
+        if (pending != null) { pending.cancel(true); pending = null; }
+        if (cancellation != null) { cancellation.cancel(); cancellation = null; }
+    }
     @Override protected void onPause() {
         resumed = false; generation++; main.removeCallbacks(refresh);
         getContentResolver().unregisterContentObserver(observer);
-        if (pending != null) pending.cancel(true);
+        cancelLoad();
         if (chooser != null) chooser.dismiss();
         super.onPause();
     }
-    @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { cancelLoad(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy(); }
 }

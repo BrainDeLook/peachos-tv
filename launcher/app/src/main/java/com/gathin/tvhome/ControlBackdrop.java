@@ -417,6 +417,7 @@ final class ControlBackdrop extends Drawable {
         canvas.restoreToCount(save);
     }
     @Override public void setAlpha(int value) {
+        if (alpha == value) return;
         alpha = value;
         background.setAlpha(value * baseAlpha / 255); tint.setAlpha(value * tintAlpha / 255);
         surface.setAlpha(value);

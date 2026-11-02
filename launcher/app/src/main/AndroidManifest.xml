@@ -8,15 +8,15 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="com.gathin.peachos.airplay.CONTROL" />
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
-         runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
-         FINE" rule does not apply here. -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        tools:ignore="CoarseFineLocation" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Wi-Fi scans still require precise location on Android 13+. Requested only from the network tab. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Puts the remote's accessibility helpers back after a force stop of this app took them off the enabled
          list (ServiceRepair). Granted with pm grant by build-and-install when a helper is enabled. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
@@ -28,6 +28,10 @@
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.UNINSTALL_PACKAGE" />
+            <data android:scheme="package" />
+        </intent>
         <package android:name="com.gathin.peachos.airplay" />
         <intent><action android:name="android.search.action.GLOBAL_SEARCH" /></intent>
         <intent><action android:name="com.nes.intent.action.ACCESSORIES" /></intent>
@@ -42,6 +46,8 @@
         <intent>
             <action android:name="android.settings.WIFI_SETTINGS" />
         </intent>
+        <intent><action android:name="com.android.settings.wifi.action.WIFI_CONNECTION_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.LOCATION_SOURCE_SETTINGS" /></intent>
         <intent>
             <action android:name="android.settings.DISPLAY_SETTINGS" />
         </intent>
@@ -73,6 +79,7 @@
         <!-- China-market MIUI TV firmware: the Settings and Wi-Fi pills fall back to Xiaomi's settings app.
              Fire TV: the real settings menu lives in the stock launcher (see settings_fallback_components). -->
         <package android:name="com.xiaomi.mitv.settings" />
+        <package android:name="com.android.tv.settings" />
         <package android:name="com.tcl.settings" />
         <package android:name="com.amazon.tv.launcher" />
         <!-- Coocaa OS sources for the Inputs menu (coocaa_sources); see CoocaaSources. -->
@@ -114,6 +121,12 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:screenOrientation="landscape" />
+        <activity
+            android:name=".WifiPermissionActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Dialog.Alert" />
         <activity
             android:name=".TopShelfSettingsActivity"
             android:exported="false"

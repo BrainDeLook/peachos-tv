@@ -410,6 +410,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         for (int i = 0; i < visible; i++) {
             if (Thread.currentThread().isInterrupted()) throw new CancellationException();
             Entry entry = fresh.get(i);
+            // Resolve uniform fills before publishing the catalogue. First binding must not rasterize
+            // and sample every visible icon on the UI thread; the resulting colours are unchanged.
+            if (uniformTiles && entry.banner == null && entry.kind != Entry.EMPTY) {
+                if (entry.ambient == 0) entry.ambient = dominantColor(entry.icon);
+                entry.backdrop = backdrop(entry.icon, entry.ambient);
+            }
             Drawable art = entry.banner != null ? entry.banner : entry.icon;
             if (art instanceof BitmapDrawable bitmap) bitmap.getBitmap().prepareToDraw();
         }
@@ -566,6 +572,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);
+            h.icon.setImageDrawable(null);
             h.icon.setVisibility(View.GONE);
             h.label.setVisibility(View.GONE);
         } else {
@@ -576,9 +583,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
-        ((AppTile.Glow) h.glow.getBackground()).artwork(e.glowIdentity, e.banner, h.card.getBackground());
+        h.glowEntry = e;
+        h.glowReady = false;
+        ((AppTile.Glow) h.glow.getBackground()).clearArtwork();
         h.toneStep = -1; // The rebound holder may now contain another banner or background.
         h.applyFocusTone(focused);
+        if (focused) h.prepareGlow();
         h.card.setOnClickListener(v -> launch(e));
         h.card.setOnLongClickListener(v -> {
             if (tileMenu) {
@@ -615,7 +625,21 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (holder instanceof Holder) {
             Holder tile = (Holder) holder;
             tile.cancelFocusSpring();
+            tile.card.animate().cancel();
+            tile.banner.animate().cancel();
+            tile.name.animate().cancel();
+            tile.sheen.animate().cancel();
+            tile.glow.animate().cancel();
             tile.card.setActivated(false);
+            // Pooled holders can outlive a replaced catalogue. Keep their reusable views, not the
+            // old app's artwork or the Entry captured by its click actions.
+            tile.banner.setImageDrawable(null);
+            tile.icon.setImageDrawable(null);
+            tile.card.setOnClickListener(null);
+            tile.card.setOnLongClickListener(null);
+            tile.glowEntry = null;
+            tile.glowReady = false;
+            ((AppTile.Glow) tile.glow.getBackground()).clearArtwork();
         }
         super.onViewRecycled(holder);
     }
@@ -788,19 +812,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         float[] weight = new float[12];
         float[][] sum = new float[12][3];
         float[] hsv = new float[3];
-        for (int y = 0; y < n; y++) {
-            for (int x = 0; x < n; x++) {
-                int p = bmp.getPixel(x, y);
-                if (Color.alpha(p) < 128) continue;
-                Color.colorToHSV(p, hsv);
-                if (hsv[1] < 0.3f || hsv[2] < 0.25f) continue;   // white, grey and black carry no hue
-                int bin = (int) (hsv[0] / 30f) % 12;
-                float w = hsv[1] * hsv[2];
-                weight[bin] += w;
-                sum[bin][0] += Color.red(p) * w;
-                sum[bin][1] += Color.green(p) * w;
-                sum[bin][2] += Color.blue(p) * w;
-            }
+        int[] pixels = new int[n * n];
+        bmp.getPixels(pixels, 0, n, 0, 0, n, n);
+        for (int p : pixels) {
+            if (Color.alpha(p) < 128) continue;
+            Color.colorToHSV(p, hsv);
+            if (hsv[1] < 0.3f || hsv[2] < 0.25f) continue;   // white, grey and black carry no hue
+            int bin = (int) (hsv[0] / 30f) % 12;
+            float w = hsv[1] * hsv[2];
+            weight[bin] += w;
+            sum[bin][0] += Color.red(p) * w;
+            sum[bin][1] += Color.green(p) * w;
+            sum[bin][2] += Color.blue(p) * w;
         }
         bmp.recycle();
         int best = 0;
@@ -980,6 +1003,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final float density;
         private SpringAnimation focusSpring;
         private int toneStep = -1;
+        private Entry glowEntry;
+        private boolean glowReady;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
 
@@ -1055,6 +1080,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             // The tiny idle tone changes once, not on every spring step. Reapplying image
             // filters during zoom invalidates the tile texture and defeats its render cache.
             applyFocusTone(selected);
+            if (selected) prepareGlow();
             if (!animations) {
                 cancelFocusSpring();
                 view.setScaleX(target); view.setScaleY(target);
@@ -1102,6 +1128,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         void cancelFocusSpring() {
             if (focusSpring != null) focusSpring.cancel();
+        }
+        /** An idle tile's halo is invisible. Build it once, on selection, after removing its idle tone. */
+        private void prepareGlow() {
+            if (glowReady || glowEntry == null) return;
+            ((AppTile.Glow) glow.getBackground()).artwork(glowEntry.glowIdentity, glowEntry.banner, card.getBackground());
+            glowReady = true;
         }
         void applyFocusTone(boolean focused) {
             int step = focused ? 0 : FocusTones.VALUES.length - 1;

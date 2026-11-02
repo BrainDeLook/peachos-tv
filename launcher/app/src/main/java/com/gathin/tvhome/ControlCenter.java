@@ -73,6 +73,7 @@ final class ControlCenter {
     private final View scrim;
     private final LinearLayout panel, tabs;
     private final FrameLayout body;
+    private final ScrollView pageScroll;
     private static final class Page {
         final LinearLayout content;
         boolean interactive;
@@ -80,6 +81,12 @@ final class ControlCenter {
         int networkRevision = -1;
         TextView overviewNetwork, networkStatus, vpnStatus;
         ImageView overviewNetworkIcon, networkStatusIcon;
+        LinearLayout wifiArea, wifiRows;
+        TextView wifiNote;
+        View wifiAction;
+        final Map<String, WifiRow> wifiEntries = new LinkedHashMap<>();
+        final List<String> wifiOrder = new ArrayList<>();
+        final WifiViewport wifiViewport = new WifiViewport();
         Page(Context context) {
             content = new LinearLayout(context) {
                 @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
@@ -100,6 +107,7 @@ final class ControlCenter {
     private boolean bodyLayerRequested;
     private final float density;
     private final int maxBodyHeight;
+    private final int wifiBodyHeight;
     private static final long MAX_LAYER_BYTES = 2L * 1024 * 1024;
     private final boolean animate, reduced;
     private final Typeface regular, medium;
@@ -140,6 +148,11 @@ final class ControlCenter {
     private String networkTransport;
     private boolean networkOnline, networkEthernet, vpnConnected;
     private int networkRevision;
+    private ImageView networkTab;
+    private int networkTabIcon;
+    private WifiScanner wifi;
+    private WifiScanner.Snapshot pendingWifi;
+    private final Runnable renderWifi = this::renderWifiNetworks;
 
     private static final FloatPropertyCompat<ControlCenter> REVEAL = new FloatPropertyCompat<ControlCenter>("controlReveal") {
         @Override public float getValue(ControlCenter center) { return center.reveal; }
@@ -249,14 +262,20 @@ final class ControlCenter {
             return true;
         });
         if (inputs) addTab("inputs", R.drawable.ic_input, R.string.inputs);
-        addTab("network", R.drawable.ic_wifi, R.string.quick_network);
+        networkTabIcon = networkEthernet ? R.drawable.cc_ethernet : R.drawable.ic_wifi;
+        addTab("network", networkTabIcon, R.string.quick_network);
+        networkTab = (ImageView) tabViews.get(tabViews.size() - 1);
 
         maxBodyHeight = Math.min(dp(320), host.getResources().getDisplayMetrics().heightPixels - dp(96));
-        ScrollView scroll = new ScrollView(host) {
+        wifiBodyHeight = Math.min(dp(420), host.getResources().getDisplayMetrics().heightPixels - dp(96));
+        pageScroll = new ScrollView(host) {
             @Override protected void onMeasure(int w, int h) {
-                super.onMeasure(w, MeasureSpec.makeMeasureSpec(maxBodyHeight, MeasureSpec.AT_MOST));
+                int limit = currentPage != null && currentPage.wifiArea != null && !networkEthernet
+                        ? wifiBodyHeight : maxBodyHeight;
+                super.onMeasure(w, MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST));
             }
         };
+        ScrollView scroll = pageScroll;
         scroll.setPadding(dp(4), dp(4), dp(4), dp(4));
         scroll.setClipChildren(false); scroll.setClipToPadding(false);
         scroll.setFocusable(false);
@@ -463,6 +482,7 @@ final class ControlCenter {
             return;
         }
         closing = true; returnToGear = action == null; afterClose = action;
+        stopWifi();
         if (returnToGear && !actions.remoteSettingsHoldEnabled()) {
             overviewTab.getBackground().setState(new int[]{android.R.attr.state_focused});
         }
@@ -487,6 +507,7 @@ final class ControlCenter {
         if (!showing) return;
         showing = false;
         closing = true;
+        stopWifi();
         if (airPlay != null) { airPlay.close(); airPlay = null; }
         if (captureFrame != null) stage.removeCallbacks(captureFrame);
         if (revealFrame != null) panel.removeCallbacks(revealFrame);
@@ -535,6 +556,8 @@ final class ControlCenter {
         tab.setOnClickListener(v -> {
             select(key);
             View first = currentPage.content.findViewWithTag("firstControl");
+            if ("network".equals(key) && !networkEthernet) first = currentPage.wifiRows.getChildCount() > 0
+                    ? currentPage.wifiRows.getChildAt(0) : currentPage.wifiAction;
             if (first != null) first.requestFocus();
         });
     }
@@ -542,7 +565,7 @@ final class ControlCenter {
     /** One reusable color animator per tab; interrupted transitions continue from the displayed colors. */
     private static final class TabStyle extends GradientDrawable {
         private final ImageView tab;
-        private final Drawable icon;
+        private Drawable icon;
         private final boolean smooth;
         private final ValueAnimator transition = ValueAnimator.ofFloat(0f, 1f);
         private int backgroundColor, iconColor = 0xbfffffff;
@@ -555,6 +578,12 @@ final class ControlCenter {
             transition.setDuration(140);
             transition.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0f, .2f, 1f));
             transition.addUpdateListener(animation -> blend(animation.getAnimatedFraction()));
+        }
+
+        void setIcon(int resource) {
+            tab.setImageResource(resource);
+            icon = tab.getDrawable().mutate();
+            icon.setTint(iconColor);
         }
 
         @Override public boolean isStateful() { return true; }
@@ -589,7 +618,9 @@ final class ControlCenter {
 
     private void select(String page) {
         if (page.equals(selected)) return;
+        boolean clipWifi = "network".equals(page) || currentPage != null && currentPage.wifiArea != null;
         selected = page;
+        if (!"network".equals(page)) stopWifi();
         for (View tab : tabViews) {
             boolean active = page.equals(tab.getTag());
             tab.setSelected(active);
@@ -597,6 +628,8 @@ final class ControlCenter {
         }
         clearOutgoingPage();
         LinearLayout previous = currentPage == null ? null : currentPage.content;
+        // A long AP list stays inside its viewport; the existing inner padding covers focus overshoot.
+        pageScroll.setClipChildren(clipWifi);
         boolean crossfade = previous != null && previous.isLaidOut() && revealed && animate && !reduced && !closing;
         // A shorter destination must not clip the fading bottom rows of the previous page.
         if (crossfade) {
@@ -643,7 +676,8 @@ final class ControlCenter {
         pagePositionsDirty = true;
         body.requestLayout();
         applyNetworkStatus();
-        if (!crossfade) return;
+        syncWifi();
+        if (!crossfade) { pageScroll.setClipChildren("network".equals(page)); return; }
         // A visual-only overlay cannot receive focus, clicks or accessibility traversal.
         // Keep at most the previous and current pages, even when keys repeat during a transition.
         outgoingPage = previous;
@@ -657,6 +691,7 @@ final class ControlCenter {
                         previous.setVisibility(View.INVISIBLE);
                         outgoingPage = null;
                         body.setMinimumHeight(0);
+                        pageScroll.setClipChildren("network".equals(selected));
                     }
                 }).start();
         column.setAlpha(0f);
@@ -675,7 +710,7 @@ final class ControlCenter {
     /** Bound retained GPU surfaces to the visible page height and two MiB of RGBA pixels. */
     private void updateAnimationLayer(View view, boolean requested) {
         int width = view.getMeasuredWidth(), height = view.getMeasuredHeight();
-        boolean fits = width > 0 && height > 0 && height <= maxBodyHeight
+        boolean fits = width > 0 && height > 0 && height <= wifiBodyHeight
                 && (long) width * height * 4 <= MAX_LAYER_BYTES;
         int type = requested && fits ? View.LAYER_TYPE_HARDWARE : View.LAYER_TYPE_NONE;
         if (view.getLayerType() != type) view.setLayerType(type, null);
@@ -696,6 +731,21 @@ final class ControlCenter {
         if ("network".equals(page)) {
             currentPage.networkStatus = info(column, R.drawable.ic_wifi, R.string.quick_network);
             currentPage.networkStatusIcon = (ImageView) ((LinearLayout) currentPage.networkStatus.getParent()).getChildAt(0);
+            currentPage.wifiArea = column();
+            currentPage.wifiNote = text(host.getString(R.string.cc_wifi_loading), 11, 0xbfffffff);
+            currentPage.wifiNote.setPadding(dp(6), dp(9), dp(6), dp(2));
+            currentPage.wifiArea.addView(currentPage.wifiNote);
+            currentPage.wifiRows = column();
+            currentPage.wifiArea.addView(currentPage.wifiRows);
+            Page wifiPage = currentPage;
+            column.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+                if (currentPage == wifiPage && !networkEthernet && !closing && fitWifiRows(wifiPage))
+                    displayWifiRows(wifiPage, null);
+            });
+            currentPage.wifiAction = tile(R.drawable.ic_wifi, host.getString(R.string.cc_wifi_refresh), false,
+                    this::wifiAction);
+            addRow(currentPage.wifiArea, currentPage.wifiAction, 40);
+            column.addView(currentPage.wifiArea);
             row(column, R.drawable.ic_wifi, R.string.cc_network_settings,
                     () -> launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS)));
             Intent vpn = new Intent(Settings.ACTION_VPN_SETTINGS);
@@ -752,7 +802,8 @@ final class ControlCenter {
             airPlay = new AirPlayControl(host, state -> {
                 boolean on = state == AirPlayControl.ON;
                 boolean waiting = state == AirPlayControl.STARTING || state == AirPlayControl.STOPPING;
-                button.setEnabled(!waiting);
+                // A transition must not discard remote focus. toggle() ignores busy presses.
+                button.setEnabled(true);
                 button.setAlpha(waiting ? .55f : 1f);
                 button.setImageTintList(new android.content.res.ColorStateList(
                         new int[][]{new int[]{android.R.attr.state_focused}, new int[0]},
@@ -774,18 +825,19 @@ final class ControlCenter {
     void refreshNetwork() {
         String transport = host.getString(R.string.not_connected);
         boolean online = false, ethernet = false, vpn = false;
-        boolean foundTransport = false;
         if (connectivity != null) for (Network network : connectivity.getAllNetworks()) {
             NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
             if (caps == null) continue;
             if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
                 vpn = true;
-            } else if (!foundTransport && (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-                    || caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))) {
-                ethernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET);
-                transport = ethernet ? "Ethernet" : "Wi-Fi";
-                online = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-                foundTransport = true;
+            } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                if (!ethernet) online = false;
+                ethernet = true;
+                transport = "Ethernet";
+                online |= caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+            } else if (!ethernet && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                transport = "Wi-Fi";
+                online |= caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
             }
         }
         if (TextUtils.equals(networkTransport, transport) && networkOnline == online
@@ -793,16 +845,238 @@ final class ControlCenter {
         networkTransport = transport; networkOnline = online; networkEthernet = ethernet; vpnConnected = vpn;
         networkRevision++;
         applyNetworkStatus();
+        syncWifi();
     }
 
     private void applyNetworkStatus() {
+        int icon = networkEthernet ? R.drawable.cc_ethernet : R.drawable.ic_wifi;
+        if (networkTab != null && networkTabIcon != icon) {
+            networkTabIcon = icon;
+            ((TabStyle) networkTab.getBackground()).setIcon(icon);
+        }
         if (currentPage == null || currentPage.networkRevision == networkRevision) return;
         currentPage.networkRevision = networkRevision;
         if (currentPage.overviewNetwork != null) currentPage.overviewNetwork.setText(networkTransport);
         if (currentPage.overviewNetworkIcon != null) transportIcon(currentPage.overviewNetworkIcon, networkEthernet, 20);
         if (currentPage.networkStatusIcon != null) transportIcon(currentPage.networkStatusIcon, networkEthernet, 36);
-        if (currentPage.networkStatus != null) currentPage.networkStatus.setText(host.getString(R.string.cc_network_status, networkTransport, host.getString(networkOnline ? R.string.cc_online : R.string.cc_no_internet)));
+        if (currentPage.networkStatus != null) setTextIfChanged(currentPage.networkStatus,
+                !networkEthernet && pendingWifi != null && !pendingWifi.connectedSsid.isEmpty()
+                        ? pendingWifi.connectedSsid : host.getString(R.string.cc_network_status, networkTransport,
+                        host.getString(networkOnline ? R.string.cc_online : R.string.cc_no_internet)));
         if (currentPage.vpnStatus != null) currentPage.vpnStatus.setText(host.getString(vpnConnected ? R.string.cc_vpn_connected : R.string.cc_vpn_disconnected));
+    }
+
+    private void syncWifi() {
+        Page page = pages.get("network");
+        if (page != null) {
+            boolean restoreFocus = networkEthernet && page.wifiArea.hasFocus();
+            page.wifiArea.setVisibility(networkEthernet ? View.GONE : View.VISIBLE);
+            if (restoreFocus) page.content.findViewWithTag("firstControl").requestFocus();
+        }
+        if (!"network".equals(selected) || networkEthernet || closing) { stopWifi(); return; }
+        if (wifi == null) wifi = new WifiScanner(host, snapshot -> {
+            pendingWifi = snapshot;
+            root.removeCallbacks(renderWifi);
+            // Build newly discovered rows after the page crossfade, not during its frames.
+            if (outgoingPage != null) root.postDelayed(renderWifi, 160);
+            else renderWifiNetworks();
+        });
+        wifi.start();
+    }
+
+    private void stopWifi() {
+        if (wifi != null) wifi.stop();
+        if (root != null) root.removeCallbacks(renderWifi);
+        pendingWifi = null;
+    }
+
+    private void wifiAction() {
+        if (pendingWifi != null && pendingWifi.state == WifiScanner.State.PERMISSION_REQUIRED) {
+            launch(new Intent(host, WifiPermissionActivity.class));
+        } else if (pendingWifi != null && pendingWifi.state == WifiScanner.State.LOCATION_REQUIRED) {
+            launch(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+        } else if (pendingWifi != null && pendingWifi.state == WifiScanner.State.DISABLED) {
+            launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS));
+        } else if (wifi != null) wifi.requestScan();
+    }
+
+    private void renderWifiNetworks() {
+        if (closing || !"network".equals(selected) || networkEthernet || pendingWifi == null) return;
+        Page page = currentPage;
+        WifiScanner.Snapshot snapshot = pendingWifi;
+        int message = switch (snapshot.state) {
+            case READY -> snapshot.networks.isEmpty() ? R.string.cc_wifi_empty : R.string.cc_wifi_available;
+            case PERMISSION_REQUIRED -> R.string.cc_wifi_permission;
+            case LOCATION_REQUIRED -> R.string.cc_wifi_location;
+            case DISABLED -> R.string.cc_wifi_disabled;
+            case NO_WIFI -> R.string.cc_wifi_unavailable;
+            case ERROR -> R.string.cc_wifi_error;
+        };
+        setTextIfChanged(page.wifiNote, host.getString(message));
+        int action = switch (snapshot.state) {
+            case PERMISSION_REQUIRED -> R.string.cc_wifi_allow;
+            case LOCATION_REQUIRED -> R.string.cc_wifi_location_action;
+            case DISABLED -> R.string.cc_network_settings;
+            default -> R.string.cc_wifi_refresh;
+        };
+        setTextIfChanged((TextView) ((LinearLayout) page.wifiAction).getChildAt(1), host.getString(action));
+        page.wifiAction.setContentDescription(host.getString(action));
+        boolean noAdapter = snapshot.state == WifiScanner.State.NO_WIFI;
+        if (noAdapter && page.wifiAction.hasFocus()) page.content.findViewWithTag("firstControl").requestFocus();
+        page.wifiAction.setVisibility(noAdapter ? View.GONE : View.VISIBLE);
+        if (!snapshot.connectedSsid.isEmpty()) {
+            setTextIfChanged(page.networkStatus, snapshot.connectedSsid);
+        } else {
+            setTextIfChanged(page.networkStatus, host.getString(R.string.cc_network_status, networkTransport,
+                    host.getString(networkOnline ? R.string.cc_online : R.string.cc_no_internet)));
+        }
+        java.util.Set<String> present = new java.util.HashSet<>();
+        boolean enterFirst = page.wifiEntries.isEmpty() && page.wifiAction.hasFocus();
+        boolean changed = false, restoreFocus = false;
+        for (WifiAccessPoints.Entry entry : snapshot.networks) present.add(entry.key);
+        java.util.Iterator<Map.Entry<String, WifiRow>> old = page.wifiEntries.entrySet().iterator();
+        while (old.hasNext()) {
+            Map.Entry<String, WifiRow> entry = old.next();
+            if (present.contains(entry.getKey())) continue;
+            WifiRow row = entry.getValue();
+            if (row.view.hasFocus()) {
+                restoreFocus = true;
+                page.wifiAction.requestFocus();
+            }
+            ControlBackdrop.finishAnimations(row.view);
+            page.wifiRows.removeView(row.view); old.remove(); changed = true;
+        }
+        for (WifiAccessPoints.Entry entry : snapshot.networks) {
+            WifiRow row = page.wifiEntries.get(entry.key);
+            if (row == null) {
+                row = new WifiRow(page, entry);
+                page.wifiEntries.put(entry.key, row);
+                page.wifiOrder.add(entry.key);
+                changed = true;
+            } else if (!entry.equals(row.entry)) row.bind(entry);
+        }
+        page.wifiOrder.removeIf(key -> !present.contains(key));
+        boolean resized = fitWifiRows(page);
+        if (changed || resized) displayWifiRows(page, null);
+        // Keep existing rows in place while signal levels change: remote focus must not jump.
+        if (restoreFocus) page.wifiAction.requestFocus();
+        else if (enterFirst && page.wifiRows.getChildCount() > 0) page.wifiRows.getChildAt(0).requestFocus();
+        if (changed) { pagePositionsDirty = true; body.requestLayout(); }
+    }
+
+    private static void setTextIfChanged(TextView label, CharSequence value) {
+        if (!TextUtils.equals(label.getText(), value)) label.setText(value);
+    }
+
+    private boolean fitWifiRows(Page page) {
+        // Layout-change listeners run before View marks its first layout as complete.
+        // The assigned bounds are already usable there, unlike isLaidOut().
+        if (page.content.getHeight() == 0) return false;
+        int fixed = page.content.getHeight() - page.wifiRows.getHeight();
+        int available = wifiBodyHeight - pageScroll.getPaddingTop() - pageScroll.getPaddingBottom() - fixed;
+        return page.wifiViewport.fit(available, dp(44) + dp(7), page.wifiOrder.size());
+    }
+
+    private void displayWifiRows(Page page, String focusKey) {
+        if (focusKey == null) for (WifiRow row : page.wifiEntries.values())
+            if (row.view.hasFocus()) { focusKey = row.entry.key; break; }
+        int focus = focusKey == null ? -1 : page.wifiOrder.indexOf(focusKey);
+        if (focus >= 0) page.wifiViewport.reveal(focus, page.wifiOrder.size());
+        int first = page.wifiViewport.first(), end = page.wifiViewport.end(page.wifiOrder.size());
+        boolean same = page.wifiRows.getChildCount() == end - first;
+        for (int i = first; same && i < end; i++)
+            same = page.wifiRows.getChildAt(i - first) == page.wifiEntries.get(page.wifiOrder.get(i)).view;
+        if (!same) {
+            // Attach the destination before removing the focused row. Detaching focus first lets
+            // Android select the first header tab, which would switch the entire page mid-navigation.
+            List<View> visible = new ArrayList<>(end - first);
+            for (int i = first; i < end; i++) {
+                View row = page.wifiEntries.get(page.wifiOrder.get(i)).view;
+                visible.add(row);
+                if (row.getParent() == null) addRow(page.wifiRows, row, 44);
+            }
+            if (focus >= first && focus < end) page.wifiEntries.get(focusKey).view.requestFocus();
+            for (int i = page.wifiRows.getChildCount() - 1; i >= 0; i--) {
+                View row = page.wifiRows.getChildAt(i);
+                if (!visible.contains(row)) {
+                    ControlBackdrop.finishAnimations(row);
+                    page.wifiRows.removeViewAt(i);
+                }
+            }
+            for (View row : visible) page.wifiRows.bringChildToFront(row);
+            pagePositionsDirty = true;
+            body.requestLayout();
+        }
+        if (focus >= first && focus < end) page.wifiEntries.get(focusKey).view.requestFocus();
+    }
+
+    private final class WifiRow {
+        final LinearLayout view = horizontal();
+        final ImageView signal = new ImageView(host);
+        final WifiSignal signalDrawable = new WifiSignal();
+        final TextView label;
+        final ImageView state = new ImageView(host);
+        WifiAccessPoints.Entry entry;
+
+        WifiRow(Page page, WifiAccessPoints.Entry value) {
+            view.setGravity(Gravity.CENTER_VERTICAL);
+            view.setPadding(dp(12), dp(5), dp(12), dp(5));
+            view.setId(View.generateViewId()); view.setFocusable(true); view.setClickable(true);
+            signal.setImageTintList(android.content.res.ColorStateList.valueOf(0xff58b2ff));
+            signal.setImageDrawable(signalDrawable);
+            view.addView(signal, new LinearLayout.LayoutParams(dp(20), dp(20)));
+            label = text(value.ssid, 12, 0xe6ffffff);
+            label.setMaxLines(1); label.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams title = new LinearLayout.LayoutParams(0, -2, 1);
+            title.setMarginStart(dp(9)); title.setMarginEnd(dp(7)); view.addView(label, title);
+            state.setImageTintList(android.content.res.ColorStateList.valueOf(0xbfffffff));
+            view.addView(state, new LinearLayout.LayoutParams(dp(14), dp(14)));
+            bind(value);
+            view.setBackground(material(view, 23));
+            view.setOnClickListener(v -> launch(WifiConnectionIntent.forNetwork(host, entry)));
+            view.setOnKeyListener((v, key, event) -> {
+                if (key != KeyEvent.KEYCODE_DPAD_UP && key != KeyEvent.KEYCODE_DPAD_DOWN) return false;
+                if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+                int next = page.wifiOrder.indexOf(entry.key) + (key == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
+                if (next < 0 || next >= page.wifiOrder.size()) return false;
+                displayWifiRows(page, page.wifiOrder.get(next));
+                return true;
+            });
+        }
+
+        void bind(WifiAccessPoints.Entry value) {
+            entry = value;
+            signalDrawable.setBars(value.bars);
+            state.setImageResource(value.connected ? R.drawable.library_check : R.drawable.ic_lock);
+            state.setVisibility(value.connected || value.security.secured ? View.VISIBLE : View.INVISIBLE);
+            view.setContentDescription(value.ssid + (value.connected ? ", " + host.getString(R.string.cc_wifi_connected) : ""));
+        }
+    }
+
+    /** Four tiny strokes, reused by the row; no bitmap or per-frame allocations. */
+    private static final class WifiSignal extends Drawable {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.RectF arc = new android.graphics.RectF();
+        private int bars = -1, alpha = 255;
+        WifiSignal() { paint.setStrokeCap(android.graphics.Paint.Cap.ROUND); }
+        void setBars(int value) { if (bars != value) { bars = value; invalidateSelf(); } }
+        @Override public void draw(android.graphics.Canvas canvas) {
+            Rect bounds = getBounds();
+            float unit = Math.min(bounds.width(), bounds.height()) / 24f;
+            canvas.save(); canvas.translate(bounds.left, bounds.top); canvas.scale(unit, unit);
+            paint.setColor(Color.WHITE); paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(2.4f);
+            for (int i = 1; i <= 3; i++) {
+                float radius = 3 + i * 4;
+                arc.set(12 - radius, 21 - radius, 12 + radius, 21 + radius);
+                paint.setAlpha(bars >= i + 1 ? alpha : alpha * 55 / 255);
+                canvas.drawArc(arc, 225, 90, false, paint);
+            }
+            paint.setStyle(android.graphics.Paint.Style.FILL); paint.setAlpha(bars > 0 ? alpha : alpha * 55 / 255);
+            canvas.drawCircle(12, 20, 1.6f, paint); canvas.restore();
+        }
+        @Override public void setAlpha(int value) { if (alpha != value) { alpha = value; invalidateSelf(); } }
+        @Override public void setColorFilter(android.graphics.ColorFilter value) { paint.setColorFilter(value); invalidateSelf(); }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     private void transportIcon(ImageView image, boolean ethernet, int heightDp) {

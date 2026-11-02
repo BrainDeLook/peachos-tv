@@ -111,11 +111,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     }
 
     private static final int LAUNCHER_SETTINGS_REQUEST = 42;
+    private static final int UNINSTALL_REQUEST = 704;
     /** Sent by QuickSettingsActivity: open Launcher settings from here so Home rebuilds when they close. */
     static final String ACTION_LAUNCHER_SETTINGS = "com.gathin.tvhome.action.LAUNCHER_SETTINGS";
     /** The system input switcher, forwarded here by InputsRequestActivity while handle_view_inputs is on. */
     static final String ACTION_VIEW_INPUTS = "com.android.tv.action.VIEW_INPUTS";
     static final String ACTION_CONTROL_CENTER = "com.gathin.tvhome.action.CONTROL_CENTER";
+    static final String EXTRA_CONTROL_CENTER = "com.gathin.tvhome.extra.CONTROL_CENTER";
     private boolean controlCenterRequested;
     private SettingsButton remoteSettingsButton;
     private boolean remoteSettingsHoldMode;
@@ -291,6 +293,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private int catalogueGeneration;
     private long interactionGeneration;
     private boolean catalogueDrawReported;
+    private Config homeConfig;
+    private Map<String, ?> homePreferences;
+    private ConfigRefresh.Request themeRefresh;
+    private boolean themeChecked, pendingThemeRebuild, themeRecreationRequested, suppressFirstEntrance;
+    private boolean watchingThemeStorage;
+    private final Runnable applyPendingTheme = this::applyPendingTheme;
+    private final BroadcastReceiver themeStorageMounted = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { verifyTheme(SystemClock.uptimeMillis()); }
+    };
     private boolean homeRefocusPending;
     private boolean homeFirstPending, returningFromBackground;
     private final Runnable initializeChannels = () -> ChannelSetup.start(getApplicationContext());
@@ -420,13 +431,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         }
     };
 
+    private final long startupAt = SystemClock.uptimeMillis();
+    private final long startupCpuAt = SystemClock.currentThreadTimeMillis();
+
+    private void startupStep(String stage) {
+        android.util.Log.d("PeachStartup", stage + " elapsed=" + (SystemClock.uptimeMillis() - startupAt)
+                + "ms cpu=" + (SystemClock.currentThreadTimeMillis() - startupCpuAt) + "ms");
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        startupStep("Inflated");
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
-        Config cfg = Config.load(this);
+        Config cached = Config.loadCached(this);
+        Config cfg = cached != null ? cached : Config.load(this);
+        homeConfig = cfg;
+        homePreferences = Config.visualPreferences(this);
+        themeChecked = cfg.themeVerified;
+        suppressFirstEntrance = savedInstanceState != null && savedInstanceState.getBoolean("theme_refresh_recreation", false);
+        startupStep(cached != null ? "Configuration cached" : "Configuration first load");
         appLibrarySelection = cfg.appLibrarySelection;
         // restore_key_services: after a force stop, put back the remote's accessibility helpers that Android took
         // off the list (needs WRITE_SECURE_SETTINGS, granted by build-and-install with RESTORE_KEY_SERVICES=1).
@@ -501,6 +527,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             @Override public boolean settling() { return grid != null && grid.getScrollState() != RecyclerView.SCROLL_STATE_IDLE; }
             @Override public void appLaunched() { onAppLaunched(); }
         }, cfg.animations && !cfg.reducedMotion);
+        startupStep("Shelf views");
         cinematic = cfg.cinematicHome;
         glowStyle = cfg.glowStyle;
         heroDotsShown = cfg.cinematicDots;
@@ -648,17 +675,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
                 animations && !reducedMotion));
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
-        if (animations && !reducedMotion) {
+        if (animations && !reducedMotion && !suppressFirstEntrance) {
             grid.setLayoutAnimation(new LayoutAnimationController(
                     AnimationUtils.loadAnimation(this, R.anim.tile_enter), 0.06f));
         }
         adapter = new AppAdapter(this, this, COLUMNS, cfg);
+        startupStep("Grid setup");
         navigationSound = new NavigationSound(this);
+        startupStep("Navigation audio");
         dockApps = cfg.dockApps;
         fillDockLeavesSlots = !cfg.fillDock;
         Order savedOrder = Order.load(Order.file(this));
         adapter.setSavedOrder(Order.ranks(savedOrder, dockApps), Order.docked(savedOrder, dockApps));
         grid.setAdapter(adapter);
+        if (suppressFirstEntrance) {
+            // A theme refresh keeps the previous window's frame until the new catalogue is ready.
+            // No standard-layout/empty-grid frame is presented between the two themed screens.
+            grid.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    if (adapter.appCount() == 0 && catalogueLoad != null) return false;
+                    grid.getViewTreeObserver().removeOnPreDrawListener(this);
+                    return true;
+                }
+            });
+        }
 
         // tvOS layout: push the dock row towards the bottom of the screen, leaving room for
         // rows_below_dock grid rows under it; the rest of the grid stays below until you press Down.
@@ -941,6 +981,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())
                 && !requestControlCenter(getIntent())) openInputsIfAsked(getIntent());
         else if (savedInstanceState != null) requestControlCenter(getIntent());
+        startupStep("Activity created");
     }
 
     /**
@@ -1070,6 +1111,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             recreate();
             return;
         }
+        if (pendingThemeRebuild) { applyPendingTheme(); if (themeRecreationRequested) return; }
+        if (catalogueDrawReported && !themeChecked) verifyTheme(SystemClock.uptimeMillis());
         restartIdleClock();
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
@@ -1118,6 +1161,56 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     /** Launcher settings' change count (Config.SETTINGS_REVISION_KEY); onResume rebuilds Home when it moved. */
     private long settingsRevision() {
         return getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getLong(Config.SETTINGS_REVISION_KEY, 0);
+    }
+
+    private void verifyTheme(long since) {
+        if (themeChecked || isDestroyed() || isFinishing() || themeRecreationRequested
+                || themeRefresh != null && themeRefresh.active()) return;
+        themeRefresh = ConfigRefresh.request(this, since, fresh -> {
+            if (isDestroyed() || isFinishing()) return;
+            if (!fresh.themeVerified) {
+                if (!watchingThemeStorage) {
+                    IntentFilter filter = new IntentFilter(Intent.ACTION_MEDIA_MOUNTED);
+                    filter.addDataScheme("file");
+                    if (Build.VERSION.SDK_INT >= 33) registerReceiver(themeStorageMounted, filter, Context.RECEIVER_NOT_EXPORTED);
+                    else registerReceiver(themeStorageMounted, filter);
+                    watchingThemeStorage = true;
+                    // Close the registration race with a mount that happened just before this callback.
+                    root.post(() -> verifyTheme(SystemClock.uptimeMillis() + 1));
+                }
+                return;
+            }
+            if (!ThemeSnapshot.isCurrent(fresh.themeSnapshot)) {
+                root.post(() -> verifyTheme(SystemClock.uptimeMillis() + 1));
+                return;
+            }
+            themeChecked = true;
+            if (watchingThemeStorage) { unregisterReceiver(themeStorageMounted); watchingThemeStorage = false; }
+            boolean sameTheme = homeConfig.themeSnapshot != null
+                    && homeConfig.themeSnapshot.key.equals(fresh.themeSnapshot.key);
+            if (sameTheme && homePreferences.equals(Config.visualPreferences(this))) {
+                startupStep("Theme verified unchanged");
+                return;
+            }
+            pendingThemeRebuild = true;
+            root.post(applyPendingTheme);
+        });
+    }
+
+    private void applyPendingTheme() {
+        if (!pendingThemeRebuild || themeRecreationRequested || !started || !hasWindowFocus()
+                || isFinishing() || isDestroyed() || reordering || controlCenter != null
+                || appContextMenu != null || appLibrary != null
+                || openPopup != null && openPopup.isShowing() || cardPrompt != null && cardPrompt.isShowing()) return;
+        pendingThemeRebuild = false;
+        themeRecreationRequested = true;
+        startupStep("Theme changed; preserving focused app");
+        recreate();
+    }
+
+    @Override protected void onSaveInstanceState(@NonNull Bundle state) {
+        state.putBoolean("theme_refresh_recreation", themeRecreationRequested);
+        super.onSaveInstanceState(state);
     }
 
     /**
@@ -1187,10 +1280,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
                 heroArt.animate().cancel();
                 heroArt.setAlpha(0f);
             }
-            if (animate && entrance && animations && !reducedMotion) {
+            if (animate && entrance && animations && !reducedMotion && !suppressFirstEntrance) {
                 grid.scheduleLayoutAnimation();
                 if (!rebuild) grid.invalidate();
             }
+            suppressFirstEntrance = false;
 
             if (refocus) {
                 if (restoreLibrary && interactionGeneration == interactions) grid.post(this::focusLibrary);
@@ -1216,6 +1310,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
                             if (grid.getViewTreeObserver().isAlive()) grid.getViewTreeObserver().removeOnDrawListener(this);
                             if (!isDestroyed()) {
                                 reportFullyDrawn();
+                                startupStep("Catalogue drawn");
+                                if (!themeChecked) verifyTheme(startupAt);
                                 root.postDelayed(initializeChannels, 1000);
                             }
                         });
@@ -1433,6 +1529,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            if (pendingThemeRebuild) root.post(applyPendingTheme);
             returningFromBackground = false;
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
@@ -1443,6 +1540,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (themeRefresh != null) themeRefresh.cancel();
+        if (watchingThemeStorage) unregisterReceiver(themeStorageMounted);
         cancelCatalogueLoad();
         catalogueWorker.shutdownNow();
         root.removeCallbacks(initializeChannels);
@@ -1489,7 +1588,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     }
 
     private boolean requestControlCenter(Intent intent) {
-        if (intent == null || !ACTION_CONTROL_CENTER.equals(intent.getAction())) return false;
+        if (intent == null || !(ACTION_CONTROL_CENTER.equals(intent.getAction())
+                || intent.getBooleanExtra(EXTRA_CONTROL_CENTER, false))) return false;
         setIntent(intent);
         controlCenterRequested = true;
         startPendingSettingsReorder();
@@ -1505,7 +1605,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
      * Reorder mode (top-bar button). While it is on, every key comes here first:
      * - nothing carried: arrows move focus as usual; OK on a tile picks it up instead of opening the app;
      *   Back ends the mode and saves the order.
-     * - a tile carried: arrows move it; Back (or OK) puts it down and the mode stays on for the next one.
+     * - a tile carried: arrows move it; OK puts it down; Back ends the mode and saves.
      * Other keys (volume, Home) pass through; leaving the launcher ends the mode and saves.
      */
     @Override
@@ -1546,11 +1646,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             }
             return super.dispatchKeyEvent(event);
         }
+        if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) endReorder();
+            return true;
+        }
         if (dockEditing) return dispatchDockEdit(event);
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
                 || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
-        boolean back = code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE;
         if (movingKey != null) {
             switch (code) {
                 case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -1560,16 +1663,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
                     if (down) moveBy(code);
                     return true;
                 default:
-                    if (ok || back) {
+                    if (ok) {
                         if (!down) drop();
                         return true;
                     }
                     return super.dispatchKeyEvent(event);
             }
-        }
-        if (back) {
-            if (!down) endReorder();
-            return true;
         }
         int pos = focusedTilePosition();
         View focus = getCurrentFocus();
@@ -1809,6 +1908,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             }
         }
         if (fillDockLeavesSlots) reloadTiles();   // the empty dock slots left out while reordering come back
+        if (pendingThemeRebuild) root.post(applyPendingTheme);
     }
 
     /**
@@ -1885,6 +1985,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     public void onBackPressed() {
         if (appContextMenu != null) appContextMenu.close();
         else if (controlCenter != null) controlCenter.close();
+        else if (reordering) endReorder();
         // Home screen: Back goes nowhere.
     }
 
@@ -1918,6 +2019,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     public void onTileFocused(int position, View card) {
         lastFocused = position;
         lastFocusedKey = adapter.keyAt(position);
+        if (pendingThemeRebuild) root.post(applyPendingTheme);
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
         // would be sized to 2*pad. Run again once the tile is laid out.
         if (card.getWidth() == 0) {
@@ -3237,6 +3339,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     public void controlCenterDismissed(ControlCenter center, boolean returnToGear) {
         if (controlCenter != center) return;
         controlCenter = null;
+        if (pendingThemeRebuild) root.post(applyPendingTheme);
         if (returnToGear) {
             if (remoteSettingsHoldMode) {
                 int position = adapter.positionOf(lastFocusedKey);
@@ -3636,9 +3739,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (info != null) actions.add(new AppContextMenu.Action(getString(R.string.library_app_info), R.drawable.ic_settings, false, () -> open(info)));
         try {
             ApplicationInfo application = getPackageManager().getApplicationInfo(pkg, 0);
-            Intent uninstall = new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
+            Intent uninstall = new Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.parse("package:" + pkg))
+                    .putExtra(Intent.EXTRA_RETURN_RESULT, true);
             if ((application.flags & ApplicationInfo.FLAG_SYSTEM) == 0 && uninstall.resolveActivity(getPackageManager()) != null)
-                actions.add(new AppContextMenu.Action(getString(R.string.context_uninstall), R.drawable.ic_context_remove, true, () -> open(uninstall)));
+                actions.add(new AppContextMenu.Action(getString(R.string.context_uninstall), R.drawable.ic_context_remove, true, () -> {
+                    try {
+                        startActivityForResult(uninstall, UNINSTALL_REQUEST);
+                    } catch (ActivityNotFoundException | SecurityException unavailable) {
+                        Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+                    }
+                }));
         } catch (PackageManager.NameNotFoundException removed) {
             return; // Package disappeared after the catalogue snapshot.
         }
@@ -3646,7 +3756,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         boolean menuOnRight = position % COLUMNS < (COLUMNS + 1) / 2;
         if (root.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) menuOnRight = !menuOnRight;
         appContextMenu = new AppContextMenu(this, root, card, actions, menuOnRight, animations, reducedMotion,
-                () -> { if (navigationSound != null) navigationSound.play(); }, () -> appContextMenu = null);
+                () -> { if (navigationSound != null) navigationSound.play(); }, () -> {
+                    appContextMenu = null;
+                    if (pendingThemeRebuild) root.post(applyPendingTheme);
+                });
         appContextMenu.show();
     }
 

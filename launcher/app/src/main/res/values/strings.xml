@@ -164,4 +164,18 @@
     <string name="settings_key_status">Remote button service: %1$s</string>
     <string name="gear_hold_settings_title">Hold gear for launcher settings</string>
     <string name="gear_hold_settings_state">Hold gear for launcher settings: %1$s</string>
+    <string name="cc_wifi_loading">Finding Wi-Fi networks…</string>
+    <string name="cc_wifi_available">Available networks</string>
+    <string name="cc_wifi_empty">No networks found yet</string>
+    <string name="cc_wifi_connected">Connected</string>
+    <string name="cc_wifi_refresh">Refresh networks</string>
+    <string name="cc_wifi_permission">Allow Wi-Fi scanning to see nearby networks.</string>
+    <string name="cc_wifi_allow">Allow Wi-Fi scanning</string>
+    <string name="cc_wifi_permission_help">Android requires precise location permission to list nearby Wi-Fi networks. PeachOS TV does not read or save your coordinates. Enable Location access for PeachOS TV, then reopen the network tab.</string>
+    <string name="cc_wifi_open_permissions">Open permissions</string>
+    <string name="cc_wifi_location">Turn on Location to find nearby Wi-Fi networks.</string>
+    <string name="cc_wifi_location_action">Location settings</string>
+    <string name="cc_wifi_disabled">Wi-Fi is off</string>
+    <string name="cc_wifi_unavailable">This device has no Wi-Fi adapter</string>
+    <string name="cc_wifi_error">Wi-Fi networks could not be read. Try again or open network settings.</string>
 </resources>
