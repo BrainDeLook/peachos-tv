@@ -20,7 +20,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 - **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
 - **Lightweight glass.** Restrained translucent materials. The control center uses one small, blurred snapshot when opened, with no continuous screen capture. Glass can be turned off.
 - **A compact control center.** Press the gear for quick settings, network status, available TV inputs and detected VPN clients. It unfolds from the clock capsule and returns within the same window to avoid a flashing header.
-- **Wi-Fi selection.** The Network tab lists nearby networks while it is open and hands connection/password entry to Android's system dialog. Android can require Location permission and the system Location switch for scanning. Ethernet keeps its connected view and wired icon. [Details](docs/wifi-controls.md).
+- **Wi-Fi selection.** The Network tab shows a compact, smoothly scrolling list of nearby networks below fixed settings/refresh actions. Focused cards retain their full rounded edges; scanning runs only while the tab is open, and Android handles connection/password entry. Android can require Location permission and the system Location switch for scanning. Ethernet keeps its connected view and wired icon. [Details](docs/wifi-controls.md).
 - **Faster Home startup.** A verified internal theme snapshot avoids external-storage waits on subsequent starts; changes are checked in the background without resetting the selected app. [Implementation and limits](docs/startup-cache.md).
 - **Your layout.** Rearrange apps in Launcher settings → Reorder apps. Fresh installs default to six columns and fill the dock from the first six available apps. The dock keeps its configured width even when some slots are empty; existing layouts are preserved on upgrade.
 - **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
@@ -134,7 +134,7 @@ Release APKs currently use the project's original local debug signing certificat
 - **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
 - **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
 
-248 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
+306 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
 
 ## Credits and license
 

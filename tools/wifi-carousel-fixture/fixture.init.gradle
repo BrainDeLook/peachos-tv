@@ -1,0 +1,9 @@
+allprojects {
+    afterEvaluate { project ->
+        if (project.name == 'app') {
+            def fixture = new File(gradle.startParameter.initScripts[0].parentFile, '.')
+            project.android.sourceSets.debug.java.srcDir(new File(fixture, 'java'))
+            project.android.sourceSets.debug.manifest.srcFile(new File(fixture, 'AndroidManifest.xml'))
+        }
+    }
+}

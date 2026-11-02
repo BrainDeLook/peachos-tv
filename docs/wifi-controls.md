@@ -15,7 +15,9 @@ Modern Android requires precise location permission **and** the system Location 
 - Show cached results first and listen for system scan/connection events. One initial scan is requested; if no successful system scan arrives for 45 seconds, the visible picker requests a refresh. Each successful system scan postpones this fallback, and active requests share a minimum 30-second interval.
 - Binder calls use one background worker with a one-job queue. Bursts of events are combined; unchanged snapshots cause no UI update. The idle worker exits after two seconds.
 - At most 32 immutable network entries are exposed. No Wi-Fi lock, permanent background service, password storage or third-party scanning library is used.
-- The picker fits a whole number of network bubbles into the available height. Up/Down moves the visible window when needed; partially clipped bubbles are never used to hint at more results. Only the current window is attached to the layout, and focus is transferred before an old row is detached.
+- Network actions sit above the Wi-Fi list. Up/Down moves between APs and scrolls the lower carousel only when needed; Up from its first row returns to the actions, then to the Network tab.
+- The carousel fits a whole number of bubbles at rest, with room for focus zoom. A single critically damped scroll spring preserves velocity when retargeted, and is stopped when leaving the tab or closing the panel. Reduced-motion mode skips scrolling animation. There is no detach/rebuild cycle on each navigation key; the existing bounded pool of at most 32 AP rows is reused. Only visible rows refresh their sampled glass during movement.
+- APs use the same contiguous 44dp pitch as Inputs. Inner focus gutters and an explicit viewport clip keep enlarged selection inside the list and away from the fixed actions. Short alpha fades soften both scrolling edges; no new blur capture or timer is added. Off-window rows retain layout and focus but do not draw into the gutters at rest.
 
 Android may reject a scan because of throttling or device state. Cached results remain usable; manual **Refresh networks** observes the same budget.
 

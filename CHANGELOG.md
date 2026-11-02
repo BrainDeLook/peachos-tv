@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.10 — 2026-11-03
+
+### Русский
+
+- Переработан список Wi-Fi в контрол-панели: компактный статус, «Настройки сети» и «Обновить список» сверху, плотная карусель точек снизу без заголовка «Доступные сети». Плотность строк соответствует разделу «Источники».
+- Добавлены плавная прокрутка одной перенаправляемой пружиной и мягкое появление/затухание у краёв списка. В покое видны целые карточки. Увеличенное выделение больше не срезается внутренними отступами; список не перекрывает верхние действия.
+- Исправлена навигация вкладок: нажатия наружу на крайних вкладках сохраняют фокус в ряду. Из правой колонки вниз выбирается крайняя правая круглая кнопка (Поиск/AirPlay), из левой — крайняя левая; обратный переход вверх сохраняет колонку.
+- Обновлён портативный Windows-установщик со встроенным APK v1.5.10. Настройки и совместимость обновлений сохранены. Опциональный AirPlay-модуль остаётся прежней preview-версией.
+
+Проверки: release build/lint, 306 JVM-тестов, 25 нативных сценариев карусели и навигации на Homatics, визуальная проверка выбранных первой/средней/последней Wi-Fi-точек на TCL. Правила сканирования, подключения и обработки громкости не менялись. Новых фоновых таймеров, сканов при прокрутке или захватов размытия нет; прирост FPS не заявляется.
+
+### English
+
+- Rework Control Center's Wi-Fi picker: compact status, Network settings and Refresh above a dense AP carousel, without an Available networks heading. Row density matches Inputs.
+- Add smooth retargetable spring scrolling and soft edge fades. Cards fit completely at rest. Focus zoom is no longer clipped by inner padding, and scrolling networks stay below the fixed actions.
+- Keep outward Left/Right presses within the tab strip. Down from the right column selects the rightmost round shortcut (Search/AirPlay); the left column selects the leftmost one. Up returns to the corresponding column.
+- Update the portable Windows installer with the v1.5.10 launcher APK, preserving preferences and update compatibility. The optional AirPlay receiver remains the same preview build.
+
+Validation: release build/lint, 306 JVM tests, 25 native carousel/navigation scenarios on Homatics, and visual checks of focused first/middle/last Wi-Fi cards on TCL. Scan/connection budgets and volume handling are unchanged. No new background timers, scans while scrolling or blur captures; no measured FPS improvement is claimed.
+
 ## 1.5.9 — 2026-11-02
 
 ### Русский

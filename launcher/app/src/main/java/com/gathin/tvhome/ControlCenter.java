@@ -82,8 +82,9 @@ final class ControlCenter {
         TextView overviewNetwork, networkStatus, vpnStatus;
         ImageView overviewNetworkIcon, networkStatusIcon;
         LinearLayout wifiArea, wifiRows;
+        WifiCarousel wifiCarousel;
         TextView wifiNote;
-        View wifiAction;
+        View wifiAction, wifiSettings;
         final Map<String, WifiRow> wifiEntries = new LinkedHashMap<>();
         final List<String> wifiOrder = new ArrayList<>();
         final WifiViewport wifiViewport = new WifiViewport();
@@ -552,6 +553,15 @@ final class ControlCenter {
         tab.setContentDescription(host.getString(title)); tab.setFocusable(true); tab.setClickable(true);
         tab.setBackground(new TabStyle(tab, animate && !reduced)); tab.setTag(key);
         tabs.addView(tab, new LinearLayout.LayoutParams(dp(28), dp(28))); tabViews.add(tab);
+        tab.setOnKeyListener((v, code, event) -> {
+            if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int next = tabViews.indexOf(v) + (code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1);
+                if (next >= 0 && next < tabViews.size()) tabViews.get(next).requestFocus();
+            }
+            // Keep horizontal navigation in the tab strip, including repeats at either end.
+            return true;
+        });
         tab.setOnFocusChangeListener((v, focus) -> { if (focus) select(key); });
         tab.setOnClickListener(v -> {
             select(key);
@@ -731,27 +741,55 @@ final class ControlCenter {
         if ("network".equals(page)) {
             currentPage.networkStatus = info(column, R.drawable.ic_wifi, R.string.quick_network);
             currentPage.networkStatusIcon = (ImageView) ((LinearLayout) currentPage.networkStatus.getParent()).getChildAt(0);
+            Page wifiPage = currentPage;
+            LinearLayout tools = horizontal();
+            currentPage.wifiSettings = tile(R.drawable.ic_settings, host.getString(R.string.cc_network_settings), false,
+                    () -> launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS)));
+            currentPage.wifiSettings.setTag("firstControl");
+            currentPage.wifiAction = tile(R.drawable.ic_wifi, host.getString(R.string.cc_wifi_refresh), false,
+                    this::wifiAction);
+            for (View action : new View[]{currentPage.wifiSettings, currentPage.wifiAction}) {
+                TextView label = (TextView) ((LinearLayout) action).getChildAt(1);
+                label.setMaxLines(2);
+                action.setNextFocusUpId(networkTab.getId());
+                action.setOnKeyListener((v, key, event) -> {
+                    if (key == KeyEvent.KEYCODE_DPAD_UP) {
+                        if (event.getAction() == KeyEvent.ACTION_DOWN) networkTab.requestFocus();
+                        return true;
+                    }
+                    if (key != KeyEvent.KEYCODE_DPAD_DOWN || wifiPage.wifiOrder.isEmpty()) return false;
+                    if (event.getAction() == KeyEvent.ACTION_DOWN)
+                        displayWifiRows(wifiPage, wifiPage.wifiOrder.get(wifiPage.wifiViewport.first()));
+                    return true;
+                });
+            }
+            addHalf(tools, currentPage.wifiSettings, false);
+            addHalf(tools, currentPage.wifiAction, true);
+            ((LinearLayout.LayoutParams) currentPage.wifiAction.getLayoutParams()).setMarginStart(dp(2));
+            addRow(column, tools, 44);
+            Intent vpn = new Intent(Settings.ACTION_VPN_SETTINGS);
+            if (vpn.resolveActivity(host.getPackageManager()) != null)
+                row(column, R.drawable.cc_vpn, R.string.cc_system_vpn, () -> launch(vpn));
+            // Match the contiguous 44dp rows used by the Inputs page.
+            for (int i = 1; i < column.getChildCount(); i++)
+                ((LinearLayout.LayoutParams) column.getChildAt(i).getLayoutParams()).topMargin = 0;
             currentPage.wifiArea = column();
             currentPage.wifiNote = text(host.getString(R.string.cc_wifi_loading), 11, 0xbfffffff);
             currentPage.wifiNote.setPadding(dp(6), dp(9), dp(6), dp(2));
             currentPage.wifiArea.addView(currentPage.wifiNote);
             currentPage.wifiRows = column();
-            currentPage.wifiArea.addView(currentPage.wifiRows);
-            Page wifiPage = currentPage;
+            currentPage.wifiRows.setPadding(dp(8), dp(8), dp(8), dp(8));
+            // The padding is focus clearance, not an inner clipping rectangle.
+            // WifiCarousel owns the outer clip and the scrolling fade.
+            currentPage.wifiRows.setClipToPadding(false);
+            currentPage.wifiCarousel = new WifiCarousel(host, animate && !reduced);
+            currentPage.wifiCarousel.addView(currentPage.wifiRows, new FrameLayout.LayoutParams(-1, -2));
+            currentPage.wifiArea.addView(currentPage.wifiCarousel, new LinearLayout.LayoutParams(-1, 0));
             column.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
                 if (currentPage == wifiPage && !networkEthernet && !closing && fitWifiRows(wifiPage))
                     displayWifiRows(wifiPage, null);
             });
-            currentPage.wifiAction = tile(R.drawable.ic_wifi, host.getString(R.string.cc_wifi_refresh), false,
-                    this::wifiAction);
-            addRow(currentPage.wifiArea, currentPage.wifiAction, 40);
             column.addView(currentPage.wifiArea);
-            row(column, R.drawable.ic_wifi, R.string.cc_network_settings,
-                    () -> launch(SystemSettings.intent(host, Settings.ACTION_WIFI_SETTINGS)));
-            Intent vpn = new Intent(Settings.ACTION_VPN_SETTINGS);
-            if (vpn.resolveActivity(host.getPackageManager()) != null) {
-                row(column, R.drawable.cc_vpn, R.string.cc_system_vpn, () -> launch(vpn));
-            }
             return;
         }
         if ("vpn".equals(page)) {
@@ -782,10 +820,12 @@ final class ControlCenter {
         LinearLayout.LayoutParams settingsLp = new LinearLayout.LayoutParams(-1, dp(48)); settingsLp.topMargin = dp(8);
         right.addView(settings, settingsLp);
         LinearLayout second = horizontal(); addRow(column, second, 48);
-        addHalf(second, tile(R.drawable.ic_apps, host.getString(R.string.quick_apps), false,
-                () -> launch(SystemSettings.intent(host, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS))), false);
-        addHalf(second, tile(R.drawable.cc_clock, host.getString(R.string.cc_clock), false,
-                () -> launch(new Intent(host, ClockActivity.class))), true);
+        LinearLayout apps = tile(R.drawable.ic_apps, host.getString(R.string.quick_apps), false,
+                () -> launch(SystemSettings.intent(host, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)));
+        LinearLayout clock = tile(R.drawable.cc_clock, host.getString(R.string.cc_clock), false,
+                () -> launch(new Intent(host, ClockActivity.class)));
+        addHalf(second, apps, false);
+        addHalf(second, clock, true);
         LinearLayout shortcuts = horizontal(); shortcuts.setGravity(Gravity.CENTER); addRow(column, shortcuts, 50);
         roundShortcut(shortcuts, R.drawable.cc_bluetooth, R.string.cc_bluetooth,
                 () -> launch(SystemSettings.intent(host, Settings.ACTION_BLUETOOTH_SETTINGS)));
@@ -815,6 +855,28 @@ final class ControlCenter {
             });
         } else if (search.resolveActivity(host.getPackageManager()) != null) {
             roundShortcut(shortcuts, R.drawable.cc_search, R.string.cc_search, () -> launch(search));
+        }
+        View.OnKeyListener enterShortcuts = (v, code, event) -> {
+            if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int index = v == apps ? 0 : shortcuts.getChildCount() - 1;
+                ((ViewGroup) shortcuts.getChildAt(index)).getChildAt(0).requestFocus();
+            }
+            return true;
+        };
+        apps.setOnKeyListener(enterShortcuts);
+        clock.setOnKeyListener(enterShortcuts);
+        for (int i = 0; i < shortcuts.getChildCount(); i++) {
+            View above = i < shortcuts.getChildCount() / 2 ? apps : clock;
+            View button = ((ViewGroup) shortcuts.getChildAt(i)).getChildAt(0);
+            button.setOnKeyListener((v, code, event) -> {
+                if (code == KeyEvent.KEYCODE_DPAD_UP) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) above.requestFocus();
+                    return true;
+                }
+                // There is no row below the shortcuts; retain focus on repeated Down presses.
+                return code == KeyEvent.KEYCODE_DPAD_DOWN;
+            });
         }
     }
 
@@ -858,7 +920,18 @@ final class ControlCenter {
         currentPage.networkRevision = networkRevision;
         if (currentPage.overviewNetwork != null) currentPage.overviewNetwork.setText(networkTransport);
         if (currentPage.overviewNetworkIcon != null) transportIcon(currentPage.overviewNetworkIcon, networkEthernet, 20);
-        if (currentPage.networkStatusIcon != null) transportIcon(currentPage.networkStatusIcon, networkEthernet, 36);
+        if (currentPage.networkStatusIcon != null) {
+            LinearLayout card = (LinearLayout) currentPage.networkStatus.getParent();
+            card.setOrientation(networkEthernet ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+            card.getLayoutParams().height = dp(networkEthernet ? 96 : 44);
+            currentPage.networkStatusIcon.getLayoutParams().height = dp(networkEthernet ? 36 : 20);
+            transportIcon(currentPage.networkStatusIcon, networkEthernet, networkEthernet ? 36 : 20);
+            LinearLayout.LayoutParams title = (LinearLayout.LayoutParams) currentPage.networkStatus.getLayoutParams();
+            title.width = networkEthernet ? -1 : -2;
+            title.topMargin = networkEthernet ? dp(4) : 0;
+            title.setMarginStart(networkEthernet ? 0 : dp(5));
+            card.requestLayout();
+        }
         if (currentPage.networkStatus != null) setTextIfChanged(currentPage.networkStatus,
                 !networkEthernet && pendingWifi != null && !pendingWifi.connectedSsid.isEmpty()
                         ? pendingWifi.connectedSsid : host.getString(R.string.cc_network_status, networkTransport,
@@ -869,8 +942,10 @@ final class ControlCenter {
     private void syncWifi() {
         Page page = pages.get("network");
         if (page != null) {
-            boolean restoreFocus = networkEthernet && page.wifiArea.hasFocus();
+            boolean restoreFocus = networkEthernet && (page.wifiArea.hasFocus() || page.wifiAction.hasFocus());
             page.wifiArea.setVisibility(networkEthernet ? View.GONE : View.VISIBLE);
+            page.wifiAction.setVisibility(networkEthernet || pendingWifi != null
+                    && pendingWifi.state == WifiScanner.State.NO_WIFI ? View.GONE : View.VISIBLE);
             if (restoreFocus) page.content.findViewWithTag("firstControl").requestFocus();
         }
         if (!"network".equals(selected) || networkEthernet || closing) { stopWifi(); return; }
@@ -886,6 +961,8 @@ final class ControlCenter {
 
     private void stopWifi() {
         if (wifi != null) wifi.stop();
+        Page page = pages.get("network");
+        if (page != null) page.wifiCarousel.stop();
         if (root != null) root.removeCallbacks(renderWifi);
         pendingWifi = null;
     }
@@ -913,6 +990,8 @@ final class ControlCenter {
             case ERROR -> R.string.cc_wifi_error;
         };
         setTextIfChanged(page.wifiNote, host.getString(message));
+        page.wifiNote.setVisibility(snapshot.state == WifiScanner.State.READY && !snapshot.networks.isEmpty()
+                ? View.GONE : View.VISIBLE);
         int action = switch (snapshot.state) {
             case PERMISSION_REQUIRED -> R.string.cc_wifi_allow;
             case LOCATION_REQUIRED -> R.string.cc_wifi_location_action;
@@ -941,7 +1020,7 @@ final class ControlCenter {
             WifiRow row = entry.getValue();
             if (row.view.hasFocus()) {
                 restoreFocus = true;
-                page.wifiAction.requestFocus();
+                page.wifiSettings.requestFocus();
             }
             ControlBackdrop.finishAnimations(row.view);
             page.wifiRows.removeView(row.view); old.remove(); changed = true;
@@ -952,14 +1031,15 @@ final class ControlCenter {
                 row = new WifiRow(page, entry);
                 page.wifiEntries.put(entry.key, row);
                 page.wifiOrder.add(entry.key);
+                page.wifiRows.addView(row.view, new LinearLayout.LayoutParams(-1, dp(44)));
                 changed = true;
             } else if (!entry.equals(row.entry)) row.bind(entry);
         }
         page.wifiOrder.removeIf(key -> !present.contains(key));
-        boolean resized = fitWifiRows(page);
-        if (changed || resized) displayWifiRows(page, null);
+        fitWifiRows(page);
+        displayWifiRows(page, null);
         // Keep existing rows in place while signal levels change: remote focus must not jump.
-        if (restoreFocus) page.wifiAction.requestFocus();
+        if (restoreFocus) page.wifiSettings.requestFocus();
         else if (enterFirst && page.wifiRows.getChildCount() > 0) page.wifiRows.getChildAt(0).requestFocus();
         if (changed) { pagePositionsDirty = true; body.requestLayout(); }
     }
@@ -972,9 +1052,24 @@ final class ControlCenter {
         // Layout-change listeners run before View marks its first layout as complete.
         // The assigned bounds are already usable there, unlike isLaidOut().
         if (page.content.getHeight() == 0) return false;
-        int fixed = page.content.getHeight() - page.wifiRows.getHeight();
+        int fixed = page.content.getHeight() - page.wifiCarousel.getHeight();
         int available = wifiBodyHeight - pageScroll.getPaddingTop() - pageScroll.getPaddingBottom() - fixed;
-        return page.wifiViewport.fit(available, dp(44) + dp(7), page.wifiOrder.size());
+        int padding = page.wifiRows.getPaddingTop() + page.wifiRows.getPaddingBottom();
+        int pitch = dp(44);
+        boolean changed = page.wifiViewport.fit(Math.max(0, available - padding), pitch, page.wifiOrder.size());
+        int height = page.wifiViewport.end(page.wifiOrder.size()) - page.wifiViewport.first();
+        if (height > 0) {
+            View first = page.wifiRows.getChildAt(0);
+            // Focus and the fading edges share the inner gutters, outside the resting row masks.
+            height = first.getHeight() == 0 ? height * pitch + padding
+                    : page.wifiRows.getTop() + first.getBottom() + (height - 1) * pitch
+                    + page.wifiRows.getPaddingBottom();
+        }
+        if (page.wifiCarousel.getLayoutParams().height != height) {
+            page.wifiCarousel.getLayoutParams().height = height;
+            page.wifiCarousel.requestLayout();
+        }
+        return changed;
     }
 
     private void displayWifiRows(Page page, String focusKey) {
@@ -982,32 +1077,8 @@ final class ControlCenter {
             if (row.view.hasFocus()) { focusKey = row.entry.key; break; }
         int focus = focusKey == null ? -1 : page.wifiOrder.indexOf(focusKey);
         if (focus >= 0) page.wifiViewport.reveal(focus, page.wifiOrder.size());
-        int first = page.wifiViewport.first(), end = page.wifiViewport.end(page.wifiOrder.size());
-        boolean same = page.wifiRows.getChildCount() == end - first;
-        for (int i = first; same && i < end; i++)
-            same = page.wifiRows.getChildAt(i - first) == page.wifiEntries.get(page.wifiOrder.get(i)).view;
-        if (!same) {
-            // Attach the destination before removing the focused row. Detaching focus first lets
-            // Android select the first header tab, which would switch the entire page mid-navigation.
-            List<View> visible = new ArrayList<>(end - first);
-            for (int i = first; i < end; i++) {
-                View row = page.wifiEntries.get(page.wifiOrder.get(i)).view;
-                visible.add(row);
-                if (row.getParent() == null) addRow(page.wifiRows, row, 44);
-            }
-            if (focus >= first && focus < end) page.wifiEntries.get(focusKey).view.requestFocus();
-            for (int i = page.wifiRows.getChildCount() - 1; i >= 0; i--) {
-                View row = page.wifiRows.getChildAt(i);
-                if (!visible.contains(row)) {
-                    ControlBackdrop.finishAnimations(row);
-                    page.wifiRows.removeViewAt(i);
-                }
-            }
-            for (View row : visible) page.wifiRows.bringChildToFront(row);
-            pagePositionsDirty = true;
-            body.requestLayout();
-        }
-        if (focus >= first && focus < end) page.wifiEntries.get(focusKey).view.requestFocus();
+        if (focus >= 0) page.wifiEntries.get(focusKey).view.requestFocus();
+        page.wifiCarousel.moveTo(page.wifiViewport.first() * dp(44), focus >= 0);
     }
 
     private final class WifiRow {
@@ -1033,12 +1104,15 @@ final class ControlCenter {
             view.addView(state, new LinearLayout.LayoutParams(dp(14), dp(14)));
             bind(value);
             view.setBackground(material(view, 23));
+            // Unfocused offscreen rows must not cast a sliver of shadow into the viewport's padding.
+            view.setElevation(0f);
             view.setOnClickListener(v -> launch(WifiConnectionIntent.forNetwork(host, entry)));
             view.setOnKeyListener((v, key, event) -> {
                 if (key != KeyEvent.KEYCODE_DPAD_UP && key != KeyEvent.KEYCODE_DPAD_DOWN) return false;
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
                 int next = page.wifiOrder.indexOf(entry.key) + (key == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
-                if (next < 0 || next >= page.wifiOrder.size()) return false;
+                if (next < 0) { page.wifiAction.requestFocus(); return true; }
+                if (next >= page.wifiOrder.size()) return true;
                 displayWifiRows(page, page.wifiOrder.get(next));
                 return true;
             });
