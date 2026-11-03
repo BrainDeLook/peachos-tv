@@ -110,7 +110,9 @@ final class ControlBackdrop extends Drawable {
             edge[i].setStyle(Paint.Style.STROKE);
             edge[i].setStrokeWidth(widths[i] * density);
         }
-        tint.setColor(translucent ? (hasBackdrop ? 0x66211d25 : 0x80211d25) : tone);
+        // HDMI/protected surfaces may be absent from screenshots. Keep the fallback readable
+        // over live video without replacing its volume lighting or adding another capture.
+        tint.setColor(translucent ? (hasBackdrop ? 0x66211d25 : 0xc4211d25) : tone);
         tintAlpha = tint.getColor() >>> 24;
         background.setAlpha(baseAlpha);
     }

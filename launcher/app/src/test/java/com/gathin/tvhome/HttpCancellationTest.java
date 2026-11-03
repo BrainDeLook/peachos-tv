@@ -8,15 +8,13 @@ import java.io.InterruptedIOException;
 import static org.junit.Assert.*;
 
 public class HttpCancellationTest {
-    @Test public void cancelledDownloadDoesNotOpenAnAddressOrCreateAnOutput() throws Exception {
-        java.io.File output = java.io.File.createTempFile("peachos-cancelled", ".apk");
-        assertTrue(output.delete());
+    @Test public void cancelledGetDoesNotOpenAnAddress() throws Exception {
         Thread.currentThread().interrupt();
         try {
-            Http.download("invalid address", output, 100);
-            fail("Cancelled download must not start");
+            Http.get("invalid address", 100);
+            fail("Cancelled request must not start");
         } catch (InterruptedIOException expected) {
-            assertFalse(output.exists());
+            assertTrue(Thread.currentThread().isInterrupted());
         } finally {
             Thread.interrupted();
         }

@@ -14,4 +14,4 @@ adb logcat -d -s WifiFixture
 
 Checks whole AP rows at rest, top action placement, intermediate scroll positions, complete-row settling, fast forward/reverse key repeats, list boundaries, return to the Network tab and cancellation on leaving the tab. Omit `--ez selftest true` for visual inspection. The display must be awake. Uninstall com.gathin.tvhome.bench afterwards; the real launcher is a different package.
 
-The 25 native checks also cover focused masks against every clipping ancestor, both tab-strip boundaries, and directional navigation between overview columns and round shortcuts. The production build does not include this Activity or its exported manifest entry.
+The 35 native checks also cover focused masks against every clipping ancestor, both tab-strip boundaries, and directional navigation between overview columns and round shortcuts. Long-SSID checks cover motion, end pause, repeat, focus-loss cleanup, soft scrolling edges and static short names. A rendered-pixel check verifies the focused Wi-Fi glyph is dark on its white background. The production build does not include this Activity or its exported manifest entry.

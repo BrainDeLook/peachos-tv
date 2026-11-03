@@ -54,6 +54,14 @@ final class WallpaperPlayer {
     private boolean active;
     private volatile boolean closed;
     private boolean loading;
+    private long retryAfter;
+    private static final class DecodeResult {
+        static final DecodeResult UNREADABLE = new DecodeResult(null, false);
+        static final DecodeResult MEMORY_PRESSURE = new DecodeResult(null, true);
+        final Bitmap bitmap;
+        final boolean memoryPressure;
+        DecodeResult(Bitmap bitmap, boolean memoryPressure) { this.bitmap = bitmap; this.memoryPressure = memoryPressure; }
+    }
     private String displayed = "";
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
     private final TextView caption;
@@ -138,7 +146,8 @@ final class WallpaperPlayer {
     }
 
     void update() {
-        if (!active || closed || loading || files.isEmpty()) return;
+        if (!active || closed || loading || files.isEmpty()
+                || android.os.SystemClock.elapsedRealtime() < retryAfter) return;
         String previous = preferences.getString("image", "");
         // A picture outside the time of day's group (the group changed) is replaced at once, not after the interval.
         List<File> playable = playable();
@@ -151,7 +160,8 @@ final class WallpaperPlayer {
         File next = selected;
         loading = true;
         decoder.execute(() -> {
-            Bitmap bitmap = decode(next);
+            DecodeResult result = decode(next);
+            Bitmap bitmap = result.bitmap;
             if (closed) {
                 if (bitmap != null) bitmap.recycle();
                 return;
@@ -160,6 +170,13 @@ final class WallpaperPlayer {
                 loading = false;
                 if (closed || !active) {
                     if (bitmap != null) bitmap.recycle();
+                    return;
+                }
+                if (result.memoryPressure) {
+                    // Keep the file in rotation and the current texture on screen. The existing
+                    // minute tick retries later; never spin on an allocation failure.
+                    retryAfter = android.os.SystemClock.elapsedRealtime() + 60_000;
+                    Log.w("TvHome.Wallpaper", "Wallpaper allocation deferred under memory pressure");
                     return;
                 }
                 if (bitmap == null) {
@@ -245,15 +262,16 @@ final class WallpaperPlayer {
         // Dropping our reference lets Android release it when the final frame releases its own reference.
     }
 
-    private Bitmap decode(File file) {
+    private DecodeResult decode(File file) {
+        Bitmap decoded = null;
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true;
             BitmapFactory.decodeFile(file.getPath(), options);
             int width = options.outWidth, height = options.outHeight;
-            if (width <= 0 || height <= 0) return null;
+            if (width <= 0 || height <= 0) return DecodeResult.UNREADABLE;
             int sample = WallpaperSize.sampleSize(width, height, this.width, this.height);
-            if (!WallpaperSize.accepted(width / sample, height / sample)) return null;
+            if (!WallpaperSize.accepted(width / sample, height / sample)) return DecodeResult.UNREADABLE;
             options.inJustDecodeBounds = false;
             options.inSampleSize = sample;
             int[] scale = WallpaperSize.coverScale(width / sample, height / sample, this.width, this.height);
@@ -264,17 +282,26 @@ final class WallpaperPlayer {
             }
             options.inPreferredConfig = bitmapConfig;
             options.inMutable = dimColor != 0;
-            Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
-            if (decoded == null) return null;
+            decoded = BitmapFactory.decodeFile(file.getPath(), options);
+            if (decoded == null) return DecodeResult.UNREADABLE;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
-            Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
-            if (gpu == null) return decoded;
+            Bitmap gpu;
+            try { gpu = decoded.copy(Bitmap.Config.HARDWARE, false); }
+            catch (RuntimeException | OutOfMemoryError unavailableTexture) {
+                // The software bitmap is already complete and can still be displayed.
+                return new DecodeResult(decoded, false);
+            }
+            if (gpu == null) return new DecodeResult(decoded, false);
             decoded.recycle();
-            return gpu;
-        } catch (Exception | OutOfMemoryError failure) {
-            return null;
+            return new DecodeResult(gpu, false);
+        } catch (OutOfMemoryError pressure) {
+            if (decoded != null && !decoded.isRecycled()) decoded.recycle();
+            return DecodeResult.MEMORY_PRESSURE;
+        } catch (Exception unreadable) {
+            if (decoded != null && !decoded.isRecycled()) decoded.recycle();
+            return DecodeResult.UNREADABLE;
         }
     }
 }

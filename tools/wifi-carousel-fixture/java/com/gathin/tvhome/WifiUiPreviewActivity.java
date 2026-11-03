@@ -41,10 +41,10 @@ public final class WifiUiPreviewActivity extends Activity implements ControlCent
             set("closing", false);
             List<WifiAccessPoints.Observation> scan = new ArrayList<>();
             for (int i = 0; i < 32; i++) scan.add(new WifiAccessPoints.Observation(
-                    String.format(java.util.Locale.ROOT, "PeachOS Test %02d", i + 1),
+                    i==0 ? "PeachOS_Very_Long_Network_Name_01" : String.format(java.util.Locale.ROOT, "PeachOS Test %02d", i + 1),
                     "02:00:00:00:00:" + i, i % 4 == 0 ? "[ESS]" : "[WPA2-PSK-CCMP][ESS]", -50 - i));
             set("pendingWifi", new WifiScanner.Snapshot(WifiScanner.State.READY,
-                    WifiAccessPoints.build(scan, "PeachOS Test 01", "02:00:00:00:00:0"), "PeachOS Test 01"));
+                    WifiAccessPoints.build(scan, "PeachOS_Very_Long_Network_Name_01", "02:00:00:00:00:0"), "PeachOS_Very_Long_Network_Name_01"));
             Method render = ControlCenter.class.getDeclaredMethod("renderWifiNetworks");
             render.setAccessible(true); render.invoke(center);
             Field selected = ControlCenter.class.getDeclaredField("selectedTab");
@@ -111,6 +111,37 @@ public final class WifiUiPreviewActivity extends Activity implements ControlCent
             check(ui(() -> rows.getChildAt(0).hasFocus()),"enter first AP from network tab");
             Thread.sleep(300);
             check(ui(() -> focusedSurfaceFits(rows.getChildAt(0),carousel)),"focused first AP fits viewport including zoom");
+            check(ui(() -> {
+                android.graphics.drawable.Drawable signal=((android.widget.ImageView)((android.view.ViewGroup)rows.getChildAt(0)).getChildAt(0)).getDrawable();
+                android.graphics.Rect original=new android.graphics.Rect(signal.getBounds());
+                android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(100,100,android.graphics.Bitmap.Config.ARGB_8888);
+                signal.setBounds(0,0,100,100); signal.draw(new android.graphics.Canvas(bitmap));
+                int color=bitmap.getPixel(50,83); bitmap.recycle(); signal.setBounds(original);
+                return android.graphics.Color.alpha(color)>200 && android.graphics.Color.red(color)<50
+                        && android.graphics.Color.blue(color)<50;
+            }),"selected Wi-Fi glyph renders dark on white focus");
+            WifiNameView name=ui(() -> (WifiNameView)((android.view.ViewGroup)rows.getChildAt(0)).getChildAt(1));
+            Thread.sleep(1100);
+            check(ui(name::getScrollX)>0,"focused long SSID scrolls");
+            check(ui(() -> name.isHorizontalFadingEdgeEnabled() && name.getLeftFadingEdgeStrength()>0f
+                    && name.getRightFadingEdgeStrength()>0f),"moving SSID fades at both hidden edges");
+            android.animation.ValueAnimator textMotion=ui(() -> (android.animation.ValueAnimator)field(name,"motion"));
+            long remaining=ui(() -> textMotion.getDuration()-textMotion.getCurrentPlayTime());
+            Thread.sleep(Math.max(0,remaining)+100);
+            int end=ui(name::getScrollX);
+            check(end>0 && !ui(textMotion::isRunning),"SSID reaches its end");
+            Thread.sleep(300);
+            check(ui(name::getScrollX)==end,"SSID pauses at its end");
+            Thread.sleep(1000);
+            check(ui(name::getScrollX)==0,"SSID repeats from its beginning");
+            key(KeyEvent.KEYCODE_DPAD_DOWN);
+            check(ui(() -> name.getScrollX()==0 && name.getEllipsize()==android.text.TextUtils.TruncateAt.END),"losing focus restores ellipsis and origin");
+            check(ui(() -> !name.isHorizontalFadingEdgeEnabled()),"unfocused SSID disables edge compositing");
+            WifiNameView shortName=ui(() -> (WifiNameView)((android.view.ViewGroup)rows.getChildAt(1)).getChildAt(1));
+            Thread.sleep(800);
+            check(ui(() -> shortName.getScrollX()==0 && field(shortName,"motion")==null),"short SSID allocates no animator");
+            check(ui(() -> !textMotion.isRunning()),"unfocused SSID has no active animator");
+            key(KeyEvent.KEYCODE_DPAD_UP);
             for(int i=0;i<capacity;i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
             int early=ui(carousel::getScrollY);
             Thread.sleep(50);

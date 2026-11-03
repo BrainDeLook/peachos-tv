@@ -38,10 +38,16 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def destroy_ui(self, root):
+        root.update_idletasks()
+        for callback in root.tk.call('after', 'info'):
+            root.after_cancel(callback)
+        root.destroy()
+
     def test_optional_module_ui_is_unchecked_and_absent_feature_is_disabled(self):
         with tempfile.TemporaryDirectory() as folder, patch('wizard.ASSETS', Path(folder)):
             root = tk.Tk(); root.withdraw()
-            self.addCleanup(root.destroy)
+            self.addCleanup(self.destroy_ui, root)
             wizard = Wizard(root)
             self.assertIsNone(wizard.airplay_module)
             self.assertFalse(wizard.airplay.get())
@@ -54,7 +60,7 @@ class SetupTests(unittest.TestCase):
                 archive.writestr('AndroidManifest.xml', b'test')
                 archive.writestr('lib/armeabi-v7a/libairplay.so', b'lib')
             root = tk.Tk(); root.withdraw()
-            self.addCleanup(root.destroy)
+            self.addCleanup(self.destroy_ui, root)
             wizard = Wizard(root)
             self.assertFalse(wizard.airplay.get())
             wizard.airplay.set(True)
@@ -243,6 +249,8 @@ class SetupTests(unittest.TestCase):
         wizard.selected = set()
         wizard.device = device()
         wizard.expert = Mock(); wizard.expert.get.return_value = False
+        wizard.clean = Mock(); wizard.clean.get.return_value = False
+        wizard.cleanup_summary = Mock()
         wizard.status, wizard.tree, wizard.refresh = Mock(), Mock(), Mock()
         wizard.toggle_package('com.miui.tv.analytics')
         wizard.tree.set.assert_called_once_with('com.miui.tv.analytics', 'check', '☑')
@@ -251,6 +259,44 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(set(), wizard.selected)
         wizard.tree.set.assert_called_with('com.miui.tv.analytics', 'check', '☐')
         wizard.tree.delete.assert_not_called()
+
+    def test_cleanup_summary_keeps_selected_packages_distinct_from_enabled_cleanup(self):
+        wizard = Wizard.__new__(Wizard)
+        wizard.device = device()
+        wizard.selected = {'com.test.first', 'com.test.second'}
+        wizard.clean = Mock(); wizard.clean.get.return_value = False
+        wizard.expert = Mock(); wizard.expert.get.return_value = False
+        wizard.cleanup_summary, wizard.status = Mock(), Mock()
+        wizard.selection_summary()
+        self.assertIn('Выбрано: 2', wizard.cleanup_summary.set.call_args.args[0])
+        self.assertIn('не будут изменены', wizard.cleanup_summary.set.call_args.args[0])
+        self.assertIn('очистка выключена', wizard.status.set.call_args.args[0])
+
+    def test_cleanup_summary_explains_confirmation_before_active_cleanup(self):
+        wizard = Wizard.__new__(Wizard)
+        wizard.device = device()
+        wizard.selected = {'com.test.first', 'com.test.second'}
+        wizard.clean = Mock(); wizard.clean.get.return_value = True
+        wizard.expert = Mock(); wizard.expert.get.return_value = False
+        wizard.cleanup_summary, wizard.status = Mock(), Mock()
+        wizard.selection_summary()
+        self.assertIn('Будет отключено: 2', wizard.cleanup_summary.set.call_args.args[0])
+        self.assertIn('после подтверждения плана', wizard.cleanup_summary.set.call_args.args[0])
+        self.assertIn('К отключению: 2', wizard.status.set.call_args.args[0])
+
+    def test_cleanup_summary_keeps_expert_warning_visible_with_cleanup_on_or_off(self):
+        wizard = Wizard.__new__(Wizard)
+        wizard.device = device()
+        wizard.selected = set()
+        wizard.clean, wizard.expert = Mock(), Mock()
+        wizard.expert.get.return_value = True
+        wizard.cleanup_summary, wizard.status = Mock(), Mock()
+        for enabled in (False, True):
+            with self.subTest(cleanup=enabled):
+                wizard.clean.get.return_value = enabled
+                wizard.selection_summary()
+                self.assertIn('Экспертный режим.', wizard.status.set.call_args.args[0])
+                self.assertIn('план', wizard.status.set.call_args.args[0])
 
     def test_portable_adb_hashes_streams_and_preserves_unchanged_cached_executable(self):
         with tempfile.TemporaryDirectory() as folder:

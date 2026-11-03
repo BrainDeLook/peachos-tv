@@ -1085,7 +1085,7 @@ final class ControlCenter {
         final LinearLayout view = horizontal();
         final ImageView signal = new ImageView(host);
         final WifiSignal signalDrawable = new WifiSignal();
-        final TextView label;
+        final WifiNameView label;
         final ImageView state = new ImageView(host);
         WifiAccessPoints.Entry entry;
 
@@ -1096,8 +1096,9 @@ final class ControlCenter {
             signal.setImageTintList(android.content.res.ColorStateList.valueOf(0xff58b2ff));
             signal.setImageDrawable(signalDrawable);
             view.addView(signal, new LinearLayout.LayoutParams(dp(20), dp(20)));
-            label = text(value.ssid, 12, 0xe6ffffff);
-            label.setMaxLines(1); label.setEllipsize(TextUtils.TruncateAt.END);
+            label = new WifiNameView(host, animate && !reduced);
+            label.setTypeface(medium); label.setIncludeFontPadding(false);
+            label.setTextSize(12); label.setTextColor(0xe6ffffff); label.setText(value.ssid);
             LinearLayout.LayoutParams title = new LinearLayout.LayoutParams(0, -2, 1);
             title.setMarginStart(dp(9)); title.setMarginEnd(dp(7)); view.addView(label, title);
             state.setImageTintList(android.content.res.ColorStateList.valueOf(0xbfffffff));
@@ -1107,6 +1108,7 @@ final class ControlCenter {
             // Unfocused offscreen rows must not cast a sliver of shadow into the viewport's padding.
             view.setElevation(0f);
             view.setOnClickListener(v -> launch(WifiConnectionIntent.forNetwork(host, entry)));
+            view.setOnFocusChangeListener((v, focused) -> label.setReading(focused));
             view.setOnKeyListener((v, key, event) -> {
                 if (key != KeyEvent.KEYCODE_DPAD_UP && key != KeyEvent.KEYCODE_DPAD_DOWN) return false;
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
@@ -1131,6 +1133,7 @@ final class ControlCenter {
     private static final class WifiSignal extends Drawable {
         private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.RectF arc = new android.graphics.RectF();
+        private android.content.res.ColorStateList tint = android.content.res.ColorStateList.valueOf(Color.WHITE);
         private int bars = -1, alpha = 255;
         WifiSignal() { paint.setStrokeCap(android.graphics.Paint.Cap.ROUND); }
         void setBars(int value) { if (bars != value) { bars = value; invalidateSelf(); } }
@@ -1138,7 +1141,8 @@ final class ControlCenter {
             Rect bounds = getBounds();
             float unit = Math.min(bounds.width(), bounds.height()) / 24f;
             canvas.save(); canvas.translate(bounds.left, bounds.top); canvas.scale(unit, unit);
-            paint.setColor(Color.WHITE); paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(2.4f);
+            paint.setColor(tint.getColorForState(getState(), tint.getDefaultColor()));
+            paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(2.4f);
             for (int i = 1; i <= 3; i++) {
                 float radius = 3 + i * 4;
                 arc.set(12 - radius, 21 - radius, 12 + radius, 21 + radius);
@@ -1149,6 +1153,12 @@ final class ControlCenter {
             canvas.drawCircle(12, 20, 1.6f, paint); canvas.restore();
         }
         @Override public void setAlpha(int value) { if (alpha != value) { alpha = value; invalidateSelf(); } }
+        @Override public void setTintList(android.content.res.ColorStateList value) {
+            tint = value == null ? android.content.res.ColorStateList.valueOf(Color.WHITE) : value;
+            invalidateSelf();
+        }
+        @Override public boolean isStateful() { return tint.isStateful(); }
+        @Override protected boolean onStateChange(int[] states) { invalidateSelf(); return true; }
         @Override public void setColorFilter(android.graphics.ColorFilter value) { paint.setColorFilter(value); invalidateSelf(); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }

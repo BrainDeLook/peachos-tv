@@ -341,6 +341,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private RecyclerView.OnScrollListener pendingFocusScroll;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean networkCallbackRegistered, vpnCallbackRegistered;
     private final Runnable refreshNetworkPill = () -> {
         if (started && !isDestroyed()) updateWifiLabel();
     };
@@ -370,18 +371,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             if (validated == lastValidated) return;
             lastValidated = validated;
             if (wifiNoInternetTint != null) scheduleNetworkRefresh();
-        }
-    };
-    /** Shows the Inputs pill once the TV registers an input: at boot HDMI inputs can appear after Home is shown. */
-    private final TvInputManager.TvInputCallback inputCallback = new TvInputManager.TvInputCallback() {
-        @Override
-        public void onInputAdded(String inputId) {
-            updateInputsButton();
-        }
-
-        @Override
-        public void onInputRemoved(String inputId) {
-            updateInputsButton();
         }
     };
     /** Listens for any VPN coming up or going down, even one this app's traffic is excluded from. */
@@ -895,7 +884,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         btnInputs.getLayoutParams().height = Math.round(24 * density);
         ((LinearLayout.LayoutParams) btnInputs.getLayoutParams()).setMarginStart(Math.round(5 * density));
         btnInputs.setPaddingRelative(Math.round(4 * density), 0, Math.round(4 * density), 0);
-        updateInputsButton();
+        btnInputs.setVisibility(View.GONE);
         makeIconOnly((TextView) btnSettings);
         btnSettings.setContentDescription(getString(R.string.settings));
         btnSettings.setBackgroundResource(R.drawable.compact_settings_bg);
@@ -968,14 +957,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         }
 
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
-        if (tim != null) tim.registerCallback(inputCallback, handler);
         if (cm != null) {
-            cm.registerDefaultNetworkCallback(networkCallback);
-            cm.registerNetworkCallback(new NetworkRequest.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
-                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                    .build(), vpnCallback);
+            try {
+                cm.registerDefaultNetworkCallback(networkCallback);
+                networkCallbackRegistered = true;
+            } catch (RuntimeException unavailable) {
+                android.util.Log.w("PeachNetwork", "Default network observer unavailable", unavailable);
+            }
+            try {
+                cm.registerNetworkCallback(new NetworkRequest.Builder()
+                        .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+                        .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                        .build(), vpnCallback);
+                vpnCallbackRegistered = true;
+            } catch (RuntimeException unavailable) {
+                android.util.Log.w("PeachNetwork", "VPN observer unavailable", unavailable);
+            }
         }
         // Not after recreate(): the launch intent survives it and would open the settings again.
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())
@@ -1133,15 +1130,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (playAppReturn && navigationSound != null) navigationSound.playReturn();
         updateGreeting();
         updateRace();
-        // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
-        // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
-        // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
-        // on Home, so after the first resume it runs once that frame is drawn.
+        // Refresh a visible network control after the first frame back. The compact header's
+        // hidden legacy pill needs neither binder queries nor an extra draw traversal.
         if (pillsShown) {
             refreshPillsAfterNextDraw();
         } else {
             updateWifiLabel();
-            updateInputsButton();
             pillsShown = true;
         }
         if (showStats) startStats();
@@ -1551,11 +1545,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
-        if (tim != null) tim.unregisterCallback(inputCallback);
         if (cm != null) {
-            cm.unregisterNetworkCallback(networkCallback);
-            cm.unregisterNetworkCallback(vpnCallback);
+            if (networkCallbackRegistered) {
+                networkCallbackRegistered = false;
+                try { cm.unregisterNetworkCallback(networkCallback); }
+                catch (RuntimeException unavailable) {
+                    android.util.Log.w("PeachNetwork", "Default network observer release failed", unavailable);
+                }
+            }
+            if (vpnCallbackRegistered) {
+                vpnCallbackRegistered = false;
+                try { cm.unregisterNetworkCallback(vpnCallback); }
+                catch (RuntimeException unavailable) {
+                    android.util.Log.w("PeachNetwork", "VPN observer release failed", unavailable);
+                }
+            }
         }
         handler.removeCallbacksAndMessages(null);
     }
@@ -2960,6 +2964,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     }
 
     private void refreshPillsAfterNextDraw() {
+        if (btnWifi.getVisibility() == View.GONE && controlCenter == null) return;
         root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
             @Override
             public boolean onPreDraw() {
@@ -2969,7 +2974,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
                 handler.post(() -> {
                     if (isDestroyed()) return;
                     updateWifiLabel();
-                    updateInputsButton();
                 });
                 return true;
             }
@@ -2980,6 +2984,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
     private void updateWifiLabel() {
         if (controlCenter != null) controlCenter.refreshNetwork();
+        if (btnWifi.getVisibility() == View.GONE) return;
         String text = getString(R.string.wifi);
         boolean vpn = false, online = false, validated = false;
         int icon = R.drawable.ic_wifi;

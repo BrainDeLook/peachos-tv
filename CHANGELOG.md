@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.5.11 — 2026-11-03
+
+### Русский
+
+- Переработан Windows-установщик: интерфейс с карточками, понятный основной сценарий и расширенный режим с боковой навигацией. Добавлена опциональная тёмная тема с сохранением выбора. Прокручиваемые страницы сохраняют доступ к параметрам в небольшом окне и при увеличенном масштабе Windows.
+- План начинается с короткого итога; подробности и список пакетов раскрываются отдельно. При выполнении настройки блокируются, после успеха показывается результат без повторного подключения. Экспертный режим остаётся отдельным и выключенным по умолчанию; прежние проверки устройства, резервные копии и подтверждения сохранены.
+- После ошибки мастер сбрасывает снимок устройства и требует переподключения перед следующим планом. Проверки установщика: 59 тестов, включая нативный Tk, смену темы, малое окно, неизменяемый план и обработку ошибок.
+- Улучшена читаемость кнопок панели поверх HDMI на TCL, когда прошивка не позволяет захватить фон. Материал на Home и при доступном захвате не менялся.
+- Длинное название выбранной Wi-Fi-точки плавно прокручивается с мягкими краями, паузой в конце и повтором. У остальных строк остаётся троеточие; исправлен цвет значка на белом выделении. Уменьшенное движение сохраняет статичный текст.
+- Повышена устойчивость регистрации сетевых наблюдателей. Убраны запросы скрытых кнопок сети и источников, а также лишний проход отрисовки при возврате на Home.
+- TMDB-кэш ограничен 512 записями, просроченные и повреждённые значения очищаются без постоянного таймера. Нехватка памяти больше не исключает обои из ротации; неудачная аппаратная копия сохраняет готовое изображение.
+- Обновлены APK, portable EXE и исходники. Опциональный AirPlay остаётся прежним preview-модулем, выключенным по умолчанию в установщике.
+
+Проверки лаунчера: release build/lint, 313 JVM-тестов, 73 проверки отказов сетевых API/декодирования, 718 проверок сетевого статуса и 35 нативных сценариев интерфейса на Homatics; исправления HDMI проверены пользователем на TCL. Гарантия роста FPS не заявляется. Синхронная перестройка каталога при перемещении приложений, диагностические логи и хранение Plex-токенов не менялись.
+
+### English
+
+- Redesigned the Windows installer with a card-based interface, a clear default workflow and sidebar navigation in advanced mode. Added an optional dark theme with a saved preference. Scrollable pages keep options accessible in smaller windows and at increased Windows display scaling.
+- Plans now begin with a concise summary and expandable technical details. Controls are locked while work is running; completion shows a result instead of reconnecting automatically. Expert mode remains separate and off by default, with existing device checks, backups and confirmations preserved.
+- After an error, the wizard discards the device snapshot and requires reconnection before another plan. Installer validation: 59 tests covering native Tk, theme changes, narrow windows, immutable plans and error recovery.
+- Improved Control Center button readability over HDMI on TCL when the firmware cannot capture the background. Home and successfully captured materials are unchanged.
+- Long selected Wi-Fi names scroll with soft edge fades, an end pause and repeat. Unfocused rows retain ellipsis; fixed the glyph tint on white selection. Reduced motion keeps text static.
+- Hardened network-observer registration and release. Removed redundant queries for hidden network/input controls and an unnecessary draw traversal on return to Home.
+- Bounded TMDB caching to 512 entries, with lazy expiry/corruption cleanup and no permanent timer. Allocation pressure no longer removes wallpapers from rotation; failed hardware copies preserve the decoded image.
+- Updated the launcher APK, portable EXE and source archive. Optional AirPlay remains the same preview receiver and is unchecked by default in the installer.
+
+Launcher validation: release build/lint, 313 JVM tests, 73 network/decode fault-injection checks, 718 transport-status checks and 35 native UI scenarios on Homatics. The HDMI fallback was user-verified on TCL. No measured FPS gain is claimed. Synchronous reorder catalogue loading, diagnostic logs and Plex-token storage are unchanged.
+
 ## 1.5.10 — 2026-11-03
 
 ### Русский

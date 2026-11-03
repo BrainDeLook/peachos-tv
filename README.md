@@ -104,7 +104,7 @@ These commands do not debloat the device or disable its original launcher. Firmw
 
 ## Optional PC setup wizard
 
-Download the single portable **PeachOS-TV-Setup-Portable.exe** from the [latest release](https://github.com/BrainDeLook/peachos-tv/releases/latest). ADB, the launcher APK and its runtime are included. The [Windows wizard](tools/pc-setup/README.ru.md) opens in simple mode: connect, review, install or update. Cleanup is optional and off by default. Existing users can choose an update-only plan that preserves Home and disables no packages. The normal APK remains independent.
+Download the single portable **PeachOS-TV-Setup-Portable.exe** from the [latest release](https://github.com/BrainDeLook/peachos-tv/releases/latest). ADB, the launcher APK and its runtime are included. The [Windows wizard](tools/pc-setup/README.ru.md) opens in simple mode: connect, review, install or update. A card-based layout with optional, remembered dark mode separates the main workflow from advanced options; the advanced sidebar groups Device, Apps, Cleanup and Backups. Plans show a concise summary with expandable details. Cleanup is optional and off by default. Existing users can choose an update-only plan that preserves Home and disables no packages. The normal APK remains independent.
 
 The advanced wizard supports multiple local APKs, manual package selection, retained features, backups and restoration. It includes 116 described candidates and a reference index of 1,403 package names from 260 CleanYourTV device lists. References from other devices do not establish safety on yours. Normal mode protects unknown and critical packages; a separate expert toggle permits installed-package selection after explicit warnings. Firmware restrictions remain, and disabling ADB or system components can make recovery impossible. See the wizard guide for supported profiles and limits.
 
@@ -134,7 +134,7 @@ Release APKs currently use the project's original local debug signing certificat
 - **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
 - **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
 
-306 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
+313 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
 
 ## Credits and license
 

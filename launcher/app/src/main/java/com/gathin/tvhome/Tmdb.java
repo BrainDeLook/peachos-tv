@@ -28,12 +28,11 @@ final class Tmdb implements TitleArt {
     private static final String BACKDROPS = "https://image.tmdb.org/t/p/original";
     private static final String LOGOS = "https://image.tmdb.org/t/p/w500";
     private static final int CHOICES = 4;   // best few textless backdrops per title, picked at random
-    private static final long FOUND_MS = 30L * 24 * 60 * 60 * 1000;
-    private static final long MISSING_MS = 3L * 24 * 60 * 60 * 1000;   // retry unmatched titles sooner
 
     private final VibeSettings settings;
     private final SharedPreferences cache;
     private final Random random = new Random();
+    private long nextPrune;
 
     Tmdb(Context context) {
         settings = new VibeSettings(context);
@@ -49,12 +48,18 @@ final class Tmdb implements TitleArt {
         String key = TitleArt.normalize(title);
         if (key.isEmpty() || !enabled()) return null;
         // Remembered as "time|backdrop paths|logo path"; entries from before logos are looked up again.
-        String[] cached = cache.getString(key, "").split("\\|", -1);
         long now = System.currentTimeMillis();
-        if (cached.length == 3) {
-            long age = now - Long.parseLong(cached[0]);
-            if (age < (cached[1].isEmpty() ? MISSING_MS : FOUND_MS)) return art(cached[1], cached[2]);
+        long uptime = android.os.SystemClock.elapsedRealtime();
+        if (uptime >= nextPrune) {
+            prune(now);
+            nextPrune = uptime + TmdbCache.DAY_MS;
         }
+        String raw;
+        try { raw = cache.getString(key, null); }
+        catch (ClassCastException invalidType) { cache.edit().remove(key).apply(); raw = null; }
+        TmdbCache.Entry cached = TmdbCache.parse(raw, now);
+        if (cached != null) return art(cached.paths, cached.logo);
+        if (raw != null) cache.edit().remove(key).apply();
         String[] found;
         try {
             found = find(title, key);
@@ -62,7 +67,16 @@ final class Tmdb implements TitleArt {
             return null;   // offline or a bad key: don't remember, try again next time
         }
         cache.edit().putString(key, now + "|" + found[0] + "|" + found[1]).apply();
+        if (cache.getAll().size() > TmdbCache.MAX_ENTRIES) prune(now);
         return art(found[0], found[1]);
+    }
+
+    private void prune(long now) {
+        List<String> remove = TmdbCache.evictions(cache.getAll(), now);
+        if (remove.isEmpty()) return;
+        SharedPreferences.Editor editor = cache.edit();
+        for (String key : remove) editor.remove(key);
+        editor.apply();
     }
 
     private Art art(String paths, String logo) {
