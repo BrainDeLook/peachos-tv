@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.14-preview — Unreleased
+## 1.5.14 — 2026-11-05
 
 ### Русский
 
@@ -8,11 +8,15 @@
 - На время обучения запрашивается фильтрация кнопок и после завершения восстанавливается обычный режим. Проверка отмены обучения добавлена в JVM-тесты.
 - На Homatics Box R 4K Plus восстановлена выключенная служба; владелец подтвердил удержание Settings и обучение физической кнопки. Код громкости не менялся. Другие прошивки требуют отдельной проверки.
 
+Проверки: release build/lint, 326 JVM-тестов лаунчера, 99 тестов установщика, самопроверка portable EXE. После удаления приложения системное разрешение службы пульта нужно выдать заново; повторная чистая установка владельцем ещё не проверена. База очистки и модуль AirPlay не менялись.
+
 ### English
 
 - Check the remote helper before Settings-hold setup and key learning. If disconnected, explain the requirement and offer system accessibility settings rather than waiting for an undeliverable key.
 - Request key filtering during learning and restore the ordinary policy afterward. Add a JVM regression for cancelling learning.
 - Restore the disabled helper on Homatics Box R 4K Plus; the owner confirms physical Settings hold and learning. Volume handling is unchanged. Other firmware still requires device validation.
+
+Validation: release build/lint, 326 launcher JVM tests, 99 installer tests and portable EXE self-test. Uninstalling clears the helper permission, which must be granted again. Owner testing of a fresh reinstall is still pending. Cleanup rules and the AirPlay module are unchanged.
 
 ## 1.5.13 — 2026-11-05
 
