@@ -410,10 +410,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         for (int i = 0; i < visible; i++) {
             if (Thread.currentThread().isInterrupted()) throw new CancellationException();
             Entry entry = fresh.get(i);
+            // The first focus starts the tile spring. Sample its existing artwork here, before
+            // publication, rather than creating a software bitmap during that UI frame.
+            if (entry.kind != Entry.EMPTY && entry.ambient == 0) {
+                entry.ambient = uniformTiles && entry.banner == null ? dominantColor(entry.icon)
+                        : vividColor(entry.banner != null ? entry.banner : entry.icon);
+            }
             // Resolve uniform fills before publishing the catalogue. First binding must not rasterize
             // and sample every visible icon on the UI thread; the resulting colours are unchanged.
             if (uniformTiles && entry.banner == null && entry.kind != Entry.EMPTY) {
-                if (entry.ambient == 0) entry.ambient = dominantColor(entry.icon);
                 entry.backdrop = backdrop(entry.icon, entry.ambient);
             }
             Drawable art = entry.banner != null ? entry.banner : entry.icon;

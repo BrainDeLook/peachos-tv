@@ -30,21 +30,21 @@ final class ShelfImages {
     void stats() { Log.i("ShelfImages", "network=" + network + " diskHits=" + diskHits + " memoryHits=" + memoryHits); }
 
     Bitmap load(String url) {
-        Bitmap bitmap = memory.get(url);
-        if (bitmap != null) { memoryHits.incrementAndGet(); return bitmap; }
-        Long failed = failures.get(url);
-        if (failed != null && android.os.SystemClock.elapsedRealtime() - failed < 60_000) return null;
-        byte[] cached = disk.get(url, System.currentTimeMillis());
-        if (cached != null) {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inPreferredConfig = Bitmap.Config.RGB_565;
-            bitmap = BitmapFactory.decodeByteArray(cached, 0, cached.length, options);
-            if (bitmap != null) {
-                bitmap.prepareToDraw();
-                diskHits.incrementAndGet(); memory.put(url, bitmap); return bitmap;
-            }
-        }
         try {
+            Bitmap bitmap = memory.get(url);
+            if (bitmap != null) { memoryHits.incrementAndGet(); return bitmap; }
+            Long failed = failures.get(url);
+            if (failed != null && android.os.SystemClock.elapsedRealtime() - failed < 60_000) return null;
+            byte[] cached = disk.get(url, System.currentTimeMillis());
+            if (cached != null) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inPreferredConfig = Bitmap.Config.RGB_565;
+                bitmap = BitmapFactory.decodeByteArray(cached, 0, cached.length, options);
+                if (bitmap != null) {
+                    bitmap.prepareToDraw();
+                    diskHits.incrementAndGet(); memory.put(url, bitmap); return bitmap;
+                }
+            }
             byte[] bytes;
             if (url.startsWith("https://") || url.startsWith("http://")) {
                 network.incrementAndGet();
@@ -77,6 +77,13 @@ final class ShelfImages {
             bitmap.prepareToDraw();
             memory.put(url, bitmap);
             return bitmap;
+        } catch (OutOfMemoryError pressure) {
+            // A compressed-size limit cannot guarantee that decoding/uploading succeeds under
+            // process memory pressure. Release only our LRU references; visible posters still own
+            // their bitmaps. Return normally so TopShelf clears this request's loading flag.
+            memory.evictAll();
+            Log.w("ShelfImages", "Thumbnail deferred under memory pressure");
+            return null;
         } catch (Exception e) {
             if (!Thread.currentThread().isInterrupted()) failures.put(url, android.os.SystemClock.elapsedRealtime());
             // Hosts only: private artwork URLs may include credentials.

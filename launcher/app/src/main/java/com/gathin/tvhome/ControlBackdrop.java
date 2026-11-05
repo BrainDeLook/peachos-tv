@@ -318,6 +318,18 @@ final class ControlBackdrop extends Drawable {
         ContinuousCorners.set(mask, bounds.left, bounds.top, bounds.right, bounds.bottom, radius);
         if (translucent && !hasBackdrop) background.setShader(new LinearGradient(bounds.left, bounds.top, bounds.left, bounds.bottom,
                 0x10ffffff, 0x0affffff, Shader.TileMode.CLAMP));
+        lightingLeft = area.left; lightingTop = area.top;
+        lighting = null;
+        int width = area.width(), height = area.height();
+        // Cached overlay layers already contain these gradients. Reopening the same geometry
+        // only needs its new mask/position, not four unused shader objects and their stop arrays.
+        LightingKey key = translucent && width > 0 && height > 0
+                && (long) width * height <= MAX_LIGHTING_ENTRY_BYTES / (4 + 5)
+                ? new LightingKey(width, height, density, radius) : null;
+        if (key != null) {
+            lighting = LIGHTING_CACHE.get(key);
+            if (lighting != null) return;
+        }
         surface.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
                 new int[]{0x20ffffff, 0x07ffffff, 0x02ffffff, 0x08000000},
                 new float[]{0, .32f, .68f, 1}, Shader.TileMode.CLAMP));
@@ -332,20 +344,15 @@ final class ControlBackdrop extends Drawable {
                 new int[]{0xa8ffffff, 0x22ffffff, 0x06ffffff, 0x60ffffff},
                 new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP);
         for (Paint paint : edge) paint.setShader(light);
-        lightingLeft = area.left; lightingTop = area.top;
         // Home retains its existing GPU material. Only the in-app window avoids compiling six
         // clipped-gradient GPU programs during its first visible frame.
-        lighting = translucent ? prepareLighting(area) : null;
+        if (key != null) lighting = prepareLighting(area, key);
     }
 
-    private Lighting prepareLighting(Rect area) {
-        int width = area.width(), height = area.height();
+    private Lighting prepareLighting(Rect area, LightingKey key) {
+        int width = key.width, height = key.height;
         // Only the surface mixes white and black. The five other layers have a constant RGB
         // colour, so alpha masks preserve their gradients at one byte per pixel instead of four.
-        if (width <= 0 || height <= 0 || (long) width * height > MAX_LIGHTING_ENTRY_BYTES / (4 + 5)) return null;
-        LightingKey key = new LightingKey(width, height, density, radius);
-        Lighting cached = LIGHTING_CACHE.get(key);
-        if (cached != null) return cached;
         long started = android.os.SystemClock.uptimeMillis();
         Paint[] source = {surface, focus, shade, edge[0], edge[1], edge[2]};
         Bitmap[] layers = new Bitmap[source.length];

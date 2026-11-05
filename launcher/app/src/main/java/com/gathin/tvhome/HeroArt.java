@@ -41,9 +41,10 @@ final class HeroArt {
         small.getPixels(px, 0, W, 0, 0, W, H);
         saturate(px);
         // Three box passes approximate a gaussian, so the stretched image shows no seams between pixels.
+        int[] scratch = new int[px.length];
         for (int pass = 0; pass < 3; pass++) {
-            px = boxBlur(px, W, H, 2, true);
-            px = boxBlur(px, W, H, 2, false);
+            boxBlur(px, scratch, W, H, 2, true);
+            boxBlur(scratch, px, W, H, 2, false);
         }
         Bitmap out = small.isMutable() ? small : small.copy(Bitmap.Config.ARGB_8888, true);
         if (out != small) small.recycle();
@@ -66,22 +67,28 @@ final class HeroArt {
     }
 
     /** One box blur pass along rows (horizontal) or columns, edges clamped. */
-    private static int[] boxBlur(int[] src, int w, int h, int radius, boolean horizontal) {
-        int[] dst = new int[src.length];
+    static void boxBlur(int[] src, int[] dst, int w, int h, int radius, boolean horizontal) {
         int lines = horizontal ? h : w, length = horizontal ? w : h, span = 2 * radius + 1;
         for (int line = 0; line < lines; line++) {
+            int r = 0, g = 0, b = 0;
+            for (int k = -radius; k <= radius; k++) {
+                int j = Math.max(0, Math.min(length - 1, k));
+                int p = horizontal ? src[line * w + j] : src[j * w + line];
+                r += p >>> 16 & 255;
+                g += p >>> 8 & 255;
+                b += p & 255;
+            }
             for (int i = 0; i < length; i++) {
-                int r = 0, g = 0, b = 0;
-                for (int k = -radius; k <= radius; k++) {
-                    int j = Math.max(0, Math.min(length - 1, i + k));
-                    int p = horizontal ? src[line * w + j] : src[j * w + line];
-                    r += Color.red(p);
-                    g += Color.green(p);
-                    b += Color.blue(p);
-                }
-                dst[horizontal ? line * w + i : i * w + line] = Color.rgb(r / span, g / span, b / span);
+                dst[horizontal ? line * w + i : i * w + line] =
+                        0xff000000 | (r / span << 16) | (g / span << 8) | b / span;
+                // Slide the same clamped window by one pixel instead of reading all five taps again.
+                int left = Math.max(0, i - radius), right = Math.min(length - 1, i + radius + 1);
+                int removed = horizontal ? src[line * w + left] : src[left * w + line];
+                int added = horizontal ? src[line * w + right] : src[right * w + line];
+                r += (added >>> 16 & 255) - (removed >>> 16 & 255);
+                g += (added >>> 8 & 255) - (removed >>> 8 & 255);
+                b += (added & 255) - (removed & 255);
             }
         }
-        return dst;
     }
 }
