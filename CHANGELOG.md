@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.5.16 — 2026-11-06
+
+### Русский
+
+- Повышена устойчивость каналов и постеров на разных прошивках: различаются отказ разрешения, отсутствие провайдера/таблицы и временный сбой; отказ одного источника не скрывает остальные. Ошибки наблюдателей и нехватка памяти при декодировании миниатюр обрабатываются без падения Home.
+- Службы пульта согласуют обработку событий без двойного запуска действий, отменяют незавершённые жесты при отключении экрана/устройства и точнее сопоставляют vendor-кнопки Settings. Настройки показывают фактическую готовность службы. Удержание Settings поверх приложений/HDMI сохранено; глобальный перехват и программный повтор громкости не включаются автоматически.
+- Home и overlay используют общий каталог входов с локальной обработкой ошибок TIF, названиями CEC и вариантами OEM. Сетевой статус следует активному маршруту; неактивный Ethernet не скрывает действующий Wi-Fi. Улучшены проверка и резервный запуск системных настроек.
+- Мастер Windows надёжнее проверяет назначение Home и выполняет частичное восстановление после удаления APK/ошибки службы. Учитываются более поздний выбор Home, роль, новая установка и зависимости службы; неполное восстановление явно отражается в журнале. Физическая Home не объявляется проверенной по одному ответу ADB Success.
+- Расчёт цвета видимых иконок перенесён на поток каталога; освещение панели использует готовые слои без повторного создания градиентов. Размытие HeroArt использует меньше временных массивов с прежним результатом пиксель в пиксель. Визуал, пружины и лимиты кэшей сохранены.
+- На Homatics проверены док, нижний ряд, горизонтальные/вертикальные постеры, 12 повторных открытий панели и физический Settings поверх Lampa. В прогретых сценариях сохранён медианный интервал около16,68 мс; значительный рост FPS не установлен. Первое открытие остаётся тяжелее повторного. После12 открытий панели число View не выросло; владелец подтвердил стекло.
+
+Проверки: 357 JVM-тестов, 109 тестов установщика, 82 новые проверки фактических методов; release build/R8/lint и portable EXE self-test. Модуль AirPlay и база очистки не менялись. Аппаратная проверка на Homatics относится к preview2 с тем же кодом приложения; стабильная версия меняет только номер сборки. Универсальная проверка всех OEM и загрузки Android не заявляется.
+
+### English
+
+- Harden channel/poster access across firmware: distinguish permission, provider/table availability and transient failures; keep independent sources working. Contain observer failures and thumbnail allocation errors instead of crashing Home.
+- Coordinate legacy remote services to avoid duplicate actions, cancel abandoned gestures on screen/device lifecycle changes, improve vendor Settings matching and report effective helper readiness. Preserve Settings hold over apps/HDMI; do not automatically enable global filtering or software volume repeat.
+- Share input discovery between Home and overlay, retaining CEC labels/OEM fallbacks while isolating TIF failures. Follow the active network route so inactive Ethernet does not hide working Wi-Fi. Improve system-settings resolution and launch fallbacks.
+- Make Windows Home verification and partial recovery more reliable after APK removal/helper failures. Preserve later Home/role choices, installation generations and service dependencies; report incomplete restoration. ADB Success alone never proves the physical Home key works.
+- Prepare visible icon colours on the catalogue worker, reuse cached panel lighting without rebuilding gradients, and reduce HeroArt temporary buffers with pixel-identical blur output. Preserve visuals, springs and cache limits.
+- Exercise dock/grid/poster navigation, 12 repeated panel openings and physical Settings over Lampa on Homatics. Warm presentation intervals remain around16.68 ms median; a substantial FPS gain is not established. First openings still cost more. View counts did not grow across12 panel openings; the owner confirmed glass.
+
+Validation: 357 JVM tests, 109 installer tests, 82 new actual-method checks, release build/R8/lint and portable EXE self-test. AirPlay and cleanup rules are unchanged. Homatics hardware validation used preview2 with the same application code; stable changes version metadata only. No universal OEM or full Android-boot validation is claimed.
+
 ## 1.5.15 — 2026-11-05
 
 ### Русский

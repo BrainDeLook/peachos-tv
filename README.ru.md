@@ -8,6 +8,8 @@ PeachOS TV — минималистичный лаунчер для Android TV �
 
 [Скачать APK](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV.apk) · [Установщик Windows](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV-Setup-Portable.exe) · [English](README.md)
 
+**1.5.16:** повышена устойчивость каналов, входов и служб пульта; улучшены проверка Home и восстановление в мастере Windows; убрана лишняя работа с изображениями и освещением без смены визуала. На Homatics сохранены примерно 60-Гц медианные обновления в прогретых сценариях; первое открытие всё ещё может быть тяжелее. [Изменения](CHANGELOG.md) · [Замеры на устройстве](docs/performance-homatics-2026-11-06.md).
+
 > Раньше проект назывался **CleanYourTV + Art**. Можно обновляться поверх: пакет и сертификат подписи сохранены. Несмотря на OS в названии, это лаунчер, а не новая операционная система.
 
 ## Главный экран

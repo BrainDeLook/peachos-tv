@@ -8,6 +8,8 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 
 [Download APK](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV.apk) · [Windows installer](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV-Setup-Portable.exe) · [Русский](README.ru.md) · [Installation](#install) · [Build from source](#build)
 
+**1.5.16:** more resilient channel/input/remote integration, safer Windows Home verification and recovery, and less redundant artwork/lighting work with the existing visual style. Homatics testing retained approximately 60-Hz median warm updates; first openings can still be slower. [Changelog](CHANGELOG.md) · [Device results](docs/performance-homatics-2026-11-06.md).
+
 > PeachOS TV was previously called **CleanYourTV + Art**. Existing users can update in place: the package ID and signing certificate are unchanged. Despite the name, this is a launcher, not a replacement operating system.
 
 ## A home screen built around what you watch
