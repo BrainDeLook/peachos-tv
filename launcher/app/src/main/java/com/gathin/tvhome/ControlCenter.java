@@ -314,6 +314,7 @@ final class ControlCenter {
     static Map<String, Intent> discoverVpnApps(Context context, String configuredApp) {
         Map<String, Intent> result = new LinkedHashMap<>();
         PackageManager pm = context.getPackageManager();
+        try {
         // Installed clients are not presented as saved profiles: only the owning app can read those.
         for (ResolveInfo info : pm.queryIntentServices(new Intent(VpnService.SERVICE_INTERFACE), 0)) {
             String pkg = info.serviceInfo.packageName;
@@ -326,6 +327,9 @@ final class ControlCenter {
             Intent target = pm.getLeanbackLaunchIntentForPackage(configuredApp);
             if (target == null) target = pm.getLaunchIntentForPackage(configuredApp);
             if (target != null) result.put(context.getString(R.string.cc_vpn_app), target);
+        }
+        } catch (RuntimeException unavailable) {
+            android.util.Log.w("PeachControl", "VPN clients unavailable", unavailable);
         }
         return result;
     }
@@ -885,23 +889,14 @@ final class ControlCenter {
     }
 
     void refreshNetwork() {
-        String transport = host.getString(R.string.not_connected);
-        boolean online = false, ethernet = false, vpn = false;
-        if (connectivity != null) for (Network network : connectivity.getAllNetworks()) {
-            NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
-            if (caps == null) continue;
-            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                vpn = true;
-            } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                if (!ethernet) online = false;
-                ethernet = true;
-                transport = "Ethernet";
-                online |= caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-            } else if (!ethernet && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                transport = "Wi-Fi";
-                online |= caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-            }
-        }
+        NetworkStatus status = NetworkStatus.read(connectivity);
+        String transport = switch (status.transport) {
+            case ETHERNET -> "Ethernet";
+            case WIFI -> "Wi-Fi";
+            case OTHER -> status.vpn ? "VPN" : host.getString(R.string.quick_network);
+            case NONE -> host.getString(R.string.not_connected);
+        };
+        boolean online = status.online, ethernet = status.transport == NetworkStatus.Transport.ETHERNET, vpn = status.vpn;
         if (TextUtils.equals(networkTransport, transport) && networkOnline == online
                 && networkEthernet == ethernet && vpnConnected == vpn) return;
         networkTransport = transport; networkOnline = online; networkEthernet = ethernet; vpnConnected = vpn;

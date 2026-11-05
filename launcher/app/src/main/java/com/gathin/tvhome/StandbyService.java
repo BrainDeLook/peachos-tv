@@ -15,8 +15,9 @@ public final class StandbyService extends AccessibilityService {
     }
 
     static boolean sleep() {
-        return Build.VERSION.SDK_INT >= 28 && connected != null
-                && connected.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+        if (Build.VERSION.SDK_INT < 28 || connected == null) return false;
+        try { return connected.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN); }
+        catch (RuntimeException unavailable) { return false; }
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) { }

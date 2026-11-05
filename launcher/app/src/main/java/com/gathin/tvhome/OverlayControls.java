@@ -1,20 +1,16 @@
 package com.gathin.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
-import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.graphics.Bitmap;
 import android.view.Display;
-import android.media.tv.TvInputInfo;
-import android.media.tv.TvInputManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
@@ -22,10 +18,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
-import android.widget.TextView;
 import android.widget.Toast;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -51,6 +44,8 @@ final class OverlayControls implements ControlCenter.Actions {
     private Config config;
     private Map<String, Intent> vpnApps;
     private boolean sources;
+    private InputRepository inputRepository;
+    private InputRepository.Snapshot inputSnapshot;
     private NavigationSound sound;
     private volatile int generation;
     private long openingStartedAt;
@@ -94,13 +89,14 @@ final class OverlayControls implements ControlCenter.Actions {
                 if (!pending || ticket != generation) return;
                 Map<String, Intent> currentVpn = ControlCenter.discoverVpnApps(service, current.vpnApp);
                 if (!pending || ticket != generation) return;
-                TvInputManager inputs = service.getSystemService(TvInputManager.class);
-                boolean currentSources = !current.sourcePanelService.isEmpty() || current.coocaaSources
-                        || inputs != null && inputs.getTvInputList().stream().anyMatch(i -> i.isPassthroughInput() && !i.isHidden(service));
+                InputRepository currentInputs = new InputRepository(service, current);
+                InputRepository.Snapshot snapshot = currentInputs.read();
+                boolean currentSources = snapshot.available();
                 main.post(() -> {
                     if (!pending || ticket != generation) return;
                     configurationWork = null;
                     config = current; vpnApps = currentVpn; sources = currentSources;
+                    inputRepository = currentInputs; inputSnapshot = snapshot;
                     android.util.Log.d("PeachOverlay", "Config prepared in "
                             + (android.os.SystemClock.uptimeMillis() - openingStartedAt) + "ms");
                     if (Build.VERSION.SDK_INT >= 30 && service.getSharedPreferences(Config.SETTINGS_NAME, 0).getBoolean("liquid_glass", true)) capture(ticket);
@@ -179,7 +175,7 @@ final class OverlayControls implements ControlCenter.Actions {
                 PixelFormat.TRANSLUCENT);
         params.setTitle("PeachOS TV · Control Center");
         try { windows.addView(stage, params); }
-        catch (WindowManager.BadTokenException | IllegalStateException unavailable) {
+        catch (WindowManager.BadTokenException | IllegalStateException | SecurityException unavailable) {
             stage = null;
             if (backdrop != null) backdrop.recycle();
             main.post(releaseSound);
@@ -258,8 +254,14 @@ final class OverlayControls implements ControlCenter.Actions {
     }
     private void removeWindow() {
         if (stage == null) return;
-        windows.removeViewImmediate(stage); stage = null;
-        if (watchingNetwork) { network.unregisterNetworkCallback(networkChanges); watchingNetwork = false; }
+        FrameLayout removed = stage; stage = null;
+        try { windows.removeViewImmediate(removed); }
+        catch (RuntimeException unavailable) { android.util.Log.w("PeachOverlay", "Overlay window already unavailable", unavailable); }
+        if (watchingNetwork) {
+            watchingNetwork = false;
+            try { network.unregisterNetworkCallback(networkChanges); }
+            catch (RuntimeException unavailable) { android.util.Log.w("PeachOverlay", "Network callback already unavailable", unavailable); }
+        }
         main.removeCallbacks(refreshNetwork);
         android.accessibilityservice.AccessibilityServiceInfo info = service.getServiceInfo();
         if (info != null) { info.eventTypes = previousEvents; service.setServiceInfo(info); }
@@ -267,54 +269,15 @@ final class OverlayControls implements ControlCenter.Actions {
     }
     @Override public void controlOpen(Intent intent) {
         if (sound != null) sound.playOpen();
-        try { service.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
-        catch (ActivityNotFoundException | SecurityException unavailable) {
-            Toast.makeText(service, R.string.not_available, Toast.LENGTH_SHORT).show();
-        }
+        if (!SystemSettings.start(service, intent)) Toast.makeText(service, R.string.not_available, Toast.LENGTH_SHORT).show();
     }
     @Override public void controlSleep() {
-        if (Build.VERSION.SDK_INT < 28 || !service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN))
-            Toast.makeText(service, R.string.cc_sleep_unavailable, Toast.LENGTH_LONG).show();
+        if (!SystemSleep.sleep()) Toast.makeText(service, R.string.cc_sleep_unavailable, Toast.LENGTH_LONG).show();
     }
 
     @Override public void controlInputRows(LinearLayout rows, java.util.function.Consumer<Runnable> activate) {
-        TvInputManager manager = service.getSystemService(TvInputManager.class);
-        List<TvInputInfo> all = manager == null ? new ArrayList<>() : manager.getTvInputList();
-        List<TvInputInfo> inputs = new ArrayList<>();
-        for (TvInputInfo input : all) if (input.isPassthroughInput() && !input.isHidden(service)
-                && !Integer.valueOf(-1).equals(InputLaunch.mappedSource(service, input.getId()))) inputs.add(input);
-        // Prefer CEC children over their port, as on Home; custom port names remain visible otherwise.
-        java.util.Set<String> parents = new java.util.HashSet<>();
-        for (TvInputInfo input : inputs) if (input.getParentId() != null) parents.add(input.getParentId());
-        inputs.removeIf(input -> parents.contains(input.getId()));
-        inputs.sort(java.util.Comparator.comparing(input -> String.valueOf(input.loadLabel(service))));
-        for (TvInputInfo input : inputs) {
-            CharSequence label = input.loadCustomLabel(service);
-            if (label == null || label.length() == 0) label = input.loadLabel(service);
-            boolean hdmi = input.getType() == TvInputInfo.TYPE_HDMI;
-            int state = hdmi ? manager.getInputState(input.getId()) : -1;
-            View row = LayoutInflater.from(service).inflate(R.layout.item_input, rows, false);
-            ((TextView) row.findViewById(R.id.title)).setText(label);
-            ((ImageView) row.findViewById(R.id.icon)).setImageResource(hdmi ? R.drawable.ic_input : R.drawable.ic_av);
-            row.findViewById(R.id.status).setVisibility(View.GONE);
-            row.findViewById(R.id.dot).setVisibility(state == TvInputManager.INPUT_STATE_CONNECTED ? View.VISIBLE : View.INVISIBLE);
-            row.setOnClickListener(v -> activate.accept(() -> {
-                if (sound != null) sound.playSourceOpen();
-                InputLaunch.openInput(service, input.getId(), config.inputAction, config.inputUriScheme, config.liveTvPackage);
-            }));
-            rows.addView(row);
-        }
-        if (rows.getChildCount() == 0) {
-            TextView fallback = new TextView(service); fallback.setText(R.string.inputs);
-            fallback.setId(R.id.title);
-            fallback.setTextColor(0xe6ffffff); fallback.setGravity(android.view.Gravity.CENTER);
-            fallback.setFocusable(true); fallback.setClickable(true);
-            fallback.setOnClickListener(v -> activate.accept(() -> controlOpen(new Intent(service, MainActivity.class)
-                    .setAction(MainActivity.ACTION_VIEW_INPUTS))));
-            rows.addView(fallback, new LinearLayout.LayoutParams(-1, dp(44)));
-        }
+        inputRepository.populate(inputSnapshot, rows, activate, () -> { if (sound != null) sound.playSourceOpen(); });
     }
-    private int dp(int value) { return Math.round(value * service.getResources().getDisplayMetrics().density); }
     private void cancel() {
         generation++; pending = false;
         if (captureTimeout != null) { main.removeCallbacks(captureTimeout); captureTimeout = null; }

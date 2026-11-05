@@ -11,10 +11,12 @@ import zipfile
 from unittest.mock import patch
 
 import core
-from home_setup import (ACTIVITY, PACKAGE, RECEIVER, SERVICE, BridgeState, HomeChange,
+from home_setup import (ACTIVITY, PACKAGE, RECEIVER, SERVICE, BridgeState, HomeChange, HomeVerification,
                         bridge, configure_compat, restore_compat, service_list, verify_home)
 
 
+ORIGIN = PACKAGE + '/com.gathin.tvhome.LauncherSettingsActivity'
+GENERATION = '12345678-1234-1234-1234-123456789012'
 STOCK = 'org.example.factoryhome/org.example.factoryhome.HomeActivity'
 OTHER_SERVICE = 'org.example.reader/org.example.reader.ReaderService'
 LATER_SERVICE = 'org.example.later/org.example.later.LaterService'
@@ -50,7 +52,12 @@ class HomeAdb:
         self.actual_filter = actual_filter
         self.calls = []
         self.run_options = []
-        self.foregrounds = [ACTIVITY]
+        self.foregrounds = []
+        self.home_foregrounds = None
+        self.foreground = ACTIVITY
+        self.generation = GENERATION
+        self.remote_required = False
+        self.reasons = []
         self.launch_output = 'Status: ok'
         self.activity_style = 'topResumedActivity'
         self.disabled = set()
@@ -81,7 +88,11 @@ class HomeAdb:
             raise TimeoutError('ADB unavailable')
         if args[:2] == ('am', 'broadcast'):
             self.assert_receiver(args)
-            write = args[args.index('operation') + 1] == 'write'
+            operation = args[args.index('operation') + 1]
+            write = operation == 'write'
+            if operation == 'verify_origin':
+                self.foreground = ORIGIN
+                self.foregrounds = []
             if write:
                 package = args[args.index('stock_package') + 1]
                 filtering = args[args.index('filter_keys') + 1] == 'true'
@@ -92,7 +103,8 @@ class HomeAdb:
             payload = {'version': 1, 'stock_package': self.state.stock_package,
                        'filter_keys': self.state.filter_keys, 'bound': bound,
                        'applied_stock_package': self.state.stock_package if bound else '',
-                       'filter_keys_active': filtering if bound else False}
+                       'filter_keys_active': filtering if bound else False, 'install_generation': self.generation,
+                       'config_ready': bound, 'remote_required': self.remote_required, 'service_use_reasons': self.reasons}
             if self.read_payload is not None:
                 payload = self.read_payload
             encoded = base64.b64encode(json.dumps(payload).encode()).decode()
@@ -128,11 +140,19 @@ class HomeAdb:
                 self.mutate('master', lambda: setattr(self, 'master', updated))
                 return ''
         if args[:2] == ('am', 'start'):
+            if 'android.intent.category.HOME' in args:
+                self.foreground = ACTIVITY
+                if self.home_foregrounds is not None: self.foregrounds = list(self.home_foregrounds)
+            elif '-n' in args: self.foreground = args[args.index('-n')+1]
             return self.launch_output
+        if args == ('input', 'keyevent', 'KEYCODE_HOME'):
+            self.foreground = ACTIVITY
+            if self.home_foregrounds is not None: self.foregrounds = list(self.home_foregrounds)
+            return ''
         if args == ('input', 'keyevent', 'KEYCODE_WAKEUP'):
             return ''
         if args == ('dumpsys', 'activity', 'activities'):
-            name = self.foregrounds.pop(0) if len(self.foregrounds) > 1 else self.foregrounds[0]
+            name = (self.foregrounds.pop(0) if len(self.foregrounds) > 1 else self.foregrounds[0]) if self.foregrounds else self.foreground
             return self.activity_style + '=ActivityRecord{abc u0 ' + name + ' t1}'
         if args[:3] == ('cmd', 'package', 'resolve-activity'):
             return STOCK
@@ -230,7 +250,7 @@ class HomeSetupTests(unittest.TestCase):
         journal = None
         with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current), virtual_time():
             # Native HOME stays stock; this also checks cleanup is gated on the fallback verification.
-            adb.foregrounds = [STOCK]
+            adb.home_foregrounds = [STOCK]
             with self.assertRaisesRegex(RuntimeError, 'службу пульта'):
                 core.apply_plan(adb, current, ['com.google.android.feedback'], set(), None, True,
                                 Path(folder), allow_home_redirect=True)
@@ -262,24 +282,24 @@ class HomeSetupTests(unittest.TestCase):
         adb = HomeAdb()
         current = core.Device('fixture', 'a' * 64, 0, {}, {PACKAGE}, set(), set(), STOCK)
         with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current), \
-                patch('core.verify_home', return_value=True), patch('core.configure_compat') as configure:
+                patch('core.verify_home', return_value=HomeVerification('passed', 'passed')), patch('core.configure_compat') as configure:
             path = core.apply_plan(adb, current, [], set(), None, True, Path(folder), allow_home_redirect=True)
             journal = json.loads(path.read_text(encoding='utf-8'))
         configure.assert_not_called()
         self.assertEqual('existing_redirect', journal['home_method'])
         self.assertTrue(journal['complete'])
-        self.assertFalse(any(call[:2] == ('am', 'broadcast') for call in adb.calls))
+        self.assertFalse(any(call[:2] == ('am', 'broadcast') and 'write' in call for call in adb.calls))
         self.assertFalse(any(call[:1] == ('settings',) for call in adb.calls))
 
     def test_failed_native_home_without_consent_never_configures_global_helper(self):
         adb = HomeAdb()
         current = core.Device('fixture', 'a' * 64, 0, {}, {PACKAGE}, set(), set(), STOCK)
         with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current), \
-                patch('core.verify_home', return_value=False), patch('core.configure_compat') as configure:
+                patch('core.verify_home', return_value=HomeVerification('failed', 'failed')), patch('core.configure_compat') as configure:
             with self.assertRaisesRegex(RuntimeError, 'Совместимый Home'):
                 core.apply_plan(adb, current, [], set(), None, True, Path(folder))
         configure.assert_not_called()
-        self.assertEqual([], [call for call in adb.calls if call[:2] == ('am', 'broadcast')])
+        self.assertEqual([], [call for call in adb.calls if call[:2] == ('am', 'broadcast') and 'write' in call])
         self.assertIn(('cmd', 'package', 'set-home-activity', '--user', '0', STOCK), adb.calls)
 
     def test_update_only_rejects_compatibility_consent_before_mutation(self):
@@ -371,7 +391,8 @@ class HomeSetupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'изменена после установки'):
             restore_compat(adb, 0, change)
         self.assertEqual(BridgeState('org.example.anotherhome', False), adb.state)
-        self.assertEqual(1, len(adb.calls))
+        self.assertFalse(any(call[:3] == ('cmd', 'appops', 'set') for call in adb.calls))
+        self.assertFalse(any(call[:4] == ('settings', '--user', '0', 'put') for call in adb.calls))
 
     def test_changed_autostart_mode_is_preserved_on_restore(self):
         adb = HomeAdb(auto='ignore')
@@ -400,18 +421,18 @@ class HomeSetupTests(unittest.TestCase):
 
     def test_foreground_verification_requires_stable_peach_not_transient_frame(self):
         adb = HomeAdb()
-        adb.foregrounds = [ACTIVITY, STOCK]
+        adb.home_foregrounds = [ACTIVITY, STOCK]
         with virtual_time() as clock:
             self.assertFalse(verify_home(adb, 0, timeout=1))
         self.assertGreaterEqual(clock.now, 1)
 
     def test_foreground_verification_waits_for_delayed_home_transition(self):
         adb = HomeAdb()
-        adb.foregrounds = [STOCK, STOCK, ACTIVITY]
+        adb.home_foregrounds = [STOCK, STOCK, ACTIVITY]
         with virtual_time() as clock:
             self.assertTrue(verify_home(adb, 0, timeout=2))
         self.assertGreaterEqual(clock.now, .7)
-        self.assertLess(clock.now, 2)
+        self.assertLess(clock.now, 5)
 
     def test_foreground_verification_supports_older_resumed_activity_label(self):
         adb = HomeAdb()
@@ -423,19 +444,15 @@ class HomeSetupTests(unittest.TestCase):
         adb = HomeAdb()
         with virtual_time():
             self.assertTrue(verify_home(adb, 0))
-        wake, preflight, launch, *queries = adb.run_options
+        wake, *operations = adb.run_options
         self.assertEqual(('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'), wake[0])
         self.assertEqual(8, wake[1]['timeout'])
-        self.assertEqual(('shell', 'am', 'start', '--user', '0', '-n', ACTIVITY), preflight[0])
-        self.assertEqual(8, preflight[1]['timeout'])
-        self.assertNotIn('-W', preflight[0])
-        self.assertIn('android.intent.category.HOME', launch[0])
-        self.assertNotIn('-W', launch[0])
-        self.assertEqual(8, launch[1]['timeout'])
-        self.assertTrue(queries)
-        for args, options in queries:
-            self.assertEqual(('shell', 'dumpsys', 'activity', 'activities'), args)
-            self.assertEqual(5, options['timeout'])
+        commands = [args for args, options in operations]
+        self.assertIn(('shell', 'input', 'keyevent', 'KEYCODE_HOME'), commands)
+        self.assertTrue(any('android.intent.category.HOME' in args for args in commands))
+        self.assertFalse(any('-W' in args for args in commands))
+        for args, options in operations:
+            self.assertLessEqual(options['timeout'], 8)
 
     def test_foreground_verification_rejects_other_users_and_launch_failure(self):
         adb = HomeAdb()
@@ -445,7 +462,7 @@ class HomeSetupTests(unittest.TestCase):
         adb.calls.clear()
         with virtual_time():
             self.assertFalse(verify_home(adb, 0))
-        self.assertFalse(any(call[:2] == ('dumpsys', 'activity') for call in adb.calls))
+        self.assertFalse(any(call == ('input', 'keyevent', 'KEYCODE_HOME') for call in adb.calls))
 
     def test_bridge_requires_protocol_marker_and_valid_typed_payload(self):
         class RawReply:

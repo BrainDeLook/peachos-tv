@@ -105,6 +105,7 @@ final class TopShelf {
     private final Runnable refreshImages = () -> { refreshQueued = false; updateVisible(); };
     private final android.os.Handler metadataHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean metadataDirty;
+    private TvMetadata.Observation metadataObservation;
     private final Runnable refreshMetadata = this::refreshPublishedSources;
     private final android.database.ContentObserver metadataObserver = new android.database.ContentObserver(metadataHandler) {
         @Override public void onChange(boolean selfChange) {
@@ -233,9 +234,8 @@ final class TopShelf {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             task.run();
         }, "shelf-metadata"), new ThreadPoolExecutor.DiscardOldestPolicy());
-        for (android.net.Uri uri : new android.net.Uri[]{android.media.tv.TvContract.Channels.CONTENT_URI,
-                android.media.tv.TvContract.PreviewPrograms.CONTENT_URI, android.media.tv.TvContract.WatchNextPrograms.CONTENT_URI})
-            activity.getContentResolver().registerContentObserver(uri, true, metadataObserver);
+        metadataObservation = TvMetadata.observe(activity, TvMetadata.access(activity), metadataObserver,
+                TvMetadata.Table.CHANNELS, TvMetadata.Table.PREVIEW, TvMetadata.Table.WATCH_NEXT);
         lists.clear(); // refresh history after returning from playback; thumbnails remain on disk
         String pkg = requested;
         requested = null;
@@ -629,7 +629,7 @@ final class TopShelf {
         if (hero.getVisibility() != View.GONE) hero.setVisibility(View.VISIBLE);
     }
     void pause() {
-        if (active) activity.getContentResolver().unregisterContentObserver(metadataObserver);
+        if (metadataObservation != null) { metadataObservation.close(); metadataObservation = null; }
         metadataHandler.removeCallbacksAndMessages(null);
         metadataDirty = false;
         active = false; generation++; clear();

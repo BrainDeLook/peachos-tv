@@ -37,6 +37,17 @@ final class HomeSetupState {
                 preferences.getBoolean("filter_keys", false));
     }
 
+    /** Private installation generation survives upgrades, but not uninstall or clearing app data. */
+    static String generation(Context context) {
+        SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String current = preferences.getString("install_generation", null);
+        if (current != null) return current;
+        current = java.util.UUID.randomUUID().toString();
+        if (!preferences.edit().putString("install_generation", current).commit())
+            throw new IllegalStateException("Could not persist installation generation");
+        return current;
+    }
+
     boolean persist(Context context) {
         return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
                 .putString("stock_package", stockPackage).putBoolean("filter_keys", filterKeys).commit();

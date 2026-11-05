@@ -28,6 +28,7 @@
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
     <queries>
+        <provider android:authorities="android.media.tv" />
         <intent>
             <action android:name="android.intent.action.UNINSTALL_PACKAGE" />
             <data android:scheme="package" />

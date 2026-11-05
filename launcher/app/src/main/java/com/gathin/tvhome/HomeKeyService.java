@@ -10,6 +10,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 import android.os.SystemClock;
 import android.os.UserManager;
 import android.content.pm.PackageManager;
@@ -42,6 +43,7 @@ public class HomeKeyService extends AccessibilityService {
 
     private static volatile HomeKeyService connectedService;
     private Config appliedConfig;
+    private boolean appliedKeyFilter, serviceInfoApplied;
     private SharedPreferences settingsChoices;
     private String stockHomePackage = "";
     private volatile String appliedSetupPackage = "";
@@ -61,6 +63,55 @@ public class HomeKeyService extends AccessibilityService {
         AccessibilityServiceInfo info = service == null ? null : service.getServiceInfo();
         return info != null && (info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
     }
+
+    static boolean sleep() {
+        HomeKeyService service = connectedService;
+        if (Build.VERSION.SDK_INT < 28 || service == null) return false;
+        try { return service.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN); }
+        catch (RuntimeException unavailable) {
+            android.util.Log.w("PeachRemote", "Standby action unavailable", unavailable);
+            return false;
+        }
+    }
+
+    static boolean configurationReady() {
+        return connectedService != null && connectedService.appliedConfig != null && connectedService.serviceInfoApplied;
+    }
+
+    static Set<String> serviceUseReasons(Context context) {
+        Set<String> reasons = new HashSet<>();
+        HomeKeyService service = connectedService;
+        SharedPreferences choices = context.getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        if (choices.getBoolean(SettingsButton.KEY, false)) reasons.add("settings");
+        if (SettingsKeyBinding.isLearning()) reasons.add("learning");
+        if (!HomeSetupState.read(context).stockPackage.isEmpty()) reasons.add("home");
+        if (service != null && service.appliedConfig != null) {
+            if (!service.appliedConfig.stockHomeRedirect.isEmpty()) { reasons.add("home"); reasons.add("remaps"); }
+            if (!service.appKeys.isEmpty() || !service.appScancodes.isEmpty()
+                    || !service.holdAppKeys.isEmpty() || !service.holdAppScancodes.isEmpty()
+                    || service.settingsKeycodes.length > 0 || service.settingsScancodes.length > 0
+                    || service.consumeVolumeKeys) reasons.add("remaps");
+        }
+        return reasons;
+    }
+
+    enum RemoteReadiness { SERVICE_OFF, CONFIG_LOADING, FILTER_DISABLED, PASSTHROUGH, READY }
+
+    static RemoteReadiness remoteReadiness() {
+        HomeKeyService service = connectedService;
+        if (service == null) return RemoteReadiness.SERVICE_OFF;
+        if (service.appliedConfig == null || !service.serviceInfoApplied) return RemoteReadiness.CONFIG_LOADING;
+        if (!service.appliedConfig.keyFilter) return RemoteReadiness.FILTER_DISABLED;
+        return service.gamepads != null && service.gamepads.isPassingThrough()
+                ? RemoteReadiness.PASSTHROUGH : RemoteReadiness.READY;
+    }
+
+    private final RemoteEventCoordinator.Client remoteClient = new RemoteEventCoordinator.Client() {
+        @Override public boolean filtering() { return connectedService == HomeKeyService.this && appliedConfig != null && appliedKeyFilter
+                && (gamepads == null || !gamepads.isPassingThrough()); }
+        @Override public boolean handle(KeyEvent event) { return handleRemoteEvent(event); }
+        @Override public void cancelGestures() { if (settingsButton != null) settingsButton.cancel(); handler.removeCallbacks(redirectHome); }
+    };
 
     /** Receiver writes are applied on the helper's main thread without another full theme scan. */
     static void refreshHomeSetup() {
@@ -115,11 +166,12 @@ public class HomeKeyService extends AccessibilityService {
             if (getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getBoolean(OverlayControls.KEY, false))
                 overlayControls.held();
             // Use the HOME entry, not a custom-action Activity task beside the existing Home.
-            else startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            else SystemSettings.start(this, new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                     .setPackage(getPackageName()).putExtra(MainActivity.EXTRA_CONTROL_CENTER, true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         });
         connectedService = this;
+        RemoteEventCoordinator.connect(this, RemoteEventCoordinator.HOME, remoteClient);
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
         // unlock. Config.load reads credential-protected storage, so wait for the unlock before reading it.
@@ -164,8 +216,10 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private void stopHelpers() {
+        RemoteEventCoordinator.disconnect(RemoteEventCoordinator.HOME, remoteClient);
+        SettingsKeyBinding.abort();
         if (connectedService == this) connectedService = null;
-        appliedConfig = null;
+        appliedConfig = null; appliedKeyFilter = false; serviceInfoApplied = false;
         appliedSetupPackage = "";
         installerProbe.reset();
         stockHomePackage = "";
@@ -228,9 +282,10 @@ public class HomeKeyService extends AccessibilityService {
         String redirect = override ? setup.stockPackage : config.stockHomeRedirect;
         boolean remoteBindings = !appKeys.isEmpty() || !appScancodes.isEmpty()
                 || !holdAppKeys.isEmpty() || !holdAppScancodes.isEmpty()
-                || settingsKeycodes.length > 0 || config.consumeVolumeKeys;
+                || settingsKeycodes.length > 0 || settingsScancodes.length > 0 || config.consumeVolumeKeys;
         boolean keyFilter = setup.keyFilterEnabled(config.keyFilter,
                 settingsChoices.getBoolean(SettingsButton.KEY, false) || SettingsKeyBinding.isLearning(), remoteBindings);
+        if (!keyFilter) { VolumeKeys.stop(); if (settingsButton != null) settingsButton.cancel(); }
         android.util.Log.i("PeachRemote", "Apply remote configuration: filter=" + config.keyFilter
                 + " requested=" + keyFilter + " learning=" + SettingsKeyBinding.isLearning());
         // Reapplying the filter must not override an already connected game controller's passthrough.
@@ -248,6 +303,7 @@ public class HomeKeyService extends AccessibilityService {
         }
         // home_key_service.xml subscribes to no events, so the redirect asks for window changes only when it is on.
         AccessibilityServiceInfo info = getServiceInfo();
+        serviceInfoApplied = false;
         if (info != null) {
             // A rebound service can retain its previous runtime subscription even when the new
             // config no longer redirects stock Home. OverlayControls adds this event temporarily.
@@ -256,6 +312,8 @@ public class HomeKeyService extends AccessibilityService {
             if (keyFilter) info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             else info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             setServiceInfo(info);
+            appliedKeyFilter = keyFilter;
+            serviceInfoApplied = true;
             if (override && !stockHome.isEmpty()) appliedSetupPackage = setup.stockPackage;
         }
         // At a late bind the stock Home may already be foreground and emit no new window event.
@@ -278,6 +336,10 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        return RemoteEventCoordinator.dispatch(event);
+    }
+
+    private boolean handleRemoteEvent(KeyEvent event) {
         if (overlayControls != null && overlayControls.handle(event)) return true;
         if (SettingsKeyBinding.capture(event)) return true;
         if (SettingsKeyBinding.matches(event, getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE))) {
@@ -317,7 +379,7 @@ public class HomeKeyService extends AccessibilityService {
                     .addCategory(Intent.CATEGORY_HOME)
                     .setPackage(getPackageName())
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-            startActivity(home);
+            SystemSettings.start(this, home);
         }
         return true;
     }
@@ -406,7 +468,7 @@ public class HomeKeyService extends AccessibilityService {
         // The stock Home window event can beat the delayed key fallback. Handle that same press
         // once, without a second HOME intent resetting focus or replaying the transition later.
         handler.removeCallbacks(redirectHome);
-        startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(getPackageName())
+        SystemSettings.start(this, new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(getPackageName())
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
     }
 

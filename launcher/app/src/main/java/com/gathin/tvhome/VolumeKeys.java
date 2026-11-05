@@ -4,6 +4,7 @@ import android.content.Context;
 import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 
 /**
@@ -18,10 +19,12 @@ import android.view.KeyEvent;
 final class VolumeKeys {
     static final long REPEAT_DELAY_MS = 500;
     static final long REPEAT_INTERVAL_MS = 60;
+    static final long MAX_HOLD_MS = 30_000;
 
     /** Created on first use, so the class loads in JVM tests that only call the pure methods. */
     private static Handler handler;
     private static Runnable step;
+    private static int activeDevice = -1;
 
     private VolumeKeys() {
     }
@@ -48,9 +51,12 @@ final class VolumeKeys {
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio == null) return true;
         if (handler == null) handler = new Handler(Looper.getMainLooper());
+        activeDevice = event.getDeviceId();
+        long started = SystemClock.uptimeMillis();
         step = new Runnable() {
             @Override
             public void run() {
+                if (expired(started, SystemClock.uptimeMillis())) { stop(); return; }
                 audio.adjustVolume(direction, AudioManager.FLAG_SHOW_UI);
                 handler.postDelayed(this, REPEAT_INTERVAL_MS);
             }
@@ -63,5 +69,10 @@ final class VolumeKeys {
     static void stop() {
         if (handler != null && step != null) handler.removeCallbacks(step);
         step = null;
+        activeDevice = -1;
     }
+
+    static void deviceRemoved(int device) { if (device == activeDevice) stop(); }
+
+    static boolean expired(long started, long now) { return now - started >= MAX_HOLD_MS; }
 }

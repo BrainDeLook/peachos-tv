@@ -13,6 +13,8 @@ PACKAGE_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\
 COMPONENT = re.compile(r'([A-Za-z0-9_.]+)/([A-Za-z0-9_.$]+)\Z')
 APP_MODES = {'allow', 'ignore', 'deny', 'default', 'foreground'}
 STEPS = {'bridge', 'autostart', 'services', 'master'}
+USE_REASONS = {'home', 'settings', 'remaps', 'learning'}
+GENERATION = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z')
 
 
 def service_list(value):
@@ -53,11 +55,15 @@ class BridgeStatus:
     bound: bool
     applied_stock_package: str
     filter_keys_active: bool
+    install_generation: str | None = None
+    remote_required: bool | None = None
+    config_ready: bool = False
+    service_use_reasons: frozenset[str] = frozenset()
 
 
-def bridge(adb, user, state=None):
+def bridge(adb, user, state=None, *, operation='read'):
     args = ['am', 'broadcast', '--user', user, '--include-stopped-packages', '-n', RECEIVER,
-            '-a', 'com.gathin.tvhome.HOME_SETUP', '--es', 'operation', 'read' if state is None else 'write']
+            '-a', 'com.gathin.tvhome.HOME_SETUP', '--es', 'operation', operation if state is None else 'write']
     if state is not None:
         args += ['--es', 'stock_package', state.stock_package, '--ez', 'filter_keys', str(state.filter_keys).lower()]
     output = adb.shell(*args)
@@ -80,7 +86,22 @@ def bridge(adb, user, state=None):
         raise ValueError('Некорректный статус службы Home.')
     snapshot = BridgeState.parse({key: value.get(key) for key in ('stock_package', 'filter_keys')})
     BridgeState.parse({'stock_package': value['applied_stock_package'], 'filter_keys': False})
-    return BridgeStatus(snapshot, value['bound'], value['applied_stock_package'], value['filter_keys_active'])
+    generation = value.get('install_generation')
+    remote_required, ready, reasons = None, False, frozenset()
+    if any(key in value for key in ('install_generation', 'remote_required', 'config_ready', 'service_use_reasons')):
+        raw_reasons = value.get('service_use_reasons')
+        if (not isinstance(generation, str) or not GENERATION.fullmatch(generation)
+                or type(value.get('remote_required')) is not bool or type(value.get('config_ready')) is not bool
+                or not isinstance(raw_reasons, list)
+                or any(not isinstance(reason, str) or reason not in USE_REASONS for reason in raw_reasons)
+                or len(set(raw_reasons)) != len(raw_reasons)):
+            raise ValueError('Некорректное поколение или основания использования службы Home.')
+        reasons = frozenset(raw_reasons)
+        remote_required, ready = value['remote_required'], value['config_ready']
+        if remote_required != bool(reasons - {'home'}):
+            raise ValueError('Несогласованные основания использования службы Home.')
+    return BridgeStatus(snapshot, value['bound'], value['applied_stock_package'], value['filter_keys_active'],
+                        generation, remote_required, ready, reasons)
 
 
 @dataclass(frozen=True)
@@ -101,32 +122,103 @@ def autostart(adb, user):
     return None
 
 
+@dataclass(frozen=True)
+class HomeVerification:
+    intent: str = 'unverified'
+    keyevent: str = 'unverified'
+    physical: str = 'unverified'
+    reason: str = ''
+
+    def __bool__(self):
+        return self.intent == self.keyevent == 'passed'
+
+    def encode(self):
+        return asdict(self)
+
+
+def foreground_activity(adb, user):
+    activities = adb.run('shell', 'dumpsys', 'activity', 'activities', timeout=5)
+    names = re.findall(r'(?:topResumedActivity|mResumedActivity)\s*[=:]\s*ActivityRecord\{[^\n]*?\bu'
+                       + str(user) + r'\s+([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)', activities)
+    name = next(iter(names), '')
+    if name:
+        package, activity = name.split('/')
+        return package + '/' + (package + activity if activity.startswith('.') else activity)
+    return ''
+
+
+def home_roles(adb, user, sdk):
+    if not sdk.isdecimal() or int(sdk) < 29:
+        return None
+    output = adb.run('shell', 'cmd', 'role', 'get-role-holders', '--user', str(user), 'android.app.role.HOME', check=False)
+    if re.search(r'error|exception|unknown|not found|not supported', output, re.I):
+        return None
+    names = tuple(line.strip() for line in output.splitlines() if line.strip())
+    if any(not PACKAGE_NAME.fullmatch(name) for name in names) or len(names) > 1:
+        raise ValueError('Некорректный ответ роли Home; назначение не изменено.')
+    return names
+
+
 def verify_home(adb, user, timeout=6):
-    # Starting an activity does not wake a TV from its dream/standby surface.
-    # Do not use am's -W: some OEM Home activities never report launch completion.
+    """Two causal ADB smoke tests. Neither is a claim about a physical remote."""
     adb.run('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP', timeout=8)
-    # Test a transition, not a re-delivery to an already visible stock Home:
-    # accessibility redirects correctly receive a new window event only then.
-    adb.run('shell', 'am', 'start', '--user', str(user), '-n', ACTIVITY, timeout=8)
-    output = adb.run('shell', 'am', 'start', '--user', str(user),
-                     '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME', timeout=8, check=False)
-    if re.search(r'Error:|Exception|unable to resolve|device .*not found|unauthorized', output, re.I):
-        return False
-    deadline, stable_since = time.monotonic() + timeout, None
-    while time.monotonic() < deadline:
-        activities = adb.run('shell', 'dumpsys', 'activity', 'activities', timeout=5)
-        names = re.findall(r'(?:topResumedActivity|mResumedActivity)\s*[=:]\s*ActivityRecord\{[^\n]*?\bu'
-                           + str(user) + r'\s+([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)', activities)
-        foreground = next(iter(names), '')
-        if foreground == ACTIVITY:
-            if stable_since is None:
-                stable_since = time.monotonic()
-            elif time.monotonic() - stable_since >= .4:
-                return True
+    # A known different foreground is mandatory. Pre-opening MainActivity lets an
+    # asynchronously dispatched HOME falsely pass against its old window.
+    origin = PACKAGE + '/com.gathin.tvhome.LauncherSettingsActivity'
+    use_bridge = True
+    try:
+        bridge(adb, user, operation='verify_origin')
+    except RuntimeError:
+        # Older APKs do not expose verify_origin. A resolved standard Settings
+        # screen is a safe fallback; never use an arbitrary app or send Back.
+        use_bridge = False
+        resolved = adb.run('shell', 'cmd', 'package', 'resolve-activity', '--brief', '--user', str(user),
+                           '-a', 'android.settings.SETTINGS', timeout=8, check=False)
+        origin = next((line.strip() for line in reversed(resolved.splitlines())
+                       if COMPONENT.fullmatch(line.strip())), '')
+        if not origin or origin == ACTIVITY:
+            return HomeVerification(reason='verification_origin_unavailable')
+        package, activity = origin.split('/')
+        origin = package + '/' + (package + activity if activity.startswith('.') else activity)
+
+    results = {}
+    for phase in ('intent', 'keyevent'):
+        if not use_bridge:
+            output = adb.run('shell', 'am', 'start', '--user', str(user), '-n', origin, timeout=8, check=False)
+            if re.search(r'Error:|Exception|unable to resolve|device .*not found|unauthorized', output, re.I):
+                return HomeVerification(**results, reason='verification_origin_unavailable')
+        elif phase != 'intent':
+            bridge(adb, user, operation='verify_origin')
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if foreground_activity(adb, user) == origin:
+                break
+            time.sleep(.15)
         else:
-            stable_since = None
-        time.sleep(.15)
-    return False
+            return HomeVerification(**results, reason='verification_origin_not_observed')
+
+        if phase == 'intent':
+            output = adb.run('shell', 'am', 'start', '--user', str(user),
+                             '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME', timeout=8, check=False)
+        else:
+            output = adb.run('shell', 'input', 'keyevent', 'KEYCODE_HOME', timeout=8, check=False)
+        if re.search(r'Error:|Exception|unable to resolve|device .*not found|unauthorized', output, re.I):
+            results[phase] = 'failed'
+            return HomeVerification(**results, reason=phase + '_dispatch_failed')
+        deadline, stable_since = time.monotonic() + timeout, None
+        # Observe the whole bounded window. A transient Peach frame followed by
+        # an OEM redirect must not be committed as success before that redirect.
+        while time.monotonic() < deadline:
+            if foreground_activity(adb, user) == ACTIVITY:
+                if stable_since is None: stable_since = time.monotonic()
+            else:
+                stable_since = None
+            time.sleep(.15)
+        if stable_since is None or time.monotonic() - stable_since < .4:
+            results[phase] = 'failed'
+            return HomeVerification(**results, reason=phase + '_home_not_observed')
+        results[phase] = 'passed'
+    return HomeVerification(**results)
 
 
 @dataclass
@@ -138,14 +230,15 @@ class HomeChange:
     auto_mode: str | None
     attempted: list[str] = field(default_factory=list)
     complete: bool = False
+    install_generation: str | None = None
 
     def encode(self):
         return asdict(self)
 
     @classmethod
     def parse(cls, value):
-        if not isinstance(value, dict) or set(value) != {
-                'before', 'target', 'services', 'master', 'auto_mode', 'attempted', 'complete'}:
+        fields = {'before', 'target', 'services', 'master', 'auto_mode', 'attempted', 'complete'}
+        if not isinstance(value, dict) or not fields.issubset(value) or set(value) - fields - {'install_generation'}:
             raise ValueError('Некорректный журнал совместимого Home.')
         before, target = BridgeState.parse(value['before']), BridgeState.parse(value['target'])
         services = value['services']
@@ -163,43 +256,85 @@ class HomeChange:
             raise ValueError('Некорректный результат совместимого Home.')
         if 'autostart' in steps and value['auto_mode'] is None:
             raise ValueError('Не сохранено исходное разрешение автозапуска.')
-        return cls(before, target, parsed_services, value['master'], value['auto_mode'], steps, value['complete'])
+        generation = value.get('install_generation')
+        if generation is not None and (not isinstance(generation, str) or not GENERATION.fullmatch(generation)):
+            raise ValueError('Некорректное поколение установки Home.')
+        return cls(before, target, parsed_services, value['master'], value['auto_mode'], steps, value['complete'], generation)
 
 
-def restore_compat(adb, user, change):
-    # The parsed journal contains only fixed operations and the fixed PeachOS receiver.
-    # Preserve unrelated services added after installation and reject theme/user conflicts.
-    if 'bridge' in change.attempted:
-        current = bridge(adb, user).state
-        if current == change.target:
-            if bridge(adb, user, change.before).state != change.before:
-                raise RuntimeError('Лаунчер не подтвердил восстановление исходной настройки Home.')
-        elif current != change.before:
-            raise RuntimeError('Настройка Home изменена после установки; её новое значение сохранено. Проверьте восстановление вручную.')
-    live = service_list(adb.shell('settings', '--user', user, 'get', 'secure', 'enabled_accessibility_services'))
-    if 'services' in change.attempted and SERVICE not in change.services and SERVICE in live:
-        live = tuple(s for s in live if s != SERVICE)
-        if live:
-            adb.shell('settings', '--user', user, 'put', 'secure', 'enabled_accessibility_services', ':'.join(live))
-        else:
-            adb.shell('settings', '--user', user, 'delete', 'secure', 'enabled_accessibility_services')
-    if 'master' in change.attempted and change.master != '1' and not (set(live) - set(change.services)):
-        if change.master == 'null':
-            adb.shell('settings', '--user', user, 'delete', 'secure', 'accessibility_enabled')
-        else:
-            adb.shell('settings', '--user', user, 'put', 'secure', 'accessibility_enabled', change.master)
-    if 'autostart' in change.attempted:
-        mode = autostart(adb, user)
-        if mode is None:
-            raise RuntimeError('Операция автозапуска больше не поддерживается; проверьте разрешение PeachOS вручную.')
-        if mode.effective_mode == 'allow':
-            adb.shell('cmd', 'appops', 'set', '--user', user, PACKAGE, 'AUTO_START', change.auto_mode)
-            adb.shell('cmd', 'appops', 'write-settings')
-            restored = autostart(adb, user)
-            if restored is None or restored.restore_mode != change.auto_mode:
-                raise RuntimeError('Прошивка не подтвердила восстановление исходного автозапуска.')
-        elif mode.restore_mode != change.auto_mode:
-            raise RuntimeError('Разрешение автозапуска изменено после установки; новое значение сохранено.')
+class CompatibilityRestoreError(RuntimeError):
+    def __init__(self, errors, *, preserve_native=False):
+        super().__init__('\n'.join(errors))
+        self.preserve_native = preserve_native
+
+
+def restore_compat(adb, user, change, *, installed=True):
+    """Restore owned changes, preserving later dependencies and independent steps."""
+    errors, protect_service, preserve_native = [], False, False
+    status = None
+    if installed:
+        try:
+            status = bridge(adb, user)
+            if change.install_generation is not None and status.install_generation != change.install_generation:
+                errors.append('PeachOS переустановлен или его данные сброшены; настройки новой установки сохранены.')
+                protect_service = preserve_native = True
+            elif status.state not in (change.target, change.before):
+                errors.append('Настройка Home изменена после установки; её новое значение сохранено.')
+                protect_service = preserve_native = True
+            else:
+                # The service can now be required by Settings/remaps even if its
+                # effective filter is temporarily off. Old receivers cannot prove
+                # the absence of such dependencies, so retain that shared service.
+                protect_service = status.remote_required is not False or not status.config_ready and change.complete
+                if 'bridge' in change.attempted and status.state == change.target:
+                    if bridge(adb, user, change.before).state != change.before:
+                        errors.append('Лаунчер не подтвердил восстановление исходной настройки Home.')
+                        protect_service = preserve_native = True
+        except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+            errors.append('Настройка совместимого Home: ' + str(failure))
+            protect_service = preserve_native = True
+    # If the APK is absent, its private state and AppOps no longer belong to a
+    # live installation. Clear only our stale membership; package/Home recovery
+    # must never depend on a receiver in an uninstalled app.
+    try:
+        live = service_list(adb.shell('settings', '--user', user, 'get', 'secure', 'enabled_accessibility_services'))
+        remove_service = 'services' in change.attempted and SERVICE not in change.services and SERVICE in live
+        if remove_service and not protect_service:
+            updated = tuple(s for s in live if s != SERVICE)
+            if updated:
+                adb.shell('settings', '--user', user, 'put', 'secure', 'enabled_accessibility_services', ':'.join(updated))
+            else:
+                adb.shell('settings', '--user', user, 'delete', 'secure', 'enabled_accessibility_services')
+            live = service_list(adb.shell('settings', '--user', user, 'get', 'secure', 'enabled_accessibility_services'))
+            if SERVICE in live:
+                errors.append('Прошивка не подтвердила отключение добавленной службы Home.')
+        elif remove_service:
+            errors.append('Служба пульта сохранена: она нужна другим функциям или их состояние не подтверждено.')
+        if ('master' in change.attempted and change.master != '1' and not (protect_service and SERVICE in live)
+                and not (set(live) - set(change.services))):
+            if change.master == 'null':
+                adb.shell('settings', '--user', user, 'delete', 'secure', 'accessibility_enabled')
+            else:
+                adb.shell('settings', '--user', user, 'put', 'secure', 'accessibility_enabled', change.master)
+    except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+        errors.append('Служба доступности: ' + str(failure))
+    if 'autostart' in change.attempted and installed and not protect_service:
+        try:
+            mode = autostart(adb, user)
+            if mode is None:
+                errors.append('Операция автозапуска больше не поддерживается; проверьте разрешение PeachOS вручную.')
+            elif mode.effective_mode == 'allow':
+                adb.shell('cmd', 'appops', 'set', '--user', user, PACKAGE, 'AUTO_START', change.auto_mode)
+                adb.shell('cmd', 'appops', 'write-settings')
+                restored = autostart(adb, user)
+                if restored is None or restored.restore_mode != change.auto_mode:
+                    errors.append('Прошивка не подтвердила восстановление исходного автозапуска.')
+            elif mode.restore_mode != change.auto_mode:
+                errors.append('Разрешение автозапуска изменено после установки; новое значение сохранено.')
+        except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+            errors.append('Автозапуск: ' + str(failure))
+    if errors:
+        raise CompatibilityRestoreError(errors, preserve_native=preserve_native)
 
 
 def configure_compat(adb, user, stock_component, journal, save, progress=lambda text: None):
@@ -214,7 +349,8 @@ def configure_compat(adb, user, stock_component, journal, save, progress=lambda 
     # A helper already used for remote Settings retains its existing filtering policy.
     if SERVICE in services:
         target = BridgeState(stock, status.filter_keys_active if status.bound else status.state.filter_keys)
-    change = HomeChange(status.state, target, services, master, None if mode is None else mode.restore_mode)
+    change = HomeChange(status.state, target, services, master, None if mode is None else mode.restore_mode,
+                        install_generation=status.install_generation)
     journal['home_compat'] = change.encode()
     save()
     try:
@@ -250,8 +386,11 @@ def configure_compat(adb, user, stock_component, journal, save, progress=lambda 
             time.sleep(.25)
         else:
             raise RuntimeError('Прошивка не запустила службу пульта. Очистка остановлена; проверьте разрешение автозапуска на ТВ.')
-        if not verify_home(adb, user):
-            raise RuntimeError('Служба запущена, но Home не открыл PeachOS. Очистка остановлена.')
+        verification = verify_home(adb, user)
+        journal['home_verification'] = verification.encode()
+        save()
+        if not verification:
+            raise RuntimeError('Служба подключена, но автоматическая проверка перехода Home не пройдена. Очистка остановлена.')
         change.complete = True
         journal['home_compat'] = change.encode(); save()
     except Exception as failure:

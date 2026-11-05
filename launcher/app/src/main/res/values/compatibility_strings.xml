@@ -1,0 +1,5 @@
+<resources>
+    <string name="remote_config_loading">The remote service is still preparing its configuration. Try again in a moment.</string>
+    <string name="remote_filter_disabled">Global key filtering is disabled in this theme. Learning and holding Settings require it. Your existing choice has been kept.</string>
+    <string name="remote_gamepad_passthrough">Key filtering is temporarily paused while a game controller is connected. Disconnect it to learn this remote button.</string>
+</resources>

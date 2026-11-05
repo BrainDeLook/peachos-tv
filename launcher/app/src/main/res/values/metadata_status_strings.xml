@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shelf_table_unsupported">This firmware does not support all Android TV channel tables</string>
+    <string name="shelf_temporarily_unavailable">Android TV channels are temporarily unavailable. Try synchronizing again.</string>
+    <string name="shelf_synced_partial">Available sources were loaded. %1$s</string>
+    <string name="shelf_live_updates_unavailable">Sources were loaded. Automatic updates are unavailable on this firmware; use Synchronize channels to refresh.</string>
+</resources>

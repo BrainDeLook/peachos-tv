@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shelf_table_unsupported">Прошивка поддерживает не все таблицы каналов Android TV</string>
+    <string name="shelf_temporarily_unavailable">Каналы Android TV временно недоступны. Повторите синхронизацию.</string>
+    <string name="shelf_synced_partial">Доступные источники загружены. %1$s</string>
+    <string name="shelf_live_updates_unavailable">Источники загружены. Прошивка не поддерживает автоматическое обновление; используйте «Синхронизировать каналы».</string>
+</resources>

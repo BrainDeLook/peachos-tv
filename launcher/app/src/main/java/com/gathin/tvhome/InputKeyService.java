@@ -31,6 +31,14 @@ public class InputKeyService extends AccessibilityService {
     private boolean consumeVolumeKeys;
     /** Stops key filtering while a game controller is connected; null unless gamepad_passthrough and key_filter. */
     private GamepadPassthrough gamepads;
+    private boolean configured, filterRequested;
+    private final RemoteEventCoordinator.Client remoteClient = new RemoteEventCoordinator.Client() {
+        @Override public boolean filtering() {
+            return configured && filterRequested && (gamepads == null || !gamepads.isPassingThrough());
+        }
+        @Override public boolean handle(KeyEvent event) { return handleRemoteEvent(event); }
+        @Override public void cancelGestures() { }
+    };
 
     @Override
     protected void onServiceConnected() {
@@ -53,6 +61,9 @@ public class InputKeyService extends AccessibilityService {
             gamepads = new GamepadPassthrough(this);
             gamepads.start();
         }
+        filterRequested = config.keyFilter;
+        configured = true;
+        RemoteEventCoordinator.connect(this, RemoteEventCoordinator.INPUT, remoteClient);
     }
 
     private boolean isInputKey(int keyCode) {
@@ -63,6 +74,10 @@ public class InputKeyService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        return RemoteEventCoordinator.dispatch(event);
+    }
+
+    private boolean handleRemoteEvent(KeyEvent event) {
         if (consumeVolumeKeys && VolumeKeys.handle(this, event)) return true;
         // A scancode entry is more specific than any keycode, so it goes first.
         if (RemoteKeys.handle(this, event, appScancodes.get(event.getScanCode()),
@@ -71,10 +86,8 @@ public class InputKeyService extends AccessibilityService {
                 holdAppKeys.get(event.getKeyCode()))) return true;
         if (!isInputKey(event.getKeyCode())) return false;
         if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
-            try {
-                startActivity(new Intent(ACTION_VIEW_INPUTS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (ActivityNotFoundException ignored) {
-            }
+            if (!SystemSettings.start(this, new Intent(ACTION_VIEW_INPUTS)))
+                SystemSettings.start(this, new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_VIEW_INPUTS));
         }
         return true;
     }
@@ -94,6 +107,8 @@ public class InputKeyService extends AccessibilityService {
     }
 
     private void stopHelpers() {
+        configured = false;
+        RemoteEventCoordinator.disconnect(RemoteEventCoordinator.INPUT, remoteClient);
         if (gamepads != null) { gamepads.stop(); gamepads = null; }
         if (consumeVolumeKeys) VolumeKeys.stop();
         consumeVolumeKeys = false;

@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.ContentObserver;
-import android.media.tv.TvContract;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -38,7 +37,7 @@ public final class TopShelfSettingsActivity extends Activity {
     private android.os.CancellationSignal cancellation;
     private int generation;
     private boolean resumed;
-    private boolean observing;
+    private TvMetadata.Observation observation;
     private boolean permissionRequested;
     private TextView sync;
     private AlertDialog chooser;
@@ -62,7 +61,8 @@ public final class TopShelfSettingsActivity extends Activity {
         sync.setPadding(dp(18), dp(12), dp(18), dp(12));
         sync.setFocusable(true); sync.setClickable(true);
         sync.setOnClickListener(v -> {
-            if (checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            TvMetadata.Status access = TvMetadata.access(this);
+            if (access == TvMetadata.Status.PERMISSION_REQUIRED) {
                 if (permissionRequested && !shouldShowRequestPermissionRationale(Backdrops.PERMISSION)) {
                     new AlertDialog.Builder(this).setMessage(R.string.shelf_permission_required)
                             .setPositiveButton(R.string.settings, (dialog, which) -> {
@@ -78,6 +78,8 @@ public final class TopShelfSettingsActivity extends Activity {
                 }
                 return;
             }
+            if (access != TvMetadata.Status.READY) { load(); return; }
+            if (observation != null && !observation.complete()) { observation.close(); observation = null; }
             ChannelSetup.refresh(this); load();
         });
         content.addView(sync);
@@ -104,24 +106,24 @@ public final class TopShelfSettingsActivity extends Activity {
     private void load() {
         if (!resumed) return;
         cancelLoad();
-        if (checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        TvMetadata.Status access = TvMetadata.access(this);
+        if (access != TvMetadata.Status.READY) {
             generation++;
+            if (observation != null) { observation.close(); observation = null; }
             rows.removeAllViews();
-            status.setText(R.string.shelf_permission_required);
-            sync.setText(R.string.shelf_permission_allow);
+            status.setText(TvMetadata.message(access));
+            sync.setText(access == TvMetadata.Status.PERMISSION_REQUIRED ? R.string.shelf_permission_allow : R.string.shelf_sync);
             return;
         }
         sync.setText(R.string.shelf_sync);
-        if (!observing) {
-            getContentResolver().registerContentObserver(TvContract.Channels.CONTENT_URI, true, observer);
-            getContentResolver().registerContentObserver(TvContract.WatchNextPrograms.CONTENT_URI, true, observer);
-            observing = true;
-        }
+        if (observation == null) observation = TvMetadata.observe(this, access, observer,
+                TvMetadata.Table.CHANNELS, TvMetadata.Table.WATCH_NEXT);
         android.os.CancellationSignal signal = new android.os.CancellationSignal();
         cancellation = signal;
         int ticket = ++generation;
         status.setText(R.string.shelf_loading);
         pending = worker.submit(() -> {
+            try {
             Map<String, String> labels = new LinkedHashMap<>();
             for (android.content.pm.ResolveInfo app : getPackageManager().queryIntentActivities(
                     new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)) {
@@ -149,9 +151,27 @@ public final class TopShelfSettingsActivity extends Activity {
                     row.setOnClickListener(v -> choose(pkg, label, row, result));
                     if (pkg.equals(focus)) row.requestFocus();
                 }
-                status.setText(R.string.shelf_synced);
+                TvMetadata.Status issue = TvMetadata.Status.READY;
+                boolean hasSources = false;
+                for (ShelfRepository.Result result : catalogue.values()) {
+                    hasSources |= result.continueWatching || !result.channels.isEmpty();
+                    if (result.unavailable()) issue = result.issue();
+                }
+                if (issue != TvMetadata.Status.READY) status.setText(hasSources
+                        ? getString(R.string.shelf_synced_partial, getString(TvMetadata.message(issue)))
+                        : getString(TvMetadata.message(issue)));
+                else status.setText(observation != null && observation.complete()
+                        ? R.string.shelf_synced : R.string.shelf_live_updates_unavailable);
                 scroll.post(() -> { if (resumed) scroll.scrollTo(0, offset); });
             });
+            } catch (android.os.OperationCanceledException cancelled) {
+                // A newer scan or a paused screen owns the UI now.
+            } catch (RuntimeException unavailable) {
+                // Package/provider services can restart while the catalogue is being read.
+                main.post(() -> {
+                    if (resumed && ticket == generation) status.setText(R.string.shelf_temporarily_unavailable);
+                });
+            }
         });
     }
 
@@ -184,15 +204,15 @@ public final class TopShelfSettingsActivity extends Activity {
                     String source = values.get(which); ShelfRepository.save(this, pkg, source);
                     row.setText(label + " · " + sourceName(source, result)); dialog.dismiss();
                 }).setNegativeButton(android.R.string.cancel, null);
-        if (!result.continueWatching && result.channels.isEmpty()) status.setText(result.unavailable
-                ? getString(R.string.shelf_provider_unavailable) : getString(R.string.shelf_no_channels));
+        if (!result.continueWatching && result.channels.isEmpty()) status.setText(result.unavailable()
+                ? getString(TvMetadata.message(result.issue())) : getString(R.string.shelf_no_channels));
         chooser = builder.create(); chooser.setOnDismissListener(dialog -> chooser = null); chooser.show();
     }
 
     private String sourceName(String value, ShelfRepository.Result result) {
         if (ShelfSelection.OFF.equals(value)) return getString(R.string.shelf_off);
         if (ShelfSelection.AUTO.equals(value)) return getString(result.continueWatching || !result.channels.isEmpty()
-                ? R.string.shelf_auto : result.unavailable ? R.string.shelf_provider_unavailable : R.string.shelf_no_sources);
+                ? R.string.shelf_auto : result.unavailable() ? TvMetadata.message(result.issue()) : R.string.shelf_no_sources);
         if (ShelfSelection.CONTINUE.equals(value) && result.continueWatching) return getString(R.string.shelf_continue);
         for (ShelfRepository.Channel channel : result.channels) {
             if (ShelfSelection.HISTORY.equals(value) && channel.history) return getString(R.string.shelf_history);
@@ -211,10 +231,13 @@ public final class TopShelfSettingsActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; generation++; main.removeCallbacks(refresh);
-        if (observing) { getContentResolver().unregisterContentObserver(observer); observing = false; }
+        if (observation != null) { observation.close(); observation = null; }
         cancelLoad();
         if (chooser != null) chooser.dismiss();
         super.onPause();
     }
-    @Override protected void onDestroy() { cancelLoad(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        if (observation != null) { observation.close(); observation = null; }
+        cancelLoad(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy();
+    }
 }

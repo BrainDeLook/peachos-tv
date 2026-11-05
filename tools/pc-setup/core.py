@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 
 from catalog import candidates, protected, matching_profiles, FEATURES
-from home_setup import verify_home, configure_compat, restore_compat, HomeChange
+from home_setup import verify_home, configure_compat, restore_compat, HomeChange, CompatibilityRestoreError, home_roles, bridge
 
 PACKAGE = re.compile(r'(?:android|[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\Z')
 COMPONENT = re.compile(r'[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+\Z')
@@ -279,13 +279,23 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         if PEACH.split('/')[0] not in installed:
             raise ValueError('PeachOS TV не установлен для этого пользователя; назначение Home и очистка остановлены.')
         progress('Назначение PeachOS главным экраном…')
+        roles = home_roles(adb, current.user, current.props.get('ro.build.version.sdk', ''))
+        journal['home_roles_before'] = roles
+        journal['home_target'] = PEACH
+        try: journal['home_generation'] = bridge(adb, current.user).install_generation
+        except RuntimeError: journal['home_generation'] = None  # older launcher without this optional bridge
         journal['home_attempted'] = True
         save_json(path, journal)
         try:
             adb.run('shell', 'cmd', 'package', 'set-home-activity', '--user', str(current.user), PEACH, check=False)
             resolved = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
                                            '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
+            progress('Проверка Home через системный запуск и команду ADB…')
             home_verified = verify_home(adb, current.user)
+            journal['home_target'] = PEACH
+            journal['home_verification'] = home_verified.encode()
+            journal['home_roles_target'] = home_roles(adb, current.user, current.props.get('ro.build.version.sdk', ''))
+            save_json(path, journal)
         except Exception as failure:
             try:
                 adb.run('shell', 'cmd', 'package', 'set-home-activity', '--user', str(current.user), current.home, check=False)
@@ -305,7 +315,7 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
                 journal['home_method'] = 'compatible'
                 save_json(path, journal)
             elif not xiaomi_home_fallback:
-                raise RuntimeError('Назначение Home не подтверждено: прошивка продолжает выбирать штатный экран, несмотря на ответ Success. '
+                raise RuntimeError('Назначение Home не подтверждено автоматической проверкой перехода. '
                                    'Уже установленные APK сохранены. '
                                    'Исходное назначение возвращено; очистка не выполнялась. '
                                    'Разрешите «Совместимый Home через службу пульта» и проверьте новый план '
@@ -372,6 +382,17 @@ def read_restore(path):
         raise ValueError('Некорректная запись Home')
     if 'home_compat' in raw:
         raw['home_compat'] = HomeChange.parse(raw['home_compat'])
+    target = raw.get('home_target', '')
+    if not isinstance(target, str) or target and not COMPONENT.fullmatch(target):
+        raise ValueError('Некорректное целевое назначение Home')
+    for key in ('home_roles_before', 'home_roles_target'):
+        value = raw.get(key)
+        if value is not None and (not isinstance(value, list) or len(value) > 1
+                                  or any(not isinstance(name, str) or not PACKAGE.fullmatch(name) for name in value)):
+            raise ValueError('Некорректная роль Home в копии')
+    generation = raw.get('home_generation')
+    if generation is not None and (not isinstance(generation, str) or not re.fullmatch(r'[0-9a-f-]{36}', generation)):
+        raise ValueError('Некорректное поколение установки в копии')
     return raw
 
 
@@ -393,15 +414,80 @@ def restore(adb, device, path, progress=lambda text: None):
     current = discover(adb, device.serial)
     if current.identity != journal['identity'] or current.user != journal['user']:
         raise ValueError('Копия относится к другому устройству или пользователю')
+    errors, preserved, restored = [], [], []
+    preserve_native = False
     if 'home_compat' in journal:
-        restore_compat(adb, current.user, journal['home_compat'])
+        try:
+            restore_compat(adb, current.user, journal['home_compat'], installed=PEACH.split('/')[0] in current.installed)
+        except CompatibilityRestoreError as failure:
+            errors.append(str(failure))
+            preserve_native = failure.preserve_native
+        except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+            errors.append('Совместимый Home: ' + str(failure))
+            preserve_native = True
     for entry in reversed(journal['changes']):
         progress('Восстановление: ' + entry['package'])
-        adb.shell('pm', 'default-state' if entry['original'] == 0 else 'enable',
-                  '--user', current.user, entry['package'])
+        try:
+            adb.shell('pm', 'default-state' if entry['original'] == 0 else 'enable',
+                      '--user', current.user, entry['package'])
+            restored.append(entry['package'])
+        except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+            errors.append(entry['package'] + ': ' + str(failure))
     if journal['home_attempted'] and journal['original_home']:
-        adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, journal['original_home'])
-    disabled = packages(adb.shell('pm', 'list', 'packages', '-d', '--user', current.user))
-    if any(entry['package'] in disabled for entry in journal['changes']):
-        raise RuntimeError('Некоторые пакеты не восстановлены; смотрите журнал и повторите после подключения')
+        target = journal.get('home_target', PEACH)
+        roles_changed, role_needs_restore = False, False
+        expected_roles = journal.get('home_roles_target')
+        if expected_roles is not None:
+            try:
+                roles = home_roles(adb, current.user, current.props.get('ro.build.version.sdk', ''))
+                if roles is None:
+                    roles_changed = True
+                else:
+                    original_roles = journal.get('home_roles_before')
+                    roles_changed = list(roles) not in (expected_roles, original_roles)
+                    role_needs_restore = list(roles) == expected_roles and expected_roles != original_roles
+            except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+                errors.append('Проверка роли Home: ' + str(failure)); roles_changed = True
+        else:
+            # Legacy journals have no role snapshot. Still protect an explicit third-party
+            # selection when an OEM resolver continues to report its high-priority stock Home.
+            try:
+                roles = home_roles(adb, current.user, current.props.get('ro.build.version.sdk', ''))
+                if roles:
+                    roles_changed = roles[0] not in (target.split('/')[0], journal['original_home'].split('/')[0])
+                    role_needs_restore = roles[0] == target.split('/')[0] and target != journal['original_home']
+            except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+                errors.append('Проверка роли Home: ' + str(failure)); roles_changed = True
+        if journal.get('home_generation') and PEACH.split('/')[0] in current.installed:
+            try:
+                if bridge(adb, current.user).install_generation != journal['home_generation']: preserve_native = True
+            except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+                errors.append('Проверка поколения Home: ' + str(failure)); preserve_native = True
+        if preserve_native or roles_changed or current.home not in (target, journal['original_home']):
+            preserved.append('Home изменён после установки; новое назначение сохранено.')
+        elif current.home == target or role_needs_restore:
+            try:
+                adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, journal['original_home'])
+                observed = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
+                                              '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
+                if observed != journal['original_home']:
+                    errors.append('Прошивка не подтвердила исходное назначение Home.')
+                original_roles = journal.get('home_roles_before')
+                if original_roles and home_roles(adb, current.user, current.props.get('ro.build.version.sdk', '')) != tuple(original_roles):
+                    errors.append('Прошивка не подтвердила исходную роль Home.')
+            except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+                errors.append('Штатный Home: ' + str(failure))
+    try:
+        disabled = packages(adb.shell('pm', 'list', 'packages', '-d', '--user', current.user))
+        for entry in journal['changes']:
+            if entry['package'] in disabled:
+                errors.append('Не восстановлен пакет ' + entry['package'])
+                if entry['package'] in restored: restored.remove(entry['package'])
+    except (RuntimeError, ValueError, TimeoutError, OSError) as failure:
+        errors.append('Проверка пакетов: ' + str(failure))
+    report = path.with_name('restore-result.json')
+    save_json(report, {'version': 1, 'restored': restored, 'preserved': preserved, 'errors': errors})
+    if errors or preserved:
+        raise RuntimeError('Выполнены независимые шаги восстановления.\n' + '\n'.join(errors + preserved)
+                           + '\nПодробности: ' + str(report))
     return path

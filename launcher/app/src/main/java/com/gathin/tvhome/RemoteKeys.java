@@ -24,7 +24,7 @@ import java.util.function.ToIntFunction;
  * "KEYCODE_BUTTON_3:com.google.android.youtube.tv", or a scancode as "scan:490:com.wbd.hbomax". A "hold:"
  * prefix makes an entry the long-press action instead: "hold:KEYCODE_BUTTON_8:org.xbmc.kodi" opens Kodi when
  * that button is held for HOLD_MS, while the unprefixed entry still opens on a tap; "hold:scan:490:..." does
- * the same for a scancode. One set of maps for both services; whichever filters the key first consumes it.
+ * the same for a scancode. One set of maps; RemoteEventCoordinator gives each gesture one action owner.
  * A target of "input:<input id>" switches to that TV input (an HDMI port) instead of opening an app, a target
  * of "inputs" opens the input switcher, for a remote whose source button sends a key Android does not map, and
  * one of the action words (back, home, recents, mute, sleep, screensaver, settings, wifi) does that action.
@@ -222,10 +222,7 @@ final class RemoteKeys {
     }
 
     private static void start(Context ctx, Intent intent) {
-        try {
-            ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (ActivityNotFoundException | SecurityException ignored) {
-        }
+        SystemSettings.start(ctx, intent);
     }
 
     /** Opens an app from a remote button: its TV entry if it has one, else its phone entry. An "input:<id>" target
@@ -238,7 +235,7 @@ final class RemoteKeys {
             try {
                 ctx.startActivity(new Intent(ctx, MainActivity.class).setAction(MainActivity.ACTION_VIEW_INPUTS)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (ActivityNotFoundException ignored) {
+            } catch (ActivityNotFoundException | SecurityException ignored) {
             }
             return;
         }
@@ -251,7 +248,7 @@ final class RemoteKeys {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 ctx.startActivity(view);
-            } catch (ActivityNotFoundException ignored) {
+            } catch (ActivityNotFoundException | SecurityException ignored) {
             }
             return;
         }
@@ -260,7 +257,7 @@ final class RemoteKeys {
         if (open == null) return;
         try {
             ctx.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (ActivityNotFoundException ignored) {
+        } catch (ActivityNotFoundException | SecurityException ignored) {
         }
     }
 }

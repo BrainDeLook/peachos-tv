@@ -38,8 +38,31 @@ public class ShelfContentTest {
         assertFalse(ShelfRepository.sameContent(first, next));
         next = cards(); next.items.clear();
         assertFalse(ShelfRepository.sameContent(first, next));
-        next = cards(); next.unavailable = true;
+        next = cards(); next.channelsStatus = TvMetadata.Status.TEMPORARILY_UNAVAILABLE;
         assertFalse(ShelfRepository.sameContent(first, next));
         assertFalse(ShelfRepository.sameContent(null, next));
+    }
+
+    @Test public void unsupportedWatchNextKeepsPublishedChannelsAndIsNotPermissionDenial() {
+        ShelfRepository.Result result = cards();
+        result.watchStatus = TvMetadata.failure(new IllegalArgumentException("unknown URI"));
+        assertEquals(1, result.channels.size());
+        assertEquals("Latest", result.channels.get(0).name);
+        assertEquals(TvMetadata.Status.TABLE_UNSUPPORTED, result.issue());
+        assertTrue(result.unavailable());
+    }
+
+    @Test public void returningAccessIsARealChangeEvenWhenTheProviderStillHasNoCards() {
+        ShelfRepository.Result denied = new ShelfRepository.Result(), ready = new ShelfRepository.Result();
+        denied.channelsStatus = denied.watchStatus = TvMetadata.Status.PERMISSION_REQUIRED;
+        assertFalse(ShelfRepository.sameContent(denied, ready));
+    }
+
+    @Test public void temporaryWatchNextFailureDoesNotBecomeMissingPermission() {
+        ShelfRepository.Result result = cards();
+        result.watchStatus = TvMetadata.failure(new IllegalStateException("provider unavailable"));
+        assertEquals(TvMetadata.Status.TEMPORARILY_UNAVAILABLE, result.issue());
+        result.previewStatus = TvMetadata.Status.PERMISSION_REQUIRED;
+        assertEquals(TvMetadata.Status.PERMISSION_REQUIRED, result.issue());
     }
 }

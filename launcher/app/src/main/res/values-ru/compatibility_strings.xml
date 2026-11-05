@@ -1,0 +1,5 @@
+<resources>
+    <string name="remote_config_loading">Служба пульта ещё подготавливает настройки. Повторите через несколько секунд.</string>
+    <string name="remote_filter_disabled">В теме отключён глобальный перехват кнопок. Он нужен для обучения и удержания Settings. Ваше текущее отключение сохранено.</string>
+    <string name="remote_gamepad_passthrough">Перехват временно приостановлен из-за подключённого геймпада. Отключите его для обучения кнопки пульта.</string>
+</resources>

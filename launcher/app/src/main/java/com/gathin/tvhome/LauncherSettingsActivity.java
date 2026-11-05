@@ -266,6 +266,13 @@ public final class LauncherSettingsActivity extends Activity {
         });
         findViewById(R.id.defaultHomeChoice).setOnClickListener(v -> {
             Toast.makeText(this, R.string.home_settings_help, Toast.LENGTH_LONG).show();
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                android.app.role.RoleManager roles = getSystemService(android.app.role.RoleManager.class);
+                if (roles != null && roles.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)
+                        && !roles.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
+                    if (SystemSettings.start(this, roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME))) return;
+                }
+            }
             open(new Intent(Settings.ACTION_HOME_SETTINGS));
         });
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
@@ -417,7 +424,19 @@ public final class LauncherSettingsActivity extends Activity {
     }
 
     private boolean ensureRemoteService() {
-        if (HomeKeyService.isBound()) return true;
+        HomeKeyService.RemoteReadiness readiness = HomeKeyService.remoteReadiness();
+        if (readiness == HomeKeyService.RemoteReadiness.READY) return true;
+        if (readiness != HomeKeyService.RemoteReadiness.SERVICE_OFF) {
+            int message = switch (readiness) {
+                case CONFIG_LOADING -> R.string.remote_config_loading;
+                case FILTER_DISABLED -> R.string.remote_filter_disabled;
+                case PASSTHROUGH -> R.string.remote_gamepad_passthrough;
+                default -> throw new IllegalStateException("Unexpected remote readiness");
+            };
+            new AlertDialog.Builder(this).setTitle(R.string.settings_key_choose).setMessage(message)
+                    .setPositiveButton(android.R.string.ok, null).show();
+            return false;
+        }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.settings_key_service_off)
                 .setMessage(R.string.remote_service_required)
@@ -492,10 +511,6 @@ public final class LauncherSettingsActivity extends Activity {
     }
 
     private void open(Intent intent) {
-        try {
-            startActivity(intent);
-        } catch (ActivityNotFoundException | SecurityException e) {
-            Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
-        }
+        if (!SystemSettings.start(this, intent)) Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
     }
 }

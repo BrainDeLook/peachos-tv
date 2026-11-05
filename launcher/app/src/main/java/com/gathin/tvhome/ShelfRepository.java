@@ -37,12 +37,25 @@ final class ShelfRepository {
     static final class Result {
         final List<Channel> channels = new ArrayList<>();
         final List<Item> items = new ArrayList<>();
-        boolean unavailable, continueWatching, permissionDenied;
+        boolean continueWatching;
+        TvMetadata.Status channelsStatus = TvMetadata.Status.READY;
+        TvMetadata.Status watchStatus = TvMetadata.Status.READY;
+        TvMetadata.Status previewStatus = TvMetadata.Status.READY;
+
+        TvMetadata.Status issue() {
+            // A permission change can be remedied by the user; other provider failures are distinct.
+            if (channelsStatus == TvMetadata.Status.PERMISSION_REQUIRED || watchStatus == TvMetadata.Status.PERMISSION_REQUIRED
+                    || previewStatus == TvMetadata.Status.PERMISSION_REQUIRED) return TvMetadata.Status.PERMISSION_REQUIRED;
+            if (channelsStatus != TvMetadata.Status.READY) return channelsStatus;
+            return watchStatus != TvMetadata.Status.READY ? watchStatus : previewStatus;
+        }
+        boolean unavailable() { return issue() != TvMetadata.Status.READY; }
     }
 
     /** Compare the displayed channel/card content, excluding provider timestamps and ranking weights. */
     static boolean sameContent(Result first, Result second) {
-        if (first == null || first.unavailable != second.unavailable
+        if (first == null || first.channelsStatus != second.channelsStatus
+                || first.watchStatus != second.watchStatus || first.previewStatus != second.previewStatus
                 || first.continueWatching != second.continueWatching
                 || first.channels.size() != second.channels.size() || first.items.size() != second.items.size()) return false;
         for (int i = 0; i < first.channels.size(); i++) {
@@ -70,11 +83,15 @@ final class ShelfRepository {
 
     static java.util.Map<String, Result> catalogue(Context context, Set<String> apps,
             android.os.CancellationSignal cancellation) {
-        java.util.Map<String, Result> result = readChannels(context, apps, cancellation);
-        for (Result value : result.values()) if (value.permissionDenied) return result;
+        TvMetadata.Status access = TvMetadata.access(context);
+        java.util.Map<String, Result> result = readChannels(context, apps, access, cancellation);
+        if (access != TvMetadata.Status.READY) return result;
         try (Cursor c = context.getContentResolver().query(TvContract.WatchNextPrograms.CONTENT_URI,
                 new String[]{"package_name", "watch_next_type", "browsable", "title"}, null, null, null, cancellation)) {
-            if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
+            if (c == null) {
+                for (Result value : result.values()) value.watchStatus = TvMetadata.Status.TEMPORARILY_UNAVAILABLE;
+                return result;
+            }
             int visited = 0;
             while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 6000) {
                 String pkg = text(c, 0);
@@ -86,23 +103,27 @@ final class ShelfRepository {
         } catch (android.os.OperationCanceledException cancelled) {
             throw cancelled;
         } catch (RuntimeException e) {
-            for (Result value : result.values()) { value.unavailable = true; value.permissionDenied = true; }
+            for (Result value : result.values()) value.watchStatus = TvMetadata.failure(e);
             Log.w("TopShelf", "Watch Next catalogue unavailable: " + e.getClass().getSimpleName());
         }
         return result;
     }
 
     private static java.util.Map<String, Result> readChannels(Context context, Set<String> apps,
-            android.os.CancellationSignal cancellation) {
+            TvMetadata.Status access, android.os.CancellationSignal cancellation) {
         java.util.Map<String, Result> result = new java.util.LinkedHashMap<>();
         for (String app : apps) result.put(app, new Result());
-        if (context.checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            for (Result value : result.values()) value.unavailable = true;
+        if (access != TvMetadata.Status.READY) {
+            for (Result value : result.values())
+                value.channelsStatus = value.watchStatus = value.previewStatus = access;
             return result;
         }
         try (Cursor c = context.getContentResolver().query(TvContract.Channels.CONTENT_URI,
                 CHANNEL_COLUMNS, null, null, null, cancellation)) {
-            if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
+            if (c == null) {
+                for (Result value : result.values()) value.channelsStatus = TvMetadata.Status.TEMPORARILY_UNAVAILABLE;
+                return result;
+            }
             int visited = 0;
             while (!Thread.currentThread().isInterrupted() && c.moveToNext() && visited++ < 4000) {
                 String pkg = text(c, 0);
@@ -118,7 +139,7 @@ final class ShelfRepository {
         } catch (android.os.OperationCanceledException cancelled) {
             throw cancelled;
         } catch (RuntimeException e) {
-            for (Result value : result.values()) value.unavailable = true;
+            for (Result value : result.values()) value.channelsStatus = TvMetadata.failure(e);
             Log.w("TopShelf", "Channel provider unavailable: " + e.getClass().getSimpleName());
         }
         for (Result value : result.values()) {
@@ -134,8 +155,9 @@ final class ShelfRepository {
     }
 
     static Result read(Context context, String pkg, String source, android.os.CancellationSignal cancellation) {
-        Result result = readChannels(context, Collections.singleton(pkg), cancellation).get(pkg);
-        if (result.permissionDenied) return result;
+        TvMetadata.Status access = TvMetadata.access(context);
+        Result result = readChannels(context, Collections.singleton(pkg), access, cancellation).get(pkg);
+        if (access != TvMetadata.Status.READY) return result;
         Set<Long> historyChannels = new HashSet<>();
         Set<Long> appChannels = new HashSet<>();
         String resolvedSource = source;
@@ -153,7 +175,11 @@ final class ShelfRepository {
             Uri table = watch ? TvContract.WatchNextPrograms.CONTENT_URI : TvContract.PreviewPrograms.CONTENT_URI;
             try (Cursor c = context.getContentResolver().query(table, watch ? WATCH_COLUMNS : PREVIEW_COLUMNS,
                     null, null, null, cancellation)) {
-                if (c == null) { result.unavailable = true; continue; }
+                if (c == null) {
+                    if (watch) result.watchStatus = TvMetadata.Status.TEMPORARILY_UNAVAILABLE;
+                    else result.previewStatus = TvMetadata.Status.TEMPORARILY_UNAVAILABLE;
+                    continue;
+                }
                 int packageColumn = c.getColumnIndexOrThrow("package_name");
                 int idColumn = c.getColumnIndexOrThrow("_id");
                 int titleColumn = c.getColumnIndexOrThrow("title");
@@ -198,7 +224,8 @@ final class ShelfRepository {
             } catch (android.os.OperationCanceledException cancelled) {
                 throw cancelled;
             } catch (RuntimeException e) {
-                result.unavailable = true;
+                if (watch) result.watchStatus = TvMetadata.failure(e);
+                else result.previewStatus = TvMetadata.failure(e);
                 Log.w("TopShelf", "Program provider unavailable: " + e.getClass().getSimpleName());
             }
         }

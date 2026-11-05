@@ -17,6 +17,7 @@ import android.view.InputDevice;
 final class GamepadPassthrough implements InputManager.InputDeviceListener {
     private final AccessibilityService service;
     private final InputManager input;
+    private boolean passingThrough;
 
     GamepadPassthrough(AccessibilityService service) {
         this.service = service;
@@ -31,6 +32,8 @@ final class GamepadPassthrough implements InputManager.InputDeviceListener {
     void stop() {
         input.unregisterInputDeviceListener(this);
     }
+
+    boolean isPassingThrough() { return passingThrough; }
 
     /**
      * A gamepad has all the SOURCE_GAMEPAD bits and the SOURCE_JOYSTICK ones, as dumpsys input reports them on a TCL
@@ -54,10 +57,12 @@ final class GamepadPassthrough implements InputManager.InputDeviceListener {
     private void update() {
         AccessibilityServiceInfo info = service.getServiceInfo();
         if (info == null) return;
-        boolean filter = !gamepadConnected();
+        passingThrough = gamepadConnected();
+        boolean filter = !passingThrough;
         boolean filtering = (info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
         if (filter == filtering) return;
         info.flags ^= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+        if (!filter) RemoteEventCoordinator.cancelGestures();
         service.setServiceInfo(info);
     }
 

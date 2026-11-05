@@ -26,8 +26,10 @@ public final class HomeSetupReceiver extends BroadcastReceiver {
             if (!(operation instanceof String requestedOperation))
                 throw new IllegalArgumentException("Missing Home setup operation");
             HomeSetupState state;
-            if ("read".equals(requestedOperation)) {
+            if ("read".equals(requestedOperation) || "verify_origin".equals(requestedOperation)) {
                 state = HomeSetupState.read(context);
+                if ("verify_origin".equals(requestedOperation) && !SystemSettings.start(context, new Intent(context, LauncherSettingsActivity.class)))
+                    throw new IllegalStateException("Verification screen unavailable");
             } else if ("write".equals(requestedOperation)) {
                 Object stock = extras.get("stock_package"), filter = extras.get("filter_keys");
                 if (!(stock instanceof String stockPackage) || !(filter instanceof Boolean filterKeys))
@@ -45,11 +47,18 @@ public final class HomeSetupReceiver extends BroadcastReceiver {
             } else {
                 throw new IllegalArgumentException("Unsupported Home setup operation");
             }
+            java.util.Set<String> reasons = HomeKeyService.serviceUseReasons(context);
+            java.util.List<String> sortedReasons = new java.util.ArrayList<>(reasons);
+            java.util.Collections.sort(sortedReasons);
             JSONObject result = new JSONObject().put("version", 1)
                     .put("stock_package", state.stockPackage).put("filter_keys", state.filterKeys)
                     .put("bound", HomeKeyService.isBound())
                     .put("applied_stock_package", HomeKeyService.appliedStockPackage())
-                    .put("filter_keys_active", HomeKeyService.keyFilterActive());
+                    .put("filter_keys_active", HomeKeyService.keyFilterActive())
+                    .put("install_generation", HomeSetupState.generation(context))
+                    .put("config_ready", HomeKeyService.configurationReady())
+                    .put("remote_required", reasons.stream().anyMatch(reason -> !"home".equals(reason)))
+                    .put("service_use_reasons", new org.json.JSONArray(sortedReasons));
             setResultData(PREFIX + Base64.encodeToString(result.toString().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
             setResultCode(Activity.RESULT_OK);
         } catch (IllegalArgumentException | IllegalStateException | SecurityException invalid) {

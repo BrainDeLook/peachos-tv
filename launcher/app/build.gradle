@@ -11,8 +11,8 @@ android {
         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
         minSdk 26
         targetSdk 34
-        versionCode 137
-        versionName '1.5.15'
+        versionCode 138
+        versionName '1.5.16-preview1'
     }
 
     buildTypes {
@@ -21,7 +21,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // Sideloaded over ADB, never published: sign with the debug key so it installs over a debug build.
+            // Preserve the established signing identity so existing sideloaded installs can upgrade.
             signingConfig signingConfigs.debug
         }
     }

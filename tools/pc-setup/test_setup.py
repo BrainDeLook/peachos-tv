@@ -10,6 +10,7 @@ import zipfile
 from unittest.mock import Mock, patch
 
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
+from home_setup import HomeVerification
 from core import Adb, Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
 from wizard import Wizard, portable_adb
 
@@ -46,9 +47,9 @@ class SetupTests(unittest.TestCase):
     def setUp(self):
         # These tests exercise plan ordering/rollback. Foreground timing and real
         # capability parsing have separate tests in test_home_setup.py.
-        check = patch('core.verify_home', side_effect=lambda adb, user: component(adb.shell(
+        check = patch('core.verify_home', side_effect=lambda adb, user: HomeVerification(*(['passed'] * 2 if component(adb.shell(
             'cmd', 'package', 'resolve-activity', '--brief', '--user', user,
-            '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME')) == PEACH)
+            '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME')) == PEACH else ['failed'] * 2)))
         check.start()
         self.addCleanup(check.stop)
 
