@@ -480,6 +480,27 @@ class SetupTests(unittest.TestCase):
                 apply_plan(adb, current, [], set(), None, True, Path(folder), xiaomi_home_fallback=True)
         self.assertEqual([], adb.calls)
 
+    def test_tcl_rejected_home_preserves_install_and_stops_before_cleanup_with_specific_advice(self):
+        current = device()
+        current.props = {'ro.product.manufacturer': 'TCL', 'ro.build.version.sdk': '34'}
+        current.home = 'com.google.android.apps.tv.launcherx/com.google.android.apps.tv.launcherx.home.HomeActivity'
+        current.installed.update({PEACH.split('/')[0], 'com.google.android.feedback'})
+        class TclAdb(FakeAdb):
+            def shell(self, *args):
+                if args[:3] == ('cmd', 'package', 'resolve-activity'): return current.home
+                return super().shell(*args)
+        adb = TclAdb()
+        with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
+            with self.assertRaisesRegex(RuntimeError, 'TCL Android 14') as failure:
+                apply_plan(adb, current, ['com.google.android.feedback'], set(), None, True, Path(folder))
+            self.assertNotIn('Xiaomi', str(failure.exception))
+            self.assertIn('SetupWraith', str(failure.exception))
+            journal = read_restore(next(Path(folder).glob('*/restore.json')))
+            self.assertTrue(journal['home_attempted'])
+            self.assertEqual([], journal['changes'])
+        self.assertEqual(set(), adb.disabled)
+        self.assertIn(('cmd', 'package', 'set-home-activity', '--user', 0, current.home), adb.calls)
+
     def test_android_framework_is_a_valid_inventory_package_but_protected(self):
         self.assertEqual({'android', 'com.google.android.gms'}, packages('package:android\npackage:com.google.android.gms\n'))
         self.assertTrue(protected('android'))
@@ -488,6 +509,20 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(('xiaomi-aesp0',), matching_profiles(XIAOMI))
         self.assertEqual((), matching_profiles(dict(XIAOMI, **{'ro.build.version.sdk': '31'})))
         self.assertEqual((), matching_profiles(dict(XIAOMI, **{'ro.product.model': 'Different stick'})))
+
+    def test_tcl_android14_au02_recommends_only_verified_profile_packages(self):
+        props = {'ro.product.manufacturer': 'TCL', 'ro.product.device': 'G10', 'ro.product.name': 'G10_4K_GB',
+                 'ro.build.version.sdk': '34', 'ro.build.display.id': 'G10-user 14 UTT2.250416.001 AU02 release-keys'}
+        installed = {'com.google.android.feedback', 'com.tcl.logkit', 'com.tcl.esticker',
+                     'com.tcl.tv.tclhome_passive', 'com.tcl.exhibit', 'com.tcl.ttvs'}
+        profiles, rows = candidates(props, installed, set(), '')
+        self.assertEqual(('tcl-g10-au02',), profiles)
+        self.assertEqual(installed - {'com.tcl.exhibit', 'com.tcl.ttvs'}, {p for p, rule in rows.items() if rule.suggested})
+        self.assertNotIn('com.tcl.exhibit', rows)  # AU02 also uses this package for Art Mode.
+        self.assertNotIn('com.tcl.ttvs', rows)
+        for override in ({'ro.build.version.sdk': '33'}, {'ro.build.display.id': 'different AU02 firmware'},
+                         {'ro.product.name': 'Different TV'}):
+            self.assertEqual((), matching_profiles(dict(props, **override)))
 
     def test_unknown_system_packages_are_never_actions(self):
         _, rows = candidates({}, {'com.vendor.unknown', 'com.google.android.feedback'}, set(), '')

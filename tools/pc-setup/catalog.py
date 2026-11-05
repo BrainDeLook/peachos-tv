@@ -31,6 +31,9 @@ PROFILES = {
                     {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}),
     'tcl-g10': ('TCL G10 · Android 12',
                 {'ro.product.manufacturer': 'TCL', 'ro.product.device': 'G10', 'ro.product.name': 'G10_4K_GB', 'ro.build.version.sdk': '31'}),
+    'tcl-g10-au02': ('TCL G10 · Android 14 AU02',
+                    {'ro.product.manufacturer': 'TCL', 'ro.product.device': 'G10', 'ro.product.name': 'G10_4K_GB',
+                     'ro.build.version.sdk': '34', 'ro.build.display.id': 'G10-user 14 UTT2.250416.001 AU02 release-keys'}),
 }
 
 
@@ -45,7 +48,7 @@ RULES = [
     Rule('com.miui.tv.analytics', 'Аналитика Xiaomi', 'Метрики и диагностика', 'Сбор статистики Xiaomi; проверено на указанном Mi TV Stick.', ('xiaomi-aesp0',), suggested=True),
     Rule('tv.alphonso.alphonso_eula', 'Alphonso / распознавание просмотра', 'Метрики и диагностика', 'Компонент отслеживания просмотра Alphonso.', ('xiaomi-aesp0',), suggested=True),
     Rule('tv.samba.ssm.ui', 'Samba TV ACR', 'Метрики и диагностика', 'Распознавание просматриваемого контента. На других прошивках требует отдельной проверки.'),
-    Rule('com.tcl.logkit', 'Логи TCL', 'Метрики и диагностика', 'Не будет штатного сбора диагностических логов TCL.', ('tcl-g10',), suggested=True),
+    Rule('com.tcl.logkit', 'Логи TCL', 'Метрики и диагностика', 'Не будет штатного сбора диагностических логов TCL.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
     Rule('com.tcl.ttvs', 'TCL: аналитика и обновления', 'Метрики и диагностика', 'СОВМЕЩЁННЫЙ пакет: вместе с аналитикой могут перестать приходить обновления прошивки.', ('tcl-g10',), ('updates',)),
     Rule('com.mitv.tvhome.atv', 'PatchWall', 'Реклама и рекомендации', 'Отключает PatchWall. Это не штатный Android TV Home; текущий Home всегда защищён.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.mitv.tvhome.michannel', 'Каналы PatchWall', 'Реклама и рекомендации', 'Не будет контентных каналов Xiaomi.', ('xiaomi-aesp0',), suggested=True),
@@ -58,10 +61,10 @@ RULES = [
     Rule('com.mitv.download.service', 'Загрузчик контента PatchWall', 'Фоновые дополнения', 'Не будут работать загрузки контента PatchWall.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.mitv.dream', 'Заставка Xiaomi', 'Необязательные функции', 'Отключает штатную заставку Xiaomi.', ('xiaomi-aesp0',), ('screensaver',)),
     Rule('com.tcl.tv.plus', 'TCL TV+', 'Реклама и рекомендации', 'Не будет TCL TV+.', ('tcl-g10',), suggested=True),
-    Rule('com.tcl.tv.tclhome_passive', 'Контент TCL при запуске', 'Реклама и рекомендации', 'Не будет запуска контентной панели TCL.', ('tcl-g10',), suggested=True),
+    Rule('com.tcl.tv.tclhome_passive', 'Контент TCL при запуске', 'Реклама и рекомендации', 'Не будет запуска контентной панели TCL.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
     Rule('com.tcl.waterfall.overseas', 'TCL Channel', 'Реклама и рекомендации', 'Отключает контентную ленту TCL Channel.', ('tcl-g10',)),
     Rule('com.tcl.exhibit', 'Демонстрационный режим TCL', 'Фоновые дополнения', 'Отключает магазинные демонстрации.', ('tcl-g10',), suggested=True),
-    Rule('com.tcl.esticker', 'Магазинные наклейки TCL', 'Фоновые дополнения', 'Не будет магазинных экранных наклеек.', ('tcl-g10',), suggested=True),
+    Rule('com.tcl.esticker', 'Магазинные наклейки TCL', 'Фоновые дополнения', 'Не будет магазинных экранных наклеек.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
     Rule('com.tcl.ocean.instructions', 'Инструкция TCL', 'Предустановленные приложения', 'Не будет встроенного руководства пользователя.', ('tcl-g10',)),
     Rule('com.tcl.repairguide', 'Руководство ремонта TCL', 'Предустановленные приложения', 'Не будет штатного руководства ремонта.', ('tcl-g10',)),
     Rule('com.google.android.katniss', 'Голосовой поиск Google TV', 'Необязательные функции', 'Перестанет работать голосовой поиск.', features=('voice',)),

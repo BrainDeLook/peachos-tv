@@ -280,7 +280,17 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         if resolved != PEACH:
             adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, current.home)
             if not xiaomi_home_fallback:
-                raise RuntimeError('Прошивка продолжает выбирать штатный Home, несмотря на ответ Success. Исходное назначение возвращено; очистка не выполнялась. На Xiaomi MiTV-AESP0 включите отдельную опцию обхода Home и повторно проверьте план либо снимите «Назначить PeachOS главным экраном».')
+                advice = ('Для Xiaomi MiTV-AESP0 доступна отдельная опция обхода Home.'
+                          if 'xiaomi-aesp0' in matching_profiles(current.props) else
+                          'На TCL Android 14 может потребоваться перенаправление Home через службу пульта PeachOS; '
+                          'не отключайте SetupWraith, он может обслуживать сеть.'
+                          if current.props.get('ro.product.manufacturer', '').casefold() == 'tcl'
+                          and current.props.get('ro.build.version.sdk') == '34' else
+                          'Эта прошивка требует отдельного совместимого способа назначения Home.')
+                raise RuntimeError('Назначение Home не подтверждено: прошивка продолжает выбирать штатный экран, несмотря на ответ Success. '
+                                   'Уже установленные APK сохранены. '
+                                   'Исходное назначение возвращено; очистка не выполнялась. ' + advice
+                                   + ' Для установки без смены Home снимите «Назначить PeachOS главным экраном» и проверьте новый план.')
             dump = adb.shell('dumpsys', 'package', stock_package)
             match = re.search(r'User ' + str(current.user) + r':[^\n]*\benabled=(\d+)', dump)
             if not match or int(match[1]) not in (0, 1):
