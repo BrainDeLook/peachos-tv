@@ -14,7 +14,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 
 ## A home screen built around what you watch
 
-![Large portrait artwork above the app dock](docs/images/home.png)
+![Large portrait artwork above the app dock](docs/images/home_new.png)
 
 - **Artwork for the focused app.** Choose a source for each app: all Android TV cards, continue watching, Lampa history, or a specific published channel.
 - **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
@@ -29,7 +29,7 @@ PeachOS TV is a minimal launcher for Android TV and Google TV, built around a do
 
 ## Made for TVs and streaming boxes
 
-![Compact source picker with green connection indicators](docs/images/sources.png)
+![Compact source picker with green connection indicators](docs/images/sources_new.png)
 
 On TVs with available inputs, open the gear and choose the **Inputs** tab for the compact HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs do not show that tab.
 
