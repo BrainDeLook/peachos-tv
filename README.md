@@ -62,6 +62,8 @@ The control center also provides shortcuts to system settings, apps, Bluetooth, 
 
 ### Remote Settings button
 
+In **1.5.15**, the channel screen requests TV listings access when uninstalling has cleared it. Select **Allow channel access** and approve Android’s prompt to read published sources and posters. Without access, sync explains the requirement instead of reporting success.
+
 Since **1.5.14**, enabling Settings hold or starting key learning with the helper disconnected explains the requirement and offers system accessibility settings. After uninstalling, grant **PeachOS TV · Remote buttons** again through that prompt and return to the launcher. Installing the APK alone does not grant this system permission.
 
 Starting with **1.5.3**, holding the physical Settings button can open our control center instead of Android settings.

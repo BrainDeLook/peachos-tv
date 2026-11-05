@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.15-preview — Unreleased
+## 1.5.15 — 2026-11-05
 
 ### Русский
 
