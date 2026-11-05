@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.12 — 2026-11-05
+
+### Русский
+
+- Добавлен отдельный профиль Windows-мастера для TCL G10 / Q6CS на Android 14 AU02. Он совпадает только с проверенными устройством, продуктом, API и строкой сборки; другие прошивки не наследуют старый список Android 12.
+- Лёгкая очистка этого профиля предлагает отзывы Google, TCL LogKit, контентный экран TCL Home Passive и магазинные наклейки ESticker. Пакет Exhibit исключён: в этой прошивке он также содержит Art Mode. Отключение четырёх пакетов проверено через мастер на телевизоре с резервной копией.
+- При отказе назначения Home мастер теперь объясняет ограничение TCL и сохраняет установленные APK, возвращает исходный Home и останавливает очистку. Совет про обход Xiaomi показывается только для соответствующего профиля.
+- Добавлена инструкция по перенаправлению Home через существующую службу пульта и разрешению автозапуска PeachOS в защите TCL. Проверены повторная установка APK и перезагрузка. Мастер не включает эти разрешения автоматически; настройка выполняется отдельно с согласия владельца. Google TV, SetupWraith, TGuard, сеть, HDMI и службы пульта не отключаются этим профилем.
+- Обновлены portable EXE, APK и архив исходников. Код интерфейса лаунчера и AirPlay не менялся; версия APK повышена для согласованного релиза и совместимого обновления.
+
+Проверки: 61 тест установщика, release build/lint и 313 JVM-тестов лаунчера; самопроверка portable EXE и контроль встроенных файлов. На TCL владелец подтвердил Home из приложения, удержание громкости и источники; после настройки автозапуска Home проверен после перезагрузки. Полностью автоматический обход назначения Home для TCL не заявляется.
+
+### English
+
+- Add a separate Windows wizard profile for TCL G10 / Q6CS running Android 14 AU02. It matches the verified device, product, API and exact build string; other firmware does not inherit the Android 12 cleanup list.
+- Recommend Google feedback, TCL LogKit, TCL Home Passive and ESticker for this profile's light cleanup. Exclude Exhibit because it also provides Art Mode on this firmware. Verify all four reversible disable operations through the wizard on the TV, with a restore journal.
+- Explain TCL Home-selection failures accurately: keep installed APKs, restore the original Home and stop before cleanup. Show Xiaomi workaround advice only for the matching Xiaomi profile.
+- Document the existing remote helper's Home redirect and TCL's PeachOS-specific autostart permission. Verify APK replacement and reboot behavior. The wizard does not grant these permissions automatically; configure them separately with the owner's consent. This profile does not disable Google TV, SetupWraith, TGuard, networking, HDMI or remote services.
+- Update the portable EXE, launcher APK and source archive. Launcher UI and AirPlay code are unchanged; increment the APK version for a consistent release and in-place updates.
+
+Validation: 61 installer tests, release build/lint and 313 launcher JVM tests; portable EXE self-test and embedded-asset verification. The TCL owner confirmed Home from an app, held volume and input selection; Home was also checked after reboot with autostart configured. Fully automatic TCL Home setup is not claimed.
+
 ## 1.5.11 — 2026-11-03
 
 ### Русский

@@ -71,7 +71,7 @@ class Wizard:
         self.wait_window = None
         self.cancel_connect = threading.Event()
         self.frozen_controls = {}
-        root.title('PeachOS TV · Установщик 1.5.11')
+        root.title('PeachOS TV · Установщик 1.5.12')
         root.geometry(f'{min(1140, root.winfo_screenwidth() - 60)}x{min(860, root.winfo_screenheight() - 70)}')
         root.minsize(min(940, root.winfo_screenwidth() - 60), min(660, root.winfo_screenheight() - 70))
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -93,7 +93,7 @@ class Wizard:
         brand_line = ttk.Frame(title)
         brand_line.pack(anchor='w')
         ttk.Label(brand_line, text='PeachOS TV', style='Title.TLabel').pack(side='left')
-        ttk.Label(brand_line, text='  1.5.11', style='Version.TLabel').pack(side='left', pady=(6, 0))
+        ttk.Label(brand_line, text='  1.5.12', style='Version.TLabel').pack(side='left', pady=(6, 0))
         ttk.Label(title, text='Установка и обновление для Android TV', style='Muted.TLabel').pack(anchor='w')
         self.mode_button = ttk.Button(header, text='Расширенный мастер', command=self.switch_mode)
         self.mode_button.pack(side='right')
