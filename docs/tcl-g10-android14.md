@@ -63,13 +63,23 @@ same-APK reinstall preserving the existing redirect, strict update-only,
 restoration to the original bridge/accessibility/autostart state, and setup
 again from that restored state. After a real reboot, AUTO_START remained allowed,
 the Home-only service bound without key filtering, and PeachOS was already the
-foreground Home before the explicit verification. Physical remote behaviour on
-the new preview is a separate check from these ADB integration tests.
+foreground Home before the explicit verification.
+
+A subsequent user reinstall exposed a wizard consent bug: checking compatible
+Home without the separate Home checkbox produced a successful plan with
+`home_attempted=false`. Preview 2 makes compatible selection request Home setup
+itself, and clearing Home clears compatible consent. Both simple and advanced
+plans have regression tests. After applying the previously omitted Home setup,
+the owner confirmed physical Home opens PeachOS from another app.
 
 ## Conservative cleanup
 
-The AU02 profile recommends four present packages: Google feedback, TCL LogKit,
-TCL Home Passive and ESticker. Package actions on this device were inspected:
+The AU02 profile now recommends five present packages: Google feedback, TCL LogKit,
+TCL Home Passive, ESticker and the TCL Channel catalogue (`com.tcl.waterfall.overseas`).
+The catalogue's manifest exposes its independent web/video portal; upstream
+lists distinguish it from the protected `com.tcl.tv` HDMI/antenna player and
+the optional `com.tcl.channelplus` FAST input. Only the first four cleanup
+operations have been applied and checked on this device. Package actions were inspected:
 LogKit exposes log capture/upload; ESticker exposes showroom and soundbar demo
 screens; Home Passive exposes its content activity and startup receivers.
 

@@ -534,15 +534,33 @@ class SetupTests(unittest.TestCase):
         props = {'ro.product.manufacturer': 'TCL', 'ro.product.device': 'G10', 'ro.product.name': 'G10_4K_GB',
                  'ro.build.version.sdk': '34', 'ro.build.display.id': 'G10-user 14 UTT2.250416.001 AU02 release-keys'}
         installed = {'com.google.android.feedback', 'com.tcl.logkit', 'com.tcl.esticker',
-                     'com.tcl.tv.tclhome_passive', 'com.tcl.exhibit', 'com.tcl.ttvs'}
+                     'com.tcl.tv.tclhome_passive', 'com.tcl.exhibit', 'com.tcl.ttvs', 'com.tcl.waterfall.overseas'}
         profiles, rows = candidates(props, installed, set(), '')
         self.assertEqual(('tcl-g10-au02',), profiles)
         self.assertEqual(installed - {'com.tcl.exhibit', 'com.tcl.ttvs'}, {p for p, rule in rows.items() if rule.suggested})
         self.assertNotIn('com.tcl.exhibit', rows)  # AU02 also uses this package for Art Mode.
-        self.assertNotIn('com.tcl.ttvs', rows)
+        self.assertEqual(('updates',), rows['com.tcl.ttvs'].features)
+        self.assertFalse(rows['com.tcl.ttvs'].suggested)
         for override in ({'ro.build.version.sdk': '33'}, {'ro.build.display.id': 'different AU02 firmware'},
                          {'ro.product.name': 'Different TV'}):
             self.assertEqual((), matching_profiles(dict(props, **override)))
+
+    def test_standalone_vendor_apps_remain_optional_on_unmatched_firmware(self):
+        installed = {'com.tcl.waterfall.overseas', 'com.tcl.tv.plus', 'com.tcl.tv.tclhome_passive',
+                     'com.tcl.ocean.instructions', 'com.tcl.repairguide', 'com.google.android.tvrecommendations'}
+        _, rows = candidates({}, installed, set(), '')
+        self.assertEqual(installed, set(rows))
+        self.assertFalse(any(rule.suggested for rule in rows.values()))
+
+    def test_synced_tcl_content_rules_never_make_hdmi_or_cast_a_cleanup_default(self):
+        installed = {'com.tcl.tv', 'com.tcl.tvinput', 'com.tcl.channelplus', 'com.tcl.miracast', 'com.tcl.hearaid'}
+        _, rows = candidates({}, installed, set(), '')
+        self.assertNotIn('com.tcl.tv', rows)
+        self.assertNotIn('com.tcl.tvinput', rows)
+        self.assertEqual(('channels',), rows['com.tcl.channelplus'].features)
+        self.assertEqual(('cast',), rows['com.tcl.miracast'].features)
+        self.assertEqual(('accessibility',), rows['com.tcl.hearaid'].features)
+        self.assertFalse(any(rule.suggested for rule in rows.values()))
 
     def test_unknown_system_packages_are_never_actions(self):
         _, rows = candidates({}, {'com.vendor.unknown', 'com.google.android.feedback'}, set(), '')

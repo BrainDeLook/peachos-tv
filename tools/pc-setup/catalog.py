@@ -4,7 +4,7 @@ Sources: CleanYourTV examples/xiaomi-mitv-aesp0 and examples/tcl-g10-google-tv,
 plus the user's MiTV-AESP0 Android 9 session (28 cleanup packages, two optional apps).
 Package presence alone never establishes device-profile compatibility.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import json
 
@@ -18,6 +18,7 @@ class Rule:
     profiles: tuple[str, ...] = ()
     features: tuple[str, ...] = ()
     suggested: bool = False
+    suggested_profiles: tuple[str, ...] = ()
 
 
 FEATURES = {
@@ -49,24 +50,24 @@ RULES = [
     Rule('tv.alphonso.alphonso_eula', 'Alphonso / распознавание просмотра', 'Метрики и диагностика', 'Компонент отслеживания просмотра Alphonso.', ('xiaomi-aesp0',), suggested=True),
     Rule('tv.samba.ssm.ui', 'Samba TV ACR', 'Метрики и диагностика', 'Распознавание просматриваемого контента. На других прошивках требует отдельной проверки.'),
     Rule('com.tcl.logkit', 'Логи TCL', 'Метрики и диагностика', 'Не будет штатного сбора диагностических логов TCL.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
-    Rule('com.tcl.ttvs', 'TCL: аналитика и обновления', 'Метрики и диагностика', 'СОВМЕЩЁННЫЙ пакет: вместе с аналитикой могут перестать приходить обновления прошивки.', ('tcl-g10',), ('updates',)),
+    Rule('com.tcl.ttvs', 'TCL: аналитика и обновления', 'Метрики и диагностика', 'СОВМЕЩЁННЫЙ пакет: вместе с аналитикой могут перестать приходить обновления прошивки.', features=('updates',)),
     Rule('com.mitv.tvhome.atv', 'PatchWall', 'Реклама и рекомендации', 'Отключает PatchWall. Это не штатный Android TV Home; текущий Home всегда защищён.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.mitv.tvhome.michannel', 'Каналы PatchWall', 'Реклама и рекомендации', 'Не будет контентных каналов Xiaomi.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.xm.webcontent', 'Веб-контент Xiaomi', 'Реклама и рекомендации', 'Встроенные контентные и рекламные блоки Xiaomi.', ('xiaomi-aesp0',), suggested=True),
-    Rule('com.google.android.tvrecommendations', 'Рекомендации Android TV', 'Реклама и рекомендации', 'Рекомендации штатного экрана. Рекомендовано только для проверенного Mi TV Stick.', ('xiaomi-aesp0',), suggested=True),
+    Rule('com.google.android.tvrecommendations', 'Рекомендации Android TV', 'Реклама и рекомендации', 'Рекомендации штатного экрана; могут исчезнуть публикуемые им каналы карточек.', suggested=True, suggested_profiles=('xiaomi-aesp0',)),
     Rule('android.autoinstalls.config.xiaomi.mibox3', 'Автоустановка партнёров Xiaomi', 'Реклама и рекомендации', 'Прекращает партнёрскую автоустановку приложений.', ('xiaomi-aesp0',), suggested=True),
     Rule('android.autoinstalls.config.xioami.mibox3', 'Автоустановка Xiaomi (дубликат)', 'Реклама и рекомендации', 'Пакет с исторической опечаткой в имени.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.xiaomi.android.tvsetup.partnercustomizer', 'Партнёрские настройки Xiaomi', 'Реклама и рекомендации', 'Партнёрские приложения и рекомендации первоначальной настройки.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.xiaomo.tv.milegal', 'Правовые экраны Xiaomi', 'Фоновые дополнения', 'Экраны соглашений Xiaomi; проверено на MiTV-AESP0.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.mitv.download.service', 'Загрузчик контента PatchWall', 'Фоновые дополнения', 'Не будут работать загрузки контента PatchWall.', ('xiaomi-aesp0',), suggested=True),
     Rule('com.mitv.dream', 'Заставка Xiaomi', 'Необязательные функции', 'Отключает штатную заставку Xiaomi.', ('xiaomi-aesp0',), ('screensaver',)),
-    Rule('com.tcl.tv.plus', 'TCL TV+', 'Реклама и рекомендации', 'Не будет TCL TV+.', ('tcl-g10',), suggested=True),
-    Rule('com.tcl.tv.tclhome_passive', 'Контент TCL при запуске', 'Реклама и рекомендации', 'Не будет запуска контентной панели TCL.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
-    Rule('com.tcl.waterfall.overseas', 'TCL Channel', 'Реклама и рекомендации', 'Отключает контентную ленту TCL Channel.', ('tcl-g10',)),
+    Rule('com.tcl.tv.plus', 'TCL TV+', 'Реклама и рекомендации', 'Не будет контентного приложения TCL TV+.', suggested=True, suggested_profiles=('tcl-g10',)),
+    Rule('com.tcl.tv.tclhome_passive', 'Контент TCL при запуске', 'Реклама и рекомендации', 'Не будет запуска контентной панели TCL.', suggested=True, suggested_profiles=('tcl-g10', 'tcl-g10-au02')),
+    Rule('com.tcl.waterfall.overseas', 'TCL Channel · каталог фильмов', 'Реклама и рекомендации', 'Отключает веб-каталог и рекомендации TCL Channel. Это отдельный пакет от HDMI/Live TV и TCL Live FAST.', suggested=True, suggested_profiles=('tcl-g10', 'tcl-g10-au02')),
     Rule('com.tcl.exhibit', 'Демонстрационный режим TCL', 'Фоновые дополнения', 'Отключает магазинные демонстрации.', ('tcl-g10',), suggested=True),
     Rule('com.tcl.esticker', 'Магазинные наклейки TCL', 'Фоновые дополнения', 'Не будет магазинных экранных наклеек.', ('tcl-g10', 'tcl-g10-au02'), suggested=True),
-    Rule('com.tcl.ocean.instructions', 'Инструкция TCL', 'Предустановленные приложения', 'Не будет встроенного руководства пользователя.', ('tcl-g10',)),
-    Rule('com.tcl.repairguide', 'Руководство ремонта TCL', 'Предустановленные приложения', 'Не будет штатного руководства ремонта.', ('tcl-g10',)),
+    Rule('com.tcl.ocean.instructions', 'Инструкция TCL', 'Предустановленные приложения', 'Не будет встроенного руководства пользователя.'),
+    Rule('com.tcl.repairguide', 'Руководство ремонта TCL', 'Предустановленные приложения', 'Не будет штатного руководства ремонта и самодиагностики.'),
     Rule('com.google.android.katniss', 'Голосовой поиск Google TV', 'Необязательные функции', 'Перестанет работать голосовой поиск.', features=('voice',)),
     Rule('com.google.android.apps.mediashell', 'Chromecast', 'Необязательные функции', 'Прекратится трансляция через Chromecast.', features=('cast',)),
     Rule('com.mitv.milinkservice', 'Mi Cast', 'Необязательные функции', 'Отключает приём трансляции Xiaomi.', ('xiaomi-aesp0',), ('cast',)),
@@ -114,6 +115,7 @@ for package, title, impact in [
     ('com.sony.dtv.sonyselect', 'Sony Select', 'Каталог партнёрских приложений Sony.'),
     ('com.sony.dtv.sonytab', 'Контентная вкладка Sony', 'Партнёрская контентная вкладка Sony.'),
     ('com.sony.dtv.recommendationservice', 'Рекомендации Sony', 'Служба рекомендаций Sony.'),
+    ('com.tcl.messagebox', 'Сообщения TCL', 'Промосообщения и уведомления TCL; пакет также принимает события обновлений, которые могут перестать показываться.'),
 ]:
     RULES.append(Rule(package, title, 'Реклама и рекомендации', impact))
 
@@ -145,6 +147,8 @@ for package, title, impact, features in [
     ('com.nvidia.ota', 'Обновления NVIDIA SHIELD', 'Обновление прошивки NVIDIA SHIELD.', ('updates',)),
     ('com.tcl.ui_mediaCenter', 'USB-медиаплеер TCL', 'Воспроизведение файлов с USB через штатный медиаплеер.', ()),
     ('com.tcl.gamebar', 'Игровая панель TCL', 'Игровая панель и наложения для консолей.', ()),
+    ('com.tcl.miracast', 'Miracast TCL', 'Перестанет работать штатное беспроводное зеркалирование Miracast.', ('cast',)),
+    ('com.tcl.hearaid', 'Проверка слуха TCL', 'Пропадут тест слуха и персональная адаптация звучания.', ('accessibility',)),
 ]:
     RULES.append(Rule(package, title, 'Необязательные функции', impact, features=features))
 
@@ -167,6 +171,9 @@ for package, title in [
     ('com.tcl.browser', 'Браузер TCL'),
     ('com.sony.dtv.customersupport', 'Справка Sony'),
     ('com.sony.dtv.smarthelp', 'SmartHelp Sony'),
+    ('com.tcl.usercenter', 'Учётная запись TCL'),
+    ('com.tcl.hotelmenu', 'Гостиничное меню TCL'),
+    ('com.netflix.tokenmanager', 'Netflix · служба входа'),
 ]:
     RULES.append(Rule(package, title, 'Предустановленные приложения',
                       'Отключает только выбранное приложение. Оставьте, если пользуетесь им; данные не удаляются.'))
@@ -217,7 +224,9 @@ def protected(package, home_package=''):
 
 def candidates(props, installed, user_apps, home_package):
     profiles = matching_profiles(props)
-    rows = {r.package: r for r in RULES if r.package in installed
+    rows = {r.package: replace(r, suggested=r.suggested and (
+                not r.suggested_profiles or bool(set(r.suggested_profiles).intersection(profiles))))
+            for r in RULES if r.package in installed
             and (not r.profiles or set(r.profiles).intersection(profiles))
             and not protected(r.package, home_package)}
     for package in user_apps:

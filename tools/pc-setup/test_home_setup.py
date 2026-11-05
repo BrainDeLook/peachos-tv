@@ -559,12 +559,38 @@ class WizardHomeConsentTests(unittest.TestCase):
         self.assertTrue(options['update_only'])
 
     def test_existing_install_can_explicitly_opt_in_to_home_compatibility(self):
-        self.app.simple_home.set(True)
+        self.assertFalse(self.app.simple_home.get())
         self.app.compat_home.set(True)
         args, options = self.approve_plan()
         self.assertTrue(args[5])
         self.assertTrue(options['allow_home_redirect'])
         self.assertFalse(options['update_only'])
+
+    def test_advanced_compatibility_alone_requests_home_in_the_reviewed_plan(self):
+        self.app.switch_mode()
+        self.assertTrue(self.app.advanced)
+        self.assertFalse(self.app.home.get())
+        self.app.compat_home.set(True)
+        args, options = self.approve_plan()
+        self.assertTrue(args[5])
+        self.assertTrue(options['allow_home_redirect'])
+        self.assertFalse(options['update_only'])
+
+    def test_clicking_compatibility_marks_home_and_clearing_home_cancels_it(self):
+        pending = [self.root]
+        while pending:
+            widget = pending.pop()
+            if isinstance(widget, ttk.Checkbutton) and widget.cget('text') == 'Совместимый Home через службу пульта':
+                widget.invoke()
+                break
+            pending.extend(widget.winfo_children())
+        else:
+            self.fail('Compatibility checkbox missing')
+        self.assertTrue(self.app.simple_home.get())
+        self.assertTrue(self.app.home.get())
+        self.app.simple_home_choice.invoke()
+        self.assertFalse(self.app.simple_home.get())
+        self.assertFalse(self.app.compat_home.get())
 
     def test_explicit_update_only_ignores_checked_home_and_compatibility_options(self):
         self.app.simple_home.set(True)

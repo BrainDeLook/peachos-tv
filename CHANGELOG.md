@@ -4,6 +4,8 @@
 
 ### Русский
 
+- В preview 2 исправлен пропуск назначения Home при выборе только «Совместимый Home». Галочка теперь включает настройку Home в простом и расширенном мастере; снятие Home отменяет совместимый режим. После исправления владелец TCL подтвердил физическую Home.
+- Справочник синхронизирован с CleanYourTV `50fcc214`: 442 списка устройств и 1981 пакет. Рабочая база содержит 122 описанных кандидата. Доступность самостоятельных приложений отделена от автоматических рекомендаций; TCL Channel больше не скрывается на Android 14. HDMI/TV остаётся защищённым, TCL Live зависит от сохранения каналов.
 - Единая настройка Home по фактическому поведению прошивки: штатное назначение Android, проверка перехода на PeachOS и отдельный, изначально выключенный «Совместимый Home через службу пульта» при отказе. Штатный лаунчер и сетевые службы не отключаются.
 - Совместимый режим хранит настройку отдельно от темы, включает только необходимую службу и поддерживаемый автозапуск с явного согласия. Новый режим только для Home не фильтрует кнопки пульта; существующие настройки удержания Settings сохраняются.
 - Исправлены проверка уже открытого штатного Home, позднее подключение службы после замены APK и зависание ожидания `am start -W`. При ошибках настройка останавливается до очистки и пытается вернуть исходное состояние.
@@ -12,6 +14,8 @@
 
 ### English
 
+- Preview 2 fixes silently skipping Home assignment when only compatible Home was selected. Compatibility now requests Home setup in both wizard modes; clearing Home clears compatibility. The TCL owner confirmed the physical Home button afterward.
+- Sync the reference index to CleanYourTV `50fcc214`: 442 device lists and 1,981 packages, with 122 described actionable candidates. Separate standalone-app availability from profile-scoped recommendations; expose TCL Channel on Android 14. Keep HDMI/TV protected and TCL Live dependent on channel preservation.
 - Configure Home by observed firmware behaviour: try Android's native assignment, verify the actual PeachOS transition, and offer a separate default-off compatible remote-helper fallback. Keep the stock launcher and networking services enabled.
 - Store compatible settings separately from the theme. Enable the required accessibility service and supported autostart operation only with explicit consent. Fresh Home-only mode does not filter remote keys; preserve existing Settings-hold choices.
 - Handle an already visible stock Home and late service binding after APK replacement. Avoid OEM launch hangs caused by `am start -W`; stop before cleanup and attempt rollback on setup failure.

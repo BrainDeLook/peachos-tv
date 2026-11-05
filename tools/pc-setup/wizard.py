@@ -20,6 +20,7 @@ BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else BASE
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(BASE / 'PeachOS-TV-data')))
 BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
+SETUP_VERSION = '1.5.13 preview 2'
 
 
 def read_ui_settings(path):
@@ -71,7 +72,7 @@ class Wizard:
         self.wait_window = None
         self.cancel_connect = threading.Event()
         self.frozen_controls = {}
-        root.title('PeachOS TV · Установщик 1.5.13 preview')
+        root.title('PeachOS TV · Установщик ' + SETUP_VERSION)
         root.geometry(f'{min(1140, root.winfo_screenwidth() - 60)}x{min(860, root.winfo_screenheight() - 70)}')
         root.minsize(min(940, root.winfo_screenwidth() - 60), min(660, root.winfo_screenheight() - 70))
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -93,7 +94,7 @@ class Wizard:
         brand_line = ttk.Frame(title)
         brand_line.pack(anchor='w')
         ttk.Label(brand_line, text='PeachOS TV', style='Title.TLabel').pack(side='left')
-        ttk.Label(brand_line, text='  1.5.13 preview', style='Version.TLabel').pack(side='left', pady=(6, 0))
+        ttk.Label(brand_line, text='  ' + SETUP_VERSION, style='Version.TLabel').pack(side='left', pady=(6, 0))
         ttk.Label(title, text='Установка и обновление для Android TV', style='Muted.TLabel').pack(anchor='w')
         self.mode_button = ttk.Button(header, text='Расширенный мастер', command=self.switch_mode)
         self.mode_button.pack(side='right')
@@ -156,9 +157,11 @@ class Wizard:
         options.pack(fill='x', pady=(0, 12))
         ttk.Label(options, text='2. Параметры установки', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 5))
         paragraph(options, textvariable=self.simple_hint).pack(fill='x', pady=(0, 7))
-        self.simple_home_choice = ttk.Checkbutton(options, text='Настроить открытие PeachOS по кнопке Home', variable=self.simple_home)
+        self.simple_home_choice = ttk.Checkbutton(options, text='Настроить открытие PeachOS по кнопке Home', variable=self.simple_home,
+                                                command=lambda: self.compat_home.set(False) if not self.simple_home.get() else None)
         self.simple_home_choice.pack(anchor='w')
-        ttk.Checkbutton(options, text='Совместимый Home через службу пульта', variable=self.compat_home).pack(anchor='w')
+        ttk.Checkbutton(options, text='Совместимый Home через службу пульта', variable=self.compat_home,
+                        command=self.select_compatible_home).pack(anchor='w')
         paragraph(options, 'Если обычное назначение не работает: разрешить службу пульта и автозапуск PeachOS, если прошивка его поддерживает. Системные приложения сохранятся.', style='CardSmall.TLabel').pack(fill='x', pady=(0, 6))
         ttk.Checkbutton(options, text='Лёгкая очистка рекомендованных пакетов', variable=self.simple_cleanup).pack(anchor='w')
         airplay_choice = ttk.Checkbutton(options, text='Добавить AirPlay с iPhone · необязательный прототип', variable=self.airplay,
@@ -228,8 +231,10 @@ class Wizard:
         apk_row.pack(fill='x', pady=(0, 8))
         ttk.Button(apk_row, text='Другой APK…', style='Small.TButton', command=self.choose_apk).pack(side='left')
         ttk.Button(apk_row, text='Использовать встроенный', style='Small.TButton', command=lambda: self.apk.set(BUNDLED_APK_LABEL) if not self.busy else None).pack(side='left', padx=8)
-        ttk.Checkbutton(launcher_card, text='Назначить PeachOS главным экраном', variable=self.home).pack(anchor='w')
-        ttk.Checkbutton(launcher_card, text='Совместимый Home через службу пульта', variable=self.compat_home).pack(anchor='w')
+        ttk.Checkbutton(launcher_card, text='Назначить PeachOS главным экраном', variable=self.home,
+                        command=lambda: self.compat_home.set(False) if not self.home.get() else None).pack(anchor='w')
+        ttk.Checkbutton(launcher_card, text='Совместимый Home через службу пульта', variable=self.compat_home,
+                        command=self.select_compatible_home).pack(anchor='w')
         paragraph(launcher_card, 'Сначала штатное назначение Android. При отказе — отдельная настройка Home и разрешение службы пульта с автозапуском, если он поддерживается. Без отключения штатного Home и сетевых служб.', style='CardSmall.TLabel').pack(fill='x')
         module_card = card(apps)
         module_card.pack(fill='x', pady=(0, 12))
@@ -667,12 +672,18 @@ class Wizard:
         self.refresh()
         messagebox.showinfo('Выбор загружен', f'Доступно для этого устройства: {len(self.selected)} из {len(preset["packages"])}. Неподходящие и защищённые пакеты пропущены. Изменения не применены.')
 
+    def select_compatible_home(self):
+        if self.compat_home.get():
+            self.home.set(True)
+            self.simple_home.set(True)
+            self.simple_hint.set('Настроим Home. Если штатное назначение не работает, применим совместимый режим через службу пульта; изменения будут указаны в плане.')
+
     def review(self, update_only=False):
         if self.busy or not self.device: return
         selected = sorted(self.selected) if self.clean.get() else []
         apk = self.selected_apk() if self.install.get() else None
-        set_home = self.home.get()
-        allow_home_redirect = self.compat_home.get() and set_home
+        set_home = self.home.get() or self.compat_home.get()
+        allow_home_redirect = self.compat_home.get()
         extra_apks = tuple(self.extra_apks)
         airplay_apk = self.airplay_module.file if self.airplay.get() and self.airplay_module and not update_only else None
         expert = self.expert.get()
@@ -685,8 +696,8 @@ class Wizard:
             selected = [p for p, rule in self.rows.items() if self.simple_cleanup.get() and rule.suggested
                         and not set(rule.features).intersection(keep) and p not in self.device.disabled]
             installed = 'com.gathin.tvhome.backdrops' in self.device.installed
-            set_home = self.simple_home.get()
-            allow_home_redirect = self.compat_home.get() and set_home
+            set_home = self.simple_home.get() or self.compat_home.get()
+            allow_home_redirect = self.compat_home.get()
             update_only = installed and not selected and not airplay_apk and not set_home
         if update_only:
             if 'com.gathin.tvhome.backdrops' not in self.device.installed:
@@ -867,7 +878,8 @@ if __name__ == '__main__':
         app = Wizard(root)
         root.update_idletasks()
         test_adb = portable_adb() if app.adb_path == str(ASSETS / 'platform-tools' / 'adb.exe') else app.adb_path
-        Path(sys.argv[2]).write_text(json.dumps({'tk': root.tk.call('info', 'patchlevel'), 'rules': len(RULES),
+        Path(sys.argv[2]).write_text(json.dumps({'installer_version': SETUP_VERSION,
+                                               'tk': root.tk.call('info', 'patchlevel'), 'rules': len(RULES),
                                                'adb': bool(app.adb_path), 'apk': app.selected_apk().exists(),
                                                'icon': (ASSETS / 'peachos.ico').exists(), 'tabs': len(app.tabs.tabs()),
                                                'expert_default': app.expert.get(),
