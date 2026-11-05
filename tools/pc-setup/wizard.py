@@ -71,7 +71,7 @@ class Wizard:
         self.wait_window = None
         self.cancel_connect = threading.Event()
         self.frozen_controls = {}
-        root.title('PeachOS TV · Установщик 1.5.12')
+        root.title('PeachOS TV · Установщик 1.5.13 preview')
         root.geometry(f'{min(1140, root.winfo_screenwidth() - 60)}x{min(860, root.winfo_screenheight() - 70)}')
         root.minsize(min(940, root.winfo_screenwidth() - 60), min(660, root.winfo_screenheight() - 70))
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -93,7 +93,7 @@ class Wizard:
         brand_line = ttk.Frame(title)
         brand_line.pack(anchor='w')
         ttk.Label(brand_line, text='PeachOS TV', style='Title.TLabel').pack(side='left')
-        ttk.Label(brand_line, text='  1.5.12', style='Version.TLabel').pack(side='left', pady=(6, 0))
+        ttk.Label(brand_line, text='  1.5.13 preview', style='Version.TLabel').pack(side='left', pady=(6, 0))
         ttk.Label(title, text='Установка и обновление для Android TV', style='Muted.TLabel').pack(anchor='w')
         self.mode_button = ttk.Button(header, text='Расширенный мастер', command=self.switch_mode)
         self.mode_button.pack(side='right')
@@ -115,7 +115,7 @@ class Wizard:
         self.install = tk.BooleanVar(value=True)
         self.clean = tk.BooleanVar(value=False)
         self.home = tk.BooleanVar(value=False)
-        self.xiaomi_home = tk.BooleanVar(value=False)
+        self.compat_home = tk.BooleanVar(value=False)
         self.expert = tk.BooleanVar(value=False)
         self.embedded_apk = ASSETS / 'PeachOS-TV.apk'
         self.airplay = tk.BooleanVar(value=False)
@@ -156,8 +156,10 @@ class Wizard:
         options.pack(fill='x', pady=(0, 12))
         ttk.Label(options, text='2. Параметры установки', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 5))
         paragraph(options, textvariable=self.simple_hint).pack(fill='x', pady=(0, 7))
-        self.simple_home_choice = ttk.Checkbutton(options, text='Открывать PeachOS по кнопке Home при новой установке', variable=self.simple_home)
+        self.simple_home_choice = ttk.Checkbutton(options, text='Настроить открытие PeachOS по кнопке Home', variable=self.simple_home)
         self.simple_home_choice.pack(anchor='w')
+        ttk.Checkbutton(options, text='Совместимый Home через службу пульта', variable=self.compat_home).pack(anchor='w')
+        paragraph(options, 'Если обычное назначение не работает: разрешить службу пульта и автозапуск PeachOS, если прошивка его поддерживает. Системные приложения сохранятся.', style='CardSmall.TLabel').pack(fill='x', pady=(0, 6))
         ttk.Checkbutton(options, text='Лёгкая очистка рекомендованных пакетов', variable=self.simple_cleanup).pack(anchor='w')
         airplay_choice = ttk.Checkbutton(options, text='Добавить AirPlay с iPhone · необязательный прототип', variable=self.airplay,
                                         state='normal' if self.airplay_module else 'disabled')
@@ -227,8 +229,8 @@ class Wizard:
         ttk.Button(apk_row, text='Другой APK…', style='Small.TButton', command=self.choose_apk).pack(side='left')
         ttk.Button(apk_row, text='Использовать встроенный', style='Small.TButton', command=lambda: self.apk.set(BUNDLED_APK_LABEL) if not self.busy else None).pack(side='left', padx=8)
         ttk.Checkbutton(launcher_card, text='Назначить PeachOS главным экраном', variable=self.home).pack(anchor='w')
-        ttk.Checkbutton(launcher_card, text='Обход назначения Home на Xiaomi MiTV-AESP0 / Android 9', variable=self.xiaomi_home).pack(anchor='w')
-        paragraph(launcher_card, 'Обход применяется только на поддерживаемой модели, если штатное назначение не сработает. Изменение обратимо.', style='CardSmall.TLabel').pack(fill='x')
+        ttk.Checkbutton(launcher_card, text='Совместимый Home через службу пульта', variable=self.compat_home).pack(anchor='w')
+        paragraph(launcher_card, 'Сначала штатное назначение Android. При отказе — отдельная настройка Home и разрешение службы пульта с автозапуском, если он поддерживается. Без отключения штатного Home и сетевых служб.', style='CardSmall.TLabel').pack(fill='x')
         module_card = card(apps)
         module_card.pack(fill='x', pady=(0, 12))
         ttk.Label(module_card, text='Дополнительный модуль', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 6))
@@ -544,7 +546,9 @@ class Wizard:
         already_installed = 'com.gathin.tvhome.backdrops' in d.installed
         self.update_button.configure(state='normal' if already_installed else 'disabled')
         self.simple_stage.set('✓  Устройство подключено     →     2  Параметры     →     3  Проверка плана')
-        self.simple_home_choice.configure(state='disabled' if already_installed else 'normal')
+        self.simple_home.set(not already_installed)
+        self.compat_home.set(False)
+        self.simple_home_choice.configure(state='normal')
         self.simple_hint.set('PeachOS TV уже установлен: обновим до версии из этого мастера. Настройки, порядок и Home сохранятся.' if already_installed
                              else 'Установим встроенный PeachOS TV. Изменения главного экрана будут перечислены в плане.')
         if self.airplay_module:
@@ -668,7 +672,7 @@ class Wizard:
         selected = sorted(self.selected) if self.clean.get() else []
         apk = self.selected_apk() if self.install.get() else None
         set_home = self.home.get()
-        xiaomi_home = self.xiaomi_home.get() and set_home
+        allow_home_redirect = self.compat_home.get() and set_home
         extra_apks = tuple(self.extra_apks)
         airplay_apk = self.airplay_module.file if self.airplay.get() and self.airplay_module and not update_only else None
         expert = self.expert.get()
@@ -681,14 +685,14 @@ class Wizard:
             selected = [p for p, rule in self.rows.items() if self.simple_cleanup.get() and rule.suggested
                         and not set(rule.features).intersection(keep) and p not in self.device.disabled]
             installed = 'com.gathin.tvhome.backdrops' in self.device.installed
-            set_home = self.simple_home.get() and not installed
-            xiaomi_home = set_home and 'xiaomi-aesp0' in self.profiles and self.device.home.split('/')[0] == 'com.google.android.tvlauncher'
-            update_only = installed and not selected and not airplay_apk
+            set_home = self.simple_home.get()
+            allow_home_redirect = self.compat_home.get() and set_home
+            update_only = installed and not selected and not airplay_apk and not set_home
         if update_only:
             if 'com.gathin.tvhome.backdrops' not in self.device.installed:
                 messagebox.showinfo('Лаунчер ещё не установлен', 'Используйте обычную установку PeachOS TV.')
                 return
-            apk, extra_apks, selected, set_home, xiaomi_home, expert = self.embedded_apk, (), [], False, False, False
+            apk, extra_apks, selected, set_home, allow_home_redirect, expert = self.embedded_apk, (), [], False, False, False
         if airplay_apk:
             reason = airplay_compatibility(self.airplay_module, self.device.props)
             if reason:
@@ -701,7 +705,7 @@ class Wizard:
                  'APK: ' + (BUNDLED_APK_LABEL if apk == self.embedded_apk else str(apk) if apk else 'не устанавливать'),
                  'Дополнительные APK (по порядку):', *['• ' + str(file) for file in extra_apks], '',
                  'Home: ' + ('назначить PeachOS' if set_home else 'не менять'),
-                 'Обход Xiaomi: ' + ('если выбор игнорируется, отключить com.google.android.tvlauncher; состояние сохранится в копии' if xiaomi_home else 'выключен; штатный лаунчер не отключается'),
+                 'Совместимый Home: ' + ('разрешить службу пульта и поддерживаемый автозапуск, если обычный Home не работает' if allow_home_redirect else 'новые службы и разрешения не включаются'),
                  'Сохранить: ' + ', '.join(FEATURES[k] for k in keep), '', f'Отключить пакетов: {len(selected)}']
         airplay_lines = ['AirPlay: установить отдельный модуль — ' + str(airplay_apk),
                          'Он заменит лупу в панели переключателем AirPlay. Включённый значок будет синим.',
@@ -725,8 +729,8 @@ class Wizard:
                      'Главный экран: ' + ('назначить PeachOS' if set_home else 'оставить как сейчас'),
                      'Очистка: ' + (f'отключить {len(selected)} рекомендованных пакетов' if selected else 'не выполнять')]
             lines += ['', *airplay_lines]
-            if xiaomi_home:
-                lines += ['', 'На этом Xiaomi может потребоваться отключить штатный главный экран. Если обычное назначение не сработает, мастер отключит его с возможностью восстановления из копии.']
+            if allow_home_redirect:
+                lines += ['', 'Если обычный Home не работает: включить службу «Кнопки пульта» и автозапуск PeachOS, если он поддерживается. Системные приложения не отключаются.']
             for package in selected:
                 rule = self.rows[package]
                 lines += ['• ' + rule.title + ': ' + rule.impact]
@@ -759,7 +763,7 @@ class Wizard:
         launcher_action = ('Обновить PeachOS TV' if 'com.gathin.tvhome.backdrops' in device.installed else 'Установить PeachOS TV') if apk else 'Не устанавливать'
         values = (
             ('Лаунчер', launcher_action),
-            ('Главный экран', 'Назначить PeachOS' if set_home else 'Оставить как сейчас'),
+            ('Главный экран', ('Штатно; служба пульта при необходимости' if allow_home_redirect else 'Назначить PeachOS') if set_home else 'Оставить как сейчас'),
             ('Очистка', f'Отключить пакетов: {len(selected)}' if selected else 'Не выполнять'),
             ('Ваши приложения', f'{len(extra_apks)} APK по порядку' if extra_apks else 'Не устанавливать'),
             ('AirPlay', 'Установить отдельный модуль' if airplay_apk else 'Оставить как сейчас'),
@@ -777,11 +781,14 @@ class Wizard:
         if airplay_apk:
             paragraph(content, 'AirPlay — необязательный прототип. Для автоматического приёма модуль отдельно попросит разрешение «Поверх других приложений».',
                       style='Muted.TLabel').pack(fill='x', pady=(0, 10))
-        if xiaomi_home or (expert and selected):
+        if allow_home_redirect:
+            permission_card = card(content, padding=14)
+            permission_card.pack(fill='x', pady=(0, 10))
+            paragraph(permission_card, 'Совместимый Home разрешает службе PeachOS наблюдать смену окон во всех приложениях. Для нового режима фильтрация кнопок выключена; существующие настройки пульта сохранятся. На некоторых прошивках требуется разрешение автозапуска. После установки проверьте физические Home и громкость.', style='CardMuted.TLabel').pack(fill='x')
+        if expert and selected:
             warning = card(content, padding=14)
             warning.pack(fill='x', pady=(0, 10))
-            paragraph(warning, 'Экспертный план: защита отключена. Возможны потеря ADB и окирпичивание; копия не гарантирует восстановление.'
-                      if expert and selected else 'Обход Xiaomi: если обычное назначение не сработает, мастер обратимо отключит штатный Home.',
+            paragraph(warning, 'Экспертный план: защита отключена. Возможны потеря ADB и окирпичивание; копия не гарантирует восстановление.',
                       style='Warning.TLabel').pack(fill='x')
         details = ttk.Frame(content)
         text = ScrolledText(details, wrap='word', height=14, padx=15, pady=15, background=colors.surface,
@@ -805,7 +812,7 @@ class Wizard:
             window.destroy()
             self.status.set('Выполняется подтверждённый план. Не отключайте устройство от сети.')
             self.job(lambda: apply_plan(adb, device, selected, keep, apk, set_home, DATA / 'backups', self.progress,
-                                       xiaomi_home_fallback=xiaomi_home, extra_apks=extra_apks, expert=expert, update_only=update_only,
+                                       allow_home_redirect=allow_home_redirect, extra_apks=extra_apks, expert=expert, update_only=update_only,
                                        airplay_apk=airplay_apk), self.completed)
         ttk.Button(controls, text='Применить план', style='Accent.TButton', command=apply).pack(side='right')
         apply_theme(self.root, self.dark_mode.get())
@@ -864,6 +871,7 @@ if __name__ == '__main__':
                                                'adb': bool(app.adb_path), 'apk': app.selected_apk().exists(),
                                                'icon': (ASSETS / 'peachos.ico').exists(), 'tabs': len(app.tabs.tabs()),
                                                'expert_default': app.expert.get(),
+                                               'compatible_home_default': app.compat_home.get(),
                                                'simple_default': not app.advanced, 'reference_packages': len(REFERENCE['packages']),
                                                'airplay_bundled': app.airplay_module is not None, 'airplay_default': app.airplay.get(),
                                                'adb_version': Adb(test_adb).run('version', target=False) if test_adb else '',

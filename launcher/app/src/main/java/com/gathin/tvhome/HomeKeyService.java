@@ -40,6 +40,38 @@ import java.util.Set;
  */
 public class HomeKeyService extends AccessibilityService {
 
+    private static volatile HomeKeyService connectedService;
+    private Config appliedConfig;
+    private SharedPreferences settingsChoices;
+    private String stockHomePackage = "";
+    private volatile String appliedSetupPackage = "";
+    private final InstallerProbe installerProbe = new InstallerProbe();
+
+    static boolean isBound() {
+        return connectedService != null;
+    }
+
+    static String appliedStockPackage() {
+        HomeKeyService service = connectedService;
+        return service == null ? "" : service.appliedSetupPackage;
+    }
+
+    static boolean keyFilterActive() {
+        HomeKeyService service = connectedService;
+        AccessibilityServiceInfo info = service == null ? null : service.getServiceInfo();
+        return info != null && (info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
+    }
+
+    /** Receiver writes are applied on the helper's main thread without another full theme scan. */
+    static void refreshHomeSetup() {
+        HomeKeyService service = connectedService;
+        if (service == null) return;
+        service.handler.post(() -> {
+            if (connectedService == service && service.appliedConfig != null)
+                service.applyHomeSetup(service.appliedConfig);
+        });
+    }
+
     /** restore_key_services was on when the config was read: this helper is noted for ServiceRepair. */
     private boolean repairRecord;
     /** Remote buttons that should open Settings (config.xml, settings_key_scancodes and settings_key_keycodes). */
@@ -47,6 +79,12 @@ public class HomeKeyService extends AccessibilityService {
     private int[] settingsKeycodes = new int[0];
     private boolean settingsPanel;
     private SettingsButton settingsButton;
+    private final SharedPreferences.OnSharedPreferenceChangeListener settingsChoiceChanged = (preferences, key) -> {
+        if ((key == null || SettingsButton.KEY.equals(key)) && appliedConfig != null) {
+            if (settingsButton != null) settingsButton.cancel();
+            applyHomeSetup(appliedConfig);
+        }
+    };
     private OverlayControls overlayControls;
     /** consume_volume_keys: Volume Up/Down go to VolumeKeys instead of on to the firmware. */
     private boolean consumeVolumeKeys;
@@ -81,6 +119,7 @@ public class HomeKeyService extends AccessibilityService {
                     .setPackage(getPackageName()).putExtra(MainActivity.EXTRA_CONTROL_CENTER, true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         });
+        connectedService = this;
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
         // unlock. Config.load reads credential-protected storage, so wait for the unlock before reading it.
@@ -125,6 +164,16 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private void stopHelpers() {
+        if (connectedService == this) connectedService = null;
+        appliedConfig = null;
+        appliedSetupPackage = "";
+        installerProbe.reset();
+        stockHomePackage = "";
+        stockHome.clear();
+        if (settingsChoices != null) {
+            settingsChoices.unregisterOnSharedPreferenceChangeListener(settingsChoiceChanged);
+            settingsChoices = null;
+        }
         if (configurationRefresh != null) { configurationRefresh.cancel(); configurationRefresh = null; }
         appliedThemeKey = null; appliedPreferences = null;
         if (overlayControls != null) { overlayControls.close(); overlayControls = null; }
@@ -138,6 +187,10 @@ public class HomeKeyService extends AccessibilityService {
 
     private void loadConfig() {
         // Keycodes and the panel choice can also come from a theme; theme.sh restarts this service.
+        if (settingsChoices == null) {
+            settingsChoices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+            settingsChoices.registerOnSharedPreferenceChangeListener(settingsChoiceChanged);
+        }
         long since = SystemClock.uptimeMillis();
         Config cached = Config.loadCached(this);
         if (cached != null) applyConfig(cached);
@@ -152,6 +205,7 @@ public class HomeKeyService extends AccessibilityService {
         Map<String, ?> preferences = Config.visualPreferences(this);
         if (key != null && key.equals(appliedThemeKey) && preferences.equals(appliedPreferences)) return;
         appliedThemeKey = key; appliedPreferences = preferences;
+        appliedConfig = config;
         // restore_key_services: note that this helper runs, so Home can put it back after a force stop. Here, not
         // in onServiceConnected: the note is in credential-protected storage too, readable only after the unlock.
         repairRecord = config.restoreKeyServices;
@@ -162,12 +216,32 @@ public class HomeKeyService extends AccessibilityService {
         consumeVolumeKeys = config.consumeVolumeKeys;
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
-        RemoteKeys.applyKeyFilter(this, config.keyFilter);
+        holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);
+        holdAppScancodes = RemoteKeys.parseHoldAppScancodes(config.appKeys);
+        applyHomeSetup(config);
+    }
+
+    private void applyHomeSetup(Config config) {
+        HomeSetupState setup = HomeSetupState.read(this);
+        // An empty installer override restores all theme behavior, including key filtering.
+        boolean override = !setup.stockPackage.isEmpty();
+        String redirect = override ? setup.stockPackage : config.stockHomeRedirect;
+        boolean remoteBindings = !appKeys.isEmpty() || !appScancodes.isEmpty()
+                || !holdAppKeys.isEmpty() || !holdAppScancodes.isEmpty()
+                || settingsKeycodes.length > 0 || config.consumeVolumeKeys;
+        boolean keyFilter = setup.keyFilterEnabled(config.keyFilter,
+                settingsChoices.getBoolean(SettingsButton.KEY, false), remoteBindings);
+        // Reapplying the filter must not override an already connected game controller's passthrough.
+        if (gamepads != null) { gamepads.stop(); gamepads = null; }
+        appliedSetupPackage = "";
         stockHome.clear();
-        if (!config.stockHomeRedirect.isEmpty()) {
-            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(config.stockHomeRedirect);
+        stockHomePackage = redirect;
+        if (!redirect.isEmpty()) {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(redirect);
             for (ResolveInfo ri : getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DISABLED_COMPONENTS)) {
                 stockHome.add(ri.activityInfo.name);
+                // A HOME alias reports its actual Activity class in window events.
+                if (ri.activityInfo.targetActivity != null) stockHome.add(ri.activityInfo.targetActivity);
             }
         }
         // home_key_service.xml subscribes to no events, so the redirect asks for window changes only when it is on.
@@ -177,17 +251,19 @@ public class HomeKeyService extends AccessibilityService {
             // config no longer redirects stock Home. OverlayControls adds this event temporarily.
             int baseEvents = stockHome.isEmpty() ? 0 : AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
             info.eventTypes = overlayControls == null ? baseEvents : overlayControls.baseEvents(baseEvents);
+            if (keyFilter) info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            else info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             setServiceInfo(info);
+            if (override && !stockHome.isEmpty()) appliedSetupPackage = setup.stockPackage;
         }
-        if (!stockHome.isEmpty()) probeAtBoot();
-        holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);
-        holdAppScancodes = RemoteKeys.parseHoldAppScancodes(config.appKeys);
+        // At a late bind the stock Home may already be foreground and emit no new window event.
+        // Probe once per installer target/bind, never on every settings or verified-theme refresh.
+        if (installerProbe.applied(appliedSetupPackage)) probeHomeWindow();
+        else if (!override && !stockHome.isEmpty()) probeAtBoot();
         // gamepad_passthrough, off by default. Only with key_filter on: off, the service never filters keys.
-        if (config.gamepadPassthrough && config.keyFilter && gamepads == null) {
+        if (config.gamepadPassthrough && keyFilter) {
             gamepads = new GamepadPassthrough(this);
             gamepads.start();
-        } else if ((!config.gamepadPassthrough || !config.keyFilter) && gamepads != null) {
-            gamepads.stop(); gamepads = null;
         }
     }
 
@@ -259,8 +335,9 @@ public class HomeKeyService extends AccessibilityService {
         if (overlayControls != null) overlayControls.windowChanged(event);
         // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up.
         if (stockHome.isEmpty() || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        CharSequence cls = event.getClassName();
-        if (cls != null && stockHome.contains(cls.toString())) openHome();
+        CharSequence pkg = event.getPackageName(), cls = event.getClassName();
+        if (pkg != null && stockHomePackage.contentEquals(pkg)
+                && cls != null && stockHome.contains(cls.toString())) openHome();
     }
 
     /** How long after boot the first bind still counts as "at boot" for probeAtBoot. */
@@ -275,11 +352,26 @@ public class HomeKeyService extends AccessibilityService {
         SharedPreferences prefs = getSharedPreferences("boot", MODE_PRIVATE);
         if (!firstBindAfterBoot(boot, prefs.getInt("probe_boot", -1), SystemClock.elapsedRealtime())) return;
         prefs.edit().putInt("probe_boot", boot).apply();
+        probeHomeWindow();
+    }
+
+    private void probeHomeWindow() {
         try {
             startActivity(new Intent(this, ProbeActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
         } catch (ActivityNotFoundException | SecurityException ignored) {
         }
+    }
+
+    /** One probe for a newly applied installer target, independent of boot uptime. */
+    static final class InstallerProbe {
+        private String lastPackage = "";
+        boolean applied(String stockPackage) {
+            boolean changed = !lastPackage.equals(stockPackage);
+            lastPackage = stockPackage;
+            return changed && !stockPackage.isEmpty();
+        }
+        void reset() { lastPackage = ""; }
     }
 
     static boolean firstBindAfterBoot(int boot, int lastBoot, long uptimeMs) {

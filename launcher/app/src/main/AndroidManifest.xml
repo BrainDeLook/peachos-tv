@@ -182,6 +182,13 @@
                 android:resource="@xml/home_key_service" />
         </service>
 
+        <!-- PC installer configuration only. DUMP belongs to shell/system; ordinary apps cannot
+             enable a redirect or change key filtering through this exported receiver. -->
+        <receiver android:name=".HomeSetupReceiver" android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter><action android:name="com.gathin.tvhome.HOME_SETUP" /></intent-filter>
+        </receiver>
+
         <service android:name=".StandbyService" android:label="@string/cc_standby_name"
             android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>

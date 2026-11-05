@@ -106,6 +106,8 @@ These commands do not debloat the device or disable its original launcher. Firmw
 
 Download the single portable **PeachOS-TV-Setup-Portable.exe** from the [latest release](https://github.com/BrainDeLook/peachos-tv/releases/latest). ADB, the launcher APK and its runtime are included. The [Windows wizard](tools/pc-setup/README.ru.md) opens in simple mode: connect, review, install or update. A card-based layout with optional, remembered dark mode separates the main workflow from advanced options; the advanced sidebar groups Device, Apps, Cleanup and Backups. Plans show a concise summary with expandable details. Cleanup is optional and off by default. Existing users can choose an update-only plan that preserves Home and disables no packages. The normal APK remains independent.
 
+The unreleased **1.5.13-preview** adds [compatible Home setup](docs/home-setup.md) with explicit consent when native assignment fails. It verifies the actual Home transition and keeps stock system packages enabled; this feature is not included in v1.5.12.
+
 The advanced wizard supports multiple local APKs, manual package selection, retained features, backups and restoration. It includes 116 described candidates and a reference index of 1,403 package names from 260 CleanYourTV device lists. References from other devices do not establish safety on yours. Normal mode protects unknown and critical packages; a separate expert toggle permits installed-package selection after explicit warnings. Firmware restrictions remain, and disabling ADB or system components can make recovery impossible. See the wizard guide for supported profiles and limits.
 
 ## Data and network access

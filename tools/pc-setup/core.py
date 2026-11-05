@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import time
 import zipfile
@@ -10,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 
 from catalog import candidates, protected, matching_profiles, FEATURES
+from home_setup import verify_home, configure_compat, restore_compat, HomeChange
 
 PACKAGE = re.compile(r'(?:android|[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\Z')
 COMPONENT = re.compile(r'[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+\Z')
@@ -109,7 +111,9 @@ class Adb:
         return output
 
     def shell(self, *args):
-        return self.run('shell', *map(str, args))
+        # ADB forwards a command to Android's shell. Quote at that boundary so
+        # empty bridge fields and service classes containing '$' remain literal.
+        return self.run('shell', ' '.join(shlex.quote(str(arg)) for arg in args))
 
 
 def wait_for_device(adb, target, cancelled, progress=lambda text: None, timeout=120):
@@ -200,13 +204,14 @@ def save_json(path, value):
 
 
 def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress=lambda text: None,
-               xiaomi_home_fallback=False, extra_apks=(), expert=False, update_only=False, airplay_apk=None):
+               xiaomi_home_fallback=False, extra_apks=(), expert=False, update_only=False, airplay_apk=None,
+               allow_home_redirect=False):
     # Re-read at the mutation boundary: an IP can now belong to a different TV.
     current = discover(adb, device.serial)
     if current.identity != device.identity:
         raise ValueError('Устройство изменилось. Подключитесь заново и проверьте план.')
     if update_only:
-        if selected or set_home or xiaomi_home_fallback or extra_apks or airplay_apk or not apk:
+        if selected or set_home or allow_home_redirect or xiaomi_home_fallback or extra_apks or airplay_apk or not apk:
             raise ValueError('Режим обновления допускает только APK лаунчера без очистки и смены Home.')
         if PEACH.split('/')[0] not in current.installed:
             raise ValueError('PeachOS TV ещё не установлен. Используйте обычную установку.')
@@ -228,6 +233,8 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         raise ValueError('Сначала установите PeachOS TV')
     if set_home and not current.home:
         raise ValueError('Исходный Home не определён. Назначьте лаунчер вручную в настройках Android.')
+    if allow_home_redirect and (not set_home or xiaomi_home_fallback):
+        raise ValueError('Совместимый Home требует назначения Home и не сочетается с отключением штатного лаунчера.')
     if airplay_apk and not (apk or PEACH.split('/')[0] in current.installed):
         raise ValueError('Установите PeachOS TV вместе с модулем AirPlay или перед ним.')
     install_apks = list(dict.fromkeys(([apk] if apk else []) + ([airplay_apk] if airplay_apk else []) + list(extra_apks)))
@@ -274,23 +281,37 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
         progress('Назначение PeachOS главным экраном…')
         journal['home_attempted'] = True
         save_json(path, journal)
-        adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, PEACH)
-        resolved = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
-                                       '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
-        if resolved != PEACH:
-            adb.shell('cmd', 'package', 'set-home-activity', '--user', current.user, current.home)
-            if not xiaomi_home_fallback:
-                advice = ('Для Xiaomi MiTV-AESP0 доступна отдельная опция обхода Home.'
-                          if 'xiaomi-aesp0' in matching_profiles(current.props) else
-                          'На TCL Android 14 может потребоваться перенаправление Home через службу пульта PeachOS; '
-                          'не отключайте SetupWraith, он может обслуживать сеть.'
-                          if current.props.get('ro.product.manufacturer', '').casefold() == 'tcl'
-                          and current.props.get('ro.build.version.sdk') == '34' else
-                          'Эта прошивка требует отдельного совместимого способа назначения Home.')
+        try:
+            adb.run('shell', 'cmd', 'package', 'set-home-activity', '--user', str(current.user), PEACH, check=False)
+            resolved = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
+                                           '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
+            home_verified = verify_home(adb, current.user)
+        except Exception as failure:
+            try:
+                adb.run('shell', 'cmd', 'package', 'set-home-activity', '--user', str(current.user), current.home, check=False)
+            except Exception as rollback_failure:
+                raise RuntimeError(str(failure) + '\nНе удалось вернуть исходный Home: ' + str(rollback_failure)
+                                   + '\nПодключите устройство и используйте сохранённую копию: ' + str(path)) from failure
+            raise
+        if home_verified:
+            journal['home_method'] = 'native' if resolved == PEACH else 'existing_redirect'
+            save_json(path, journal)
+        else:
+            adb.run('shell', 'cmd', 'package', 'set-home-activity', '--user', str(current.user), current.home, check=False)
+            if allow_home_redirect:
+                progress('Настройка совместимого Home без отключения системных пакетов…')
+                configure_compat(adb, current.user, current.home, journal,
+                                 lambda: save_json(path, journal), progress)
+                journal['home_method'] = 'compatible'
+                save_json(path, journal)
+            elif not xiaomi_home_fallback:
                 raise RuntimeError('Назначение Home не подтверждено: прошивка продолжает выбирать штатный экран, несмотря на ответ Success. '
                                    'Уже установленные APK сохранены. '
-                                   'Исходное назначение возвращено; очистка не выполнялась. ' + advice
-                                   + ' Для установки без смены Home снимите «Назначить PeachOS главным экраном» и проверьте новый план.')
+                                   'Исходное назначение возвращено; очистка не выполнялась. '
+                                   'Разрешите «Совместимый Home через службу пульта» и проверьте новый план '
+                                   'либо снимите «Назначить PeachOS главным экраном». '
+                                   'Не отключайте SetupWraith и сетевые службы вручную.')
+        if journal.get('home_method') is None and xiaomi_home_fallback:
             dump = adb.shell('dumpsys', 'package', stock_package)
             match = re.search(r'User ' + str(current.user) + r':[^\n]*\benabled=(\d+)', dump)
             if not match or int(match[1]) not in (0, 1):
@@ -305,7 +326,7 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
                 adb.shell('pm', 'disable-user', '--user', current.user, stock_package)
                 resolved = component(adb.shell('cmd', 'package', 'resolve-activity', '--brief', '--user', current.user,
                                                '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME'))
-                if resolved != PEACH:
+                if resolved != PEACH or not verify_home(adb, current.user):
                     raise RuntimeError('После обхода Xiaomi Home не указывает на PeachOS; очистка остановлена.')
             except Exception:
                 adb.shell('pm', 'default-state' if entry['original'] == 0 else 'enable', '--user', current.user, stock_package)
@@ -349,6 +370,8 @@ def read_restore(path):
         raise ValueError('Некорректный исходный Home')
     if type(raw.get('home_attempted')) is not bool:
         raise ValueError('Некорректная запись Home')
+    if 'home_compat' in raw:
+        raw['home_compat'] = HomeChange.parse(raw['home_compat'])
     return raw
 
 
@@ -370,6 +393,8 @@ def restore(adb, device, path, progress=lambda text: None):
     current = discover(adb, device.serial)
     if current.identity != journal['identity'] or current.user != journal['user']:
         raise ValueError('Копия относится к другому устройству или пользователю')
+    if 'home_compat' in journal:
+        restore_compat(adb, current.user, journal['home_compat'])
     for entry in reversed(journal['changes']):
         progress('Восстановление: ' + entry['package'])
         adb.shell('pm', 'default-state' if entry['original'] == 0 else 'enable',

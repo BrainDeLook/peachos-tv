@@ -32,4 +32,30 @@ public class HomeKeyServiceTest {
     @Test public void noBootCountMeansNoProbe() {
         assertFalse(HomeKeyService.firstBindAfterBoot(-1, -1, SOON));
     }
+
+    @Test public void installerTargetProbesOnlyOnceAcrossRepeatedApplies() {
+        HomeKeyService.InstallerProbe probe = new HomeKeyService.InstallerProbe();
+        assertTrue(probe.applied("com.vendor.home"));
+        assertFalse(probe.applied("com.vendor.home"));
+        assertFalse(probe.applied("com.vendor.home"));
+        assertTrue(probe.applied("com.other.home"));
+        assertFalse(probe.applied("com.other.home"));
+    }
+
+    @Test public void blankOverrideLeavesThemeProbingAloneAndReenableProbesAgain() {
+        HomeKeyService.InstallerProbe probe = new HomeKeyService.InstallerProbe();
+        assertFalse(probe.applied(""));
+        assertTrue(probe.applied("com.vendor.home"));
+        assertFalse(probe.applied(""));
+        assertFalse(probe.applied(""));
+        assertTrue(probe.applied("com.vendor.home"));
+    }
+
+    @Test public void aNewBindingProbesEvenIfTheInstallerTargetHasNotChanged() {
+        HomeKeyService.InstallerProbe probe = new HomeKeyService.InstallerProbe();
+        assertTrue(probe.applied("com.vendor.home"));
+        probe.reset();
+        assertTrue(probe.applied("com.vendor.home"));
+        assertFalse(probe.applied("com.vendor.home"));
+    }
 }

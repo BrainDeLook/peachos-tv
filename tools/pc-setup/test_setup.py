@@ -10,7 +10,7 @@ import zipfile
 from unittest.mock import Mock, patch
 
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
-from core import Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
+from core import Adb, Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
 from wizard import Wizard, portable_adb
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
@@ -19,6 +19,11 @@ XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0',
 class FakeAdb:
     def __init__(self, fail=False):
         self.calls, self.disabled, self.fail = [], set(), fail
+
+    def run(self, *args, **kwargs):
+        if args[0] == 'shell':
+            return self.shell(*args[1:])
+        raise AssertionError('Unexpected ADB call: ' + repr(args))
 
     def shell(self, *args):
         self.calls.append(args)
@@ -38,6 +43,21 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def setUp(self):
+        # These tests exercise plan ordering/rollback. Foreground timing and real
+        # capability parsing have separate tests in test_home_setup.py.
+        check = patch('core.verify_home', side_effect=lambda adb, user: component(adb.shell(
+            'cmd', 'package', 'resolve-activity', '--brief', '--user', user,
+            '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME')) == PEACH)
+        check.start()
+        self.addCleanup(check.stop)
+
+    def test_android_shell_quotes_empty_fields_and_service_inner_class_once_at_boundary(self):
+        adb = Adb('fixture-adb')
+        adb.run = Mock(return_value='ok')
+        self.assertEqual('ok', adb.shell('am', 'broadcast', '--es', 'stock_package', '',
+                                        '--es', 'service', 'org.example/.Service$Inner'))
+        adb.run.assert_called_once_with('shell', "am broadcast --es stock_package '' --es service 'org.example/.Service$Inner'")
     def destroy_ui(self, root):
         root.update_idletasks()
         for callback in root.tk.call('after', 'info'):
@@ -491,7 +511,7 @@ class SetupTests(unittest.TestCase):
                 return super().shell(*args)
         adb = TclAdb()
         with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current):
-            with self.assertRaisesRegex(RuntimeError, 'TCL Android 14') as failure:
+            with self.assertRaisesRegex(RuntimeError, 'Совместимый Home') as failure:
                 apply_plan(adb, current, ['com.google.android.feedback'], set(), None, True, Path(folder))
             self.assertNotIn('Xiaomi', str(failure.exception))
             self.assertIn('SetupWraith', str(failure.exception))
@@ -499,7 +519,7 @@ class SetupTests(unittest.TestCase):
             self.assertTrue(journal['home_attempted'])
             self.assertEqual([], journal['changes'])
         self.assertEqual(set(), adb.disabled)
-        self.assertIn(('cmd', 'package', 'set-home-activity', '--user', 0, current.home), adb.calls)
+        self.assertIn(('cmd', 'package', 'set-home-activity', '--user', '0', current.home), adb.calls)
 
     def test_android_framework_is_a_valid_inventory_package_but_protected(self):
         self.assertEqual({'android', 'com.google.android.gms'}, packages('package:android\npackage:com.google.android.gms\n'))

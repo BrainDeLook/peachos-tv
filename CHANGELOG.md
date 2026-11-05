@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.13-preview — Unreleased
+
+### Русский
+
+- Единая настройка Home по фактическому поведению прошивки: штатное назначение Android, проверка перехода на PeachOS и отдельный, изначально выключенный «Совместимый Home через службу пульта» при отказе. Штатный лаунчер и сетевые службы не отключаются.
+- Совместимый режим хранит настройку отдельно от темы, включает только необходимую службу и поддерживаемый автозапуск с явного согласия. Новый режим только для Home не фильтрует кнопки пульта; существующие настройки удержания Settings сохраняются.
+- Исправлены проверка уже открытого штатного Home, позднее подключение службы после замены APK и зависание ожидания `am start -W`. При ошибках настройка останавливается до очистки и пытается вернуть исходное состояние.
+- Добавлены журналируемое восстановление совместимого Home, сохранение чужих служб доступности и проверка результатов восстановления. «Только обновить» не меняет Home, службы или разрешения.
+- Проверено на TCL G10 Android 14 AU02: настройка через установщик, повторная установка, update-only, восстановление и повторное применение, сохранение после перезагрузки. Другие прошивки требуют отдельной проверки; универсальная совместимость не гарантируется.
+
+### English
+
+- Configure Home by observed firmware behaviour: try Android's native assignment, verify the actual PeachOS transition, and offer a separate default-off compatible remote-helper fallback. Keep the stock launcher and networking services enabled.
+- Store compatible settings separately from the theme. Enable the required accessibility service and supported autostart operation only with explicit consent. Fresh Home-only mode does not filter remote keys; preserve existing Settings-hold choices.
+- Handle an already visible stock Home and late service binding after APK replacement. Avoid OEM launch hangs caused by `am start -W`; stop before cleanup and attempt rollback on setup failure.
+- Journal compatible Home recovery, preserve unrelated accessibility services, and verify restored state. Update-only does not change Home, services or permissions.
+- Validate setup, reinstall, update-only, restore/reapply and reboot persistence on TCL G10 Android 14 AU02. Other firmware still needs device validation; compatibility with every TV is not guaranteed.
+
 ## 1.5.12 — 2026-11-05
 
 ### Русский
