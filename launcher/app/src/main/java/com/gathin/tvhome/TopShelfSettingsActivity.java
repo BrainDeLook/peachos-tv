@@ -38,7 +38,11 @@ public final class TopShelfSettingsActivity extends Activity {
     private android.os.CancellationSignal cancellation;
     private int generation;
     private boolean resumed;
+    private boolean observing;
+    private boolean permissionRequested;
+    private TextView sync;
     private AlertDialog chooser;
+    private static final int CHANNEL_PERMISSION = 31;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -53,11 +57,29 @@ public final class TopShelfSettingsActivity extends Activity {
         TextView hint = text(getString(R.string.shelf_settings_hint), 16);
         hint.setTextColor(0xffb8c4d0);
         hint.setPadding(0, dp(12), 0, dp(12)); content.addView(hint);
-        TextView sync = text(getString(R.string.shelf_sync), 18);
+        sync = text(getString(R.string.shelf_sync), 18);
         sync.setBackgroundResource(R.drawable.settings_choice_bg);
         sync.setPadding(dp(18), dp(12), dp(18), dp(12));
         sync.setFocusable(true); sync.setClickable(true);
-        sync.setOnClickListener(v -> { ChannelSetup.refresh(this); load(); });
+        sync.setOnClickListener(v -> {
+            if (checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (permissionRequested && !shouldShowRequestPermissionRationale(Backdrops.PERMISSION)) {
+                    new AlertDialog.Builder(this).setMessage(R.string.shelf_permission_required)
+                            .setPositiveButton(R.string.settings, (dialog, which) -> {
+                                Intent info = SystemSettings.appInfo(this, getPackageName());
+                                if (info != null) startActivity(info);
+                                else android.widget.Toast.makeText(this, R.string.not_available,
+                                        android.widget.Toast.LENGTH_SHORT).show();
+                            })
+                            .setNegativeButton(android.R.string.cancel, null).show();
+                } else {
+                    permissionRequested = true;
+                    requestPermissions(new String[]{Backdrops.PERMISSION}, CHANNEL_PERMISSION);
+                }
+                return;
+            }
+            ChannelSetup.refresh(this); load();
+        });
         content.addView(sync);
         status = text(getString(R.string.shelf_loading), 15);
         status.setTextColor(0xffb8c4d0); status.setPadding(0, dp(10), 0, dp(12));
@@ -68,14 +90,33 @@ public final class TopShelfSettingsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume(); resumed = true;
-        getContentResolver().registerContentObserver(TvContract.Channels.CONTENT_URI, true, observer);
-        getContentResolver().registerContentObserver(TvContract.WatchNextPrograms.CONTENT_URI, true, observer);
+        load();
+    }
+
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != CHANNEL_PERMISSION) return;
+        if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            ChannelSetup.refresh(this);
         load();
     }
 
     private void load() {
         if (!resumed) return;
         cancelLoad();
+        if (checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            generation++;
+            rows.removeAllViews();
+            status.setText(R.string.shelf_permission_required);
+            sync.setText(R.string.shelf_permission_allow);
+            return;
+        }
+        sync.setText(R.string.shelf_sync);
+        if (!observing) {
+            getContentResolver().registerContentObserver(TvContract.Channels.CONTENT_URI, true, observer);
+            getContentResolver().registerContentObserver(TvContract.WatchNextPrograms.CONTENT_URI, true, observer);
+            observing = true;
+        }
         android.os.CancellationSignal signal = new android.os.CancellationSignal();
         cancellation = signal;
         int ticket = ++generation;
@@ -170,7 +211,7 @@ public final class TopShelfSettingsActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; generation++; main.removeCallbacks(refresh);
-        getContentResolver().unregisterContentObserver(observer);
+        if (observing) { getContentResolver().unregisterContentObserver(observer); observing = false; }
         cancelLoad();
         if (chooser != null) chooser.dismiss();
         super.onPause();

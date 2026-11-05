@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.15-preview — Unreleased
+
+### Русский
+
+- Исправлен пустой каталог постеров после удаления и повторной установки: экран каналов проверяет READ_TV_LISTINGS, показывает «Разрешить доступ к каналам» и запрашивает системное разрешение. После отказа нет ложного сообщения об успешной синхронизации; для заблокированного запроса предлагаются настройки приложения.
+- Чтение каталога различает отсутствие разрешения и отсутствие опубликованных источников. Наблюдатели включаются после получения доступа, без постоянного опроса.
+- На Homatics владелец подтвердил возврат каналов и постеров, включая повторную проверку со сброшенным разрешением и новым системным запросом. Release build/lint и 326 JVM-тестов прошли.
+- Проверен официальный CleanYourTV v3.4.0. Наш справочник уже содержит те же 442 списка и 1981 пакет; обычных кандидатов по-прежнему 122. Предложения по отдельным backport: docs/upstream-3.4-review.md. Изменения upstream в этой сборке не объединялись.
+
+### English
+
+- Fix an empty poster catalogue after uninstall/reinstall: check READ_TV_LISTINGS, offer an explicit access button, and request Android permission. Do not report a successful sync without access; offer app settings when the request is blocked.
+- Distinguish denied access from absent published sources. Start provider observers after access is granted; add no background polling.
+- The Homatics owner confirmed source/poster recovery, including a second test with permission revoked and then granted through the new system dialog. Release build/lint and 326 JVM tests pass.
+- Review official CleanYourTV v3.4.0. Our reference index already has its 442 device lists and 1,981 packages; normal cleanup still offers 122 candidates. Separate backport candidates are documented in docs/upstream-3.4-review.md; upstream changes were not merged here.
+
 ## 1.5.14 — 2026-11-05
 
 ### Русский

@@ -37,7 +37,7 @@ final class ShelfRepository {
     static final class Result {
         final List<Channel> channels = new ArrayList<>();
         final List<Item> items = new ArrayList<>();
-        boolean unavailable, continueWatching;
+        boolean unavailable, continueWatching, permissionDenied;
     }
 
     /** Compare the displayed channel/card content, excluding provider timestamps and ranking weights. */
@@ -71,6 +71,7 @@ final class ShelfRepository {
     static java.util.Map<String, Result> catalogue(Context context, Set<String> apps,
             android.os.CancellationSignal cancellation) {
         java.util.Map<String, Result> result = readChannels(context, apps, cancellation);
+        for (Result value : result.values()) if (value.permissionDenied) return result;
         try (Cursor c = context.getContentResolver().query(TvContract.WatchNextPrograms.CONTENT_URI,
                 new String[]{"package_name", "watch_next_type", "browsable", "title"}, null, null, null, cancellation)) {
             if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
@@ -85,7 +86,7 @@ final class ShelfRepository {
         } catch (android.os.OperationCanceledException cancelled) {
             throw cancelled;
         } catch (RuntimeException e) {
-            for (Result value : result.values()) value.unavailable = true;
+            for (Result value : result.values()) { value.unavailable = true; value.permissionDenied = true; }
             Log.w("TopShelf", "Watch Next catalogue unavailable: " + e.getClass().getSimpleName());
         }
         return result;
@@ -95,6 +96,10 @@ final class ShelfRepository {
             android.os.CancellationSignal cancellation) {
         java.util.Map<String, Result> result = new java.util.LinkedHashMap<>();
         for (String app : apps) result.put(app, new Result());
+        if (context.checkSelfPermission(Backdrops.PERMISSION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            for (Result value : result.values()) value.unavailable = true;
+            return result;
+        }
         try (Cursor c = context.getContentResolver().query(TvContract.Channels.CONTENT_URI,
                 CHANNEL_COLUMNS, null, null, null, cancellation)) {
             if (c == null) { for (Result value : result.values()) value.unavailable = true; return result; }
@@ -130,6 +135,7 @@ final class ShelfRepository {
 
     static Result read(Context context, String pkg, String source, android.os.CancellationSignal cancellation) {
         Result result = readChannels(context, Collections.singleton(pkg), cancellation).get(pkg);
+        if (result.permissionDenied) return result;
         Set<Long> historyChannels = new HashSet<>();
         Set<Long> appChannels = new HashSet<>();
         String resolvedSource = source;
