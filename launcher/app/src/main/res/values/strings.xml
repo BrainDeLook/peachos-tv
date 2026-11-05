@@ -178,4 +178,6 @@
     <string name="cc_wifi_disabled">Wi-Fi is off</string>
     <string name="cc_wifi_unavailable">This device has no Wi-Fi adapter</string>
     <string name="cc_wifi_error">Wi-Fi networks could not be read. Try again or open network settings.</string>
+    <string name="remote_service_required">Global remote interception requires the PeachOS TV · Remote buttons accessibility service. Enable it in system accessibility settings, then return here. Without it, the firmware may open Android settings instead of delivering the key.</string>
+    <string name="remote_service_open">Open accessibility settings</string>
 </resources>

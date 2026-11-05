@@ -178,4 +178,6 @@
     <string name="cc_wifi_disabled">Wi-Fi выключен</string>
     <string name="cc_wifi_unavailable">На устройстве нет адаптера Wi-Fi</string>
     <string name="cc_wifi_error">Не удалось прочитать список сетей. Обновите его или откройте настройки сети.</string>
+    <string name="remote_service_required">Для глобального перехвата нужна служба «PeachOS TV · Кнопки пульта». Включите её в системных настройках специальных возможностей и вернитесь сюда. Без службы прошивка может открывать настройки Android вместо передачи кнопки лаунчеру.</string>
+    <string name="remote_service_open">Открыть специальные возможности</string>
 </resources>

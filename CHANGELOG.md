@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.14-preview — Unreleased
+
+### Русский
+
+- При включении удержания Settings и запуске обучения проверяется подключение службы пульта. Если служба выключена, вместо бесполезного ожидания кнопки показывается объяснение и переход в системные специальные возможности.
+- На время обучения запрашивается фильтрация кнопок и после завершения восстанавливается обычный режим. Проверка отмены обучения добавлена в JVM-тесты.
+- На Homatics Box R 4K Plus восстановлена выключенная служба; владелец подтвердил удержание Settings и обучение физической кнопки. Код громкости не менялся. Другие прошивки требуют отдельной проверки.
+
+### English
+
+- Check the remote helper before Settings-hold setup and key learning. If disconnected, explain the requirement and offer system accessibility settings rather than waiting for an undeliverable key.
+- Request key filtering during learning and restore the ordinary policy afterward. Add a JVM regression for cancelling learning.
+- Restore the disabled helper on Homatics Box R 4K Plus; the owner confirms physical Settings hold and learning. Volume handling is unchanged. Other firmware still requires device validation.
+
 ## 1.5.13 — 2026-11-05
 
 ### Русский

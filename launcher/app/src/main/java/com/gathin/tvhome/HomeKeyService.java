@@ -230,7 +230,9 @@ public class HomeKeyService extends AccessibilityService {
                 || !holdAppKeys.isEmpty() || !holdAppScancodes.isEmpty()
                 || settingsKeycodes.length > 0 || config.consumeVolumeKeys;
         boolean keyFilter = setup.keyFilterEnabled(config.keyFilter,
-                settingsChoices.getBoolean(SettingsButton.KEY, false), remoteBindings);
+                settingsChoices.getBoolean(SettingsButton.KEY, false) || SettingsKeyBinding.isLearning(), remoteBindings);
+        android.util.Log.i("PeachRemote", "Apply remote configuration: filter=" + config.keyFilter
+                + " requested=" + keyFilter + " learning=" + SettingsKeyBinding.isLearning());
         // Reapplying the filter must not override an already connected game controller's passthrough.
         if (gamepads != null) { gamepads.stop(); gamepads = null; }
         appliedSetupPackage = "";

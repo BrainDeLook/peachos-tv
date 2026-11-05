@@ -5,6 +5,14 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class SettingsKeyBindingTest {
+    @Test public void cancelledLearningReleasesItsTemporaryFilteringRequestWithoutAService() {
+        SettingsKeyBinding.begin((code, scan) -> fail("Cancelled learning must not save a key"));
+        assertTrue(SettingsKeyBinding.isLearning());
+        SettingsKeyBinding.cancel();
+        assertFalse(SettingsKeyBinding.isLearning());
+        SettingsKeyBinding.cancel();
+        assertFalse(SettingsKeyBinding.isLearning());
+    }
     @Test public void learnedKeycodeDoesNotDependOnScanCode() {
         assertTrue(SettingsKeyBinding.matches(83, 240, 83, 561));
         assertFalse(SettingsKeyBinding.matches(83, 240, 176, 240));

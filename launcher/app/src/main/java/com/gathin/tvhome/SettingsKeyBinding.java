@@ -12,11 +12,18 @@ final class SettingsKeyBinding {
 
     interface Learned { void accept(int code, int scan); }
 
-    static void begin(Learned callback) { learning = new Learning(callback); }
+    static boolean isLearning() { return learning != null; }
+    static void begin(Learned callback) {
+        learning = new Learning(callback);
+        HomeKeyService.refreshHomeSetup();
+    }
     static void cancel() {
         if (learning == null) return;
         // Finish consuming an already captured down/up pair even if the dialog closes mid-hold.
-        if (learning.downTime < 0) learning = null;
+        if (learning.downTime < 0) {
+            learning = null;
+            HomeKeyService.refreshHomeSetup();
+        }
         else learning.callback = null;
     }
 
@@ -34,11 +41,15 @@ final class SettingsKeyBinding {
                 || event.getScanCode() != current.scan) return false;
         if (event.getAction() == KeyEvent.ACTION_UP) {
             if (event.isCanceled()) {
-                if (current.callback == null) learning = null;
+                if (current.callback == null) {
+                    learning = null;
+                    HomeKeyService.refreshHomeSetup();
+                }
                 else current.downTime = -1;
             }
             else {
                 learning = null;
+                HomeKeyService.refreshHomeSetup();
                 if (current.callback != null) current.callback.accept(current.code, current.scan);
             }
         }

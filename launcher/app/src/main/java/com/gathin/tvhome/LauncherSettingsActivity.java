@@ -82,6 +82,7 @@ public final class LauncherSettingsActivity extends Activity {
             choices.edit().putBoolean(SettingsButton.KEY, enabled).apply();
             settingsHoldChoice.setText(getString(R.string.settings_hold_state, getString(enabled ? R.string.on : R.string.off)));
             changed();
+            if (enabled) ensureRemoteService();
         });
         findViewById(R.id.settingsHoldHelp).setOnClickListener(v -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         TextView overlayChoice = findViewById(R.id.controlOverlayChoice);
@@ -94,6 +95,7 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
         });
         findViewById(R.id.settingsKeyChoice).setOnClickListener(v -> {
+            if (!ensureRemoteService()) return;
             SettingsKeyBinding.begin((code, scan) -> {
                 choices.edit().putInt(SettingsKeyBinding.CODE, code).putInt(SettingsKeyBinding.SCAN, scan).apply();
                 changed();
@@ -412,6 +414,17 @@ public final class LauncherSettingsActivity extends Activity {
     @Override protected void onPause() {
         if (settingsKeyDialog != null) settingsKeyDialog.dismiss();
         super.onPause();
+    }
+
+    private boolean ensureRemoteService() {
+        if (HomeKeyService.isBound()) return true;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.settings_key_service_off)
+                .setMessage(R.string.remote_service_required)
+                .setPositiveButton(R.string.remote_service_open,
+                        (dialog, which) -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                .setNegativeButton(android.R.string.cancel, null).show();
+        return false;
     }
 
     private void refreshSettingsKey() {
