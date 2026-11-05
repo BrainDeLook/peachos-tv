@@ -1,10 +1,10 @@
 # Changelog
 
-## 1.5.13-preview — Unreleased
+## 1.5.13 — 2026-11-05
 
 ### Русский
 
-- В preview 2 исправлен пропуск назначения Home при выборе только «Совместимый Home». Галочка теперь включает настройку Home в простом и расширенном мастере; снятие Home отменяет совместимый режим. После исправления владелец TCL подтвердил физическую Home.
+- Исправлен пропуск назначения Home при выборе только «Совместимый Home». Галочка теперь включает настройку Home в простом и расширенном мастере; снятие Home отменяет совместимый режим. После исправления владелец TCL подтвердил физическую Home.
 - Справочник синхронизирован с CleanYourTV `50fcc214`: 442 списка устройств и 1981 пакет. Рабочая база содержит 122 описанных кандидата. Доступность самостоятельных приложений отделена от автоматических рекомендаций; TCL Channel больше не скрывается на Android 14. HDMI/TV остаётся защищённым, TCL Live зависит от сохранения каналов.
 - Единая настройка Home по фактическому поведению прошивки: штатное назначение Android, проверка перехода на PeachOS и отдельный, изначально выключенный «Совместимый Home через службу пульта» при отказе. Штатный лаунчер и сетевые службы не отключаются.
 - Совместимый режим хранит настройку отдельно от темы, включает только необходимую службу и поддерживаемый автозапуск с явного согласия. Новый режим только для Home не фильтрует кнопки пульта; существующие настройки удержания Settings сохраняются.
@@ -12,15 +12,19 @@
 - Добавлены журналируемое восстановление совместимого Home, сохранение чужих служб доступности и проверка результатов восстановления. «Только обновить» не меняет Home, службы или разрешения.
 - Проверено на TCL G10 Android 14 AU02: настройка через установщик, повторная установка, update-only, восстановление и повторное применение, сохранение после перезагрузки. Другие прошивки требуют отдельной проверки; универсальная совместимость не гарантируется.
 
+Проверки: release build/lint, 325 JVM-тестов лаунчера, 99 тестов установщика и самопроверка portable EXE. Модуль AirPlay не менялся. Справочник из 1981 пакета не является универсальным списком отключения: в обычном режиме доступны 122 описанных кандидата; остальные справочные пакеты можно выбирать только в экспертном режиме.
+
 ### English
 
-- Preview 2 fixes silently skipping Home assignment when only compatible Home was selected. Compatibility now requests Home setup in both wizard modes; clearing Home clears compatibility. The TCL owner confirmed the physical Home button afterward.
+- Fix silently skipping Home assignment when only compatible Home was selected. Compatibility now requests Home setup in both wizard modes; clearing Home clears compatibility. The TCL owner confirmed the physical Home button afterward.
 - Sync the reference index to CleanYourTV `50fcc214`: 442 device lists and 1,981 packages, with 122 described actionable candidates. Separate standalone-app availability from profile-scoped recommendations; expose TCL Channel on Android 14. Keep HDMI/TV protected and TCL Live dependent on channel preservation.
 - Configure Home by observed firmware behaviour: try Android's native assignment, verify the actual PeachOS transition, and offer a separate default-off compatible remote-helper fallback. Keep the stock launcher and networking services enabled.
 - Store compatible settings separately from the theme. Enable the required accessibility service and supported autostart operation only with explicit consent. Fresh Home-only mode does not filter remote keys; preserve existing Settings-hold choices.
 - Handle an already visible stock Home and late service binding after APK replacement. Avoid OEM launch hangs caused by `am start -W`; stop before cleanup and attempt rollback on setup failure.
 - Journal compatible Home recovery, preserve unrelated accessibility services, and verify restored state. Update-only does not change Home, services or permissions.
 - Validate setup, reinstall, update-only, restore/reapply and reboot persistence on TCL G10 Android 14 AU02. Other firmware still needs device validation; compatibility with every TV is not guaranteed.
+
+Validation: release build/lint, 325 launcher JVM tests, 99 installer tests and portable EXE self-test. The optional AirPlay module is unchanged. The 1,981-package reference index is not a universal disable list: normal cleanup offers 122 described candidates; additional indexed packages remain reference-only outside expert mode.
 
 ## 1.5.12 — 2026-11-05
 

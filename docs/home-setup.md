@@ -1,8 +1,7 @@
-# Compatible Home setup · 1.5.13-preview
+# Compatible Home setup · 1.5.13
 
 The Windows installer configures Home according to observed firmware behaviour,
-not a vendor name or a list of packages to disable. This document describes the
-preview implementation; released v1.5.12 does not include this automatic flow.
+not a vendor name or a list of packages to disable. Available since v1.5.13; v1.5.12 does not include this automatic flow.
 An ordinary APK installation remains available without the PC installer or an
 accessibility service.
 

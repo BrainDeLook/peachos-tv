@@ -18,9 +18,9 @@ confirmed physical Home from an app, held volume and input switching. That
 manual configuration is evidence for this device, not validation of every
 installer path or other firmware.
 
-### Installer 1.5.13-preview
+### Installer 1.5.13
 
-The preview uses the general [Home setup](home-setup.md) flow, independent of the
+Version 1.5.13 uses the general [Home setup](home-setup.md) flow, independent of the
 cleanup profile. Select **«Настроить открытие PeachOS по кнопке Home»** and,
 if permitted, **«Совместимый Home через службу пульта»**. The latter is off by
 default. The installer tries native assignment first and checks the actual
@@ -40,7 +40,7 @@ The TCL AUTO_START app-op matters independently of Android's accessibility flag.
 Without it, TclAppBoot rejected HomeKeyService binding with
 `callee_does't_have_OP_AUTO_START_permission` after package replacement or reboot;
 Android then reset `accessibility_enabled` to 0 while retaining the service in
-the enabled list. Merely restoring that flag did not fix the denial. The preview
+the enabled list. Merely restoring that flag did not fix the denial. The installer
 persists supported AppOps changes with `cmd appops write-settings` before checking
 the service. In earlier manual tests, an allowed and persisted AUTO_START survived
 reboot, the helper bound and PeachOS became foreground Home; replacing the same
@@ -58,7 +58,7 @@ Installed APKs remain in either case.
 configure Home, accessibility or AUTO_START. Version 1.5.12 and earlier did not
 perform the automatic compatible setup described above.
 
-The preview installer flow was tested on this device: initial compatible setup,
+The v1.5.13 installer flow was tested on this device: initial compatible setup,
 same-APK reinstall preserving the existing redirect, strict update-only,
 restoration to the original bridge/accessibility/autostart state, and setup
 again from that restored state. After a real reboot, AUTO_START remained allowed,
@@ -67,7 +67,7 @@ foreground Home before the explicit verification.
 
 A subsequent user reinstall exposed a wizard consent bug: checking compatible
 Home without the separate Home checkbox produced a successful plan with
-`home_attempted=false`. Preview 2 makes compatible selection request Home setup
+`home_attempted=false`. Version 1.5.13 makes compatible selection request Home setup
 itself, and clearing Home clears compatible consent. Both simple and advanced
 plans have regression tests. After applying the previously omitted Home setup,
 the owner confirmed physical Home opens PeachOS from another app.

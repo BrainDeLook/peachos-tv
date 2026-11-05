@@ -20,7 +20,7 @@ BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else BASE
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(BASE / 'PeachOS-TV-data')))
 BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
-SETUP_VERSION = '1.5.13 preview 2'
+SETUP_VERSION = '1.5.13'
 
 
 def read_ui_settings(path):
