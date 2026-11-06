@@ -1,155 +1,67 @@
 # PeachOS TV
 
-![PeachOS TV — A calmer home for Android TV](docs/images/brand.svg)
+![PeachOS TV](docs/images/brand.svg)
 
-**Your apps. Your posters. A calmer home screen.**
+A home screen for Android TV and Google TV, with an app dock, posters and a compact control center.
 
-PeachOS TV is a minimal launcher for Android TV and Google TV, built around a dock of favourite apps, large artwork, and quiet glass effects. It replaces your home screen, while your apps and subscriptions stay where they are.
+**[Download the Windows installer](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV-Setup-Portable.exe)** · [Русский](README.ru.md) · [What's new](CHANGELOG.md)
 
-[Download APK](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV.apk) · [Windows installer](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV-Setup-Portable.exe) · [Русский](README.ru.md) · [Installation](#install) · [Build from source](#build)
+Requires an **Android TV / Google TV device running Android 8.0 or newer**. Samsung Tizen and LG webOS are not supported.
 
-**1.5.16:** more resilient channel/input/remote integration, safer Windows Home verification and recovery, and less redundant artwork/lighting work with the existing visual style. Homatics testing retained approximately 60-Hz median warm updates; first openings can still be slower. [Changelog](CHANGELOG.md) · [Device results](docs/performance-homatics-2026-11-06.md).
+## Install from a PC — recommended
 
-> PeachOS TV was previously called **CleanYourTV + Art**. Existing users can update in place: the package ID and signing certificate are unchanged. Despite the name, this is a launcher, not a replacement operating system.
+1. Open the installer on Windows. It is portable: the launcher and ADB are already included.
+2. On the TV, open **Settings → System / About** and select **Build** seven times. Then enable **USB / ADB debugging** in **Developer options**. Names vary by device.
+3. Connect the PC and TV to the same network. Enter the TV's IP address from its network settings and select **Подключиться (Connect)**. Approve debugging on the TV.
+4. Choose launcher installation and Home-button setup. Select **Проверить план (Review plan)**, then **Применить план (Apply plan)**.
+5. Press Home on the remote and check that your apps open.
 
-## A home screen built around what you watch
+**Cleanup and AirPlay are optional and off by default.** Installing the launcher does not require disabling anything.
 
-![Large portrait artwork above the app dock](docs/images/home_new.png)
+**Updating:** run the wizard again and install over your existing version. Do not uninstall PeachOS if you want to keep your settings.
 
-- **Artwork for the focused app.** Choose a source for each app: all Android TV cards, continue watching, Lampa history, or a specific published channel.
-- **Room for the artwork.** Five large portrait posters, with landscape and square previews using their own proportions. Captions appear only for the selected poster.
-- **A quiet dock.** Responsive spring focus, a subtle highlight, compact clock and settings, and a glimpse of the app grid below.
-- **Soft interface sounds.** A short navigation tick and a pair of opening/return cues, preloaded without delaying app launch. Turn them off in Launcher settings → Interface sounds.
-- **Lightweight glass.** Restrained translucent materials. The control center uses one small, blurred snapshot when opened, with no continuous screen capture. Glass can be turned off.
-- **A compact control center.** Press the gear for quick settings, network status, available TV inputs and detected VPN clients. It unfolds from the clock capsule and returns within the same window to avoid a flashing header.
-- **Wi-Fi selection.** The Network tab shows a compact, smoothly scrolling list of nearby networks below fixed settings/refresh actions. Focused cards retain their full rounded edges; scanning runs only while the tab is open, and Android handles connection/password entry. Android can require Location permission and the system Location switch for scanning. Ethernet keeps its connected view and wired icon. [Details](docs/wifi-controls.md).
-- **Faster Home startup.** A verified internal theme snapshot avoids external-storage waits on subsequent starts; changes are checked in the background without resetting the selected app. [Implementation and limits](docs/startup-cache.md).
-- **Your layout.** Rearrange apps in Launcher settings → Reorder apps. Fresh installs default to six columns and fill the dock from the first six available apps. The dock keeps its configured width even when some slots are empty; existing layouts are preserved on upgrade.
-- **A predictable fallback.** Empty sources show the app name. With cards disabled, metadata backgrounds or a calm colour glow can remain; YouTube and SmartTube have a static background by default.
+If Home still opens the stock screen, use compatible Home setup in the [advanced wizard](tools/pc-setup/README.ru.md#открытие-по-кнопке-home). The Windows wizard currently uses Russian labels.
 
-## Made for TVs and streaming boxes
+<details>
+<summary>Without a PC: install the APK only</summary>
 
-![Compact source picker with green connection indicators](docs/images/sources_new.png)
+Download [PeachOS-TV.apk](https://github.com/BrainDeLook/peachos-tv/releases/latest/download/PeachOS-TV.apk), install it on your TV and open PeachOS TV. Select it as the default home screen in Android settings if your firmware allows it. The APK does not include cleanup or the AirPlay module; use the PC wizard for compatible Home setup.
 
-On TVs with available inputs, open the gear and choose the **Inputs** tab for the compact HDMI/source picker. Green dots show connected inputs; more than one can be connected. Devices without switchable TV inputs do not show that tab.
+To update, install the new APK over the existing app without uninstalling it.
 
-CEC device names are preserved. On supported TCL firmware, a confirmed physical HDMI connection is used when its sole CEC child incorrectly reports standby. The remote's native Input button keeps its existing behaviour.
+</details>
 
-## Optional AirPlay receiver
+## Features
 
-The Windows installer offers an initially unchecked **AirPlay from iPhone** module. Without it, the Search button remains. With a trusted module installed, the same slot toggles reception; blue means ready for discovery. Incoming mirroring/video opens fullscreen, and stopping the cast returns to the previous screen. Video playback supports remote pause/play and accelerated timeline seeking.
+- An app dock with adjustable order and size.
+- Posters, continue watching and history from channels published by your apps.
+- A control center with settings, network and TV inputs when available.
+- Smooth focus, glass and sounds; effects can be disabled in settings.
 
-The separate GPL receiver remains a **preview**, tested on Homatics Box R 4K Plus with iPhone mirroring, YouTube and VK. It currently requires an ARMv7-compatible Android OS (API 24+) and user-granted overlay permission. Compatibility with every sender, firmware, audio format or protected video is not guaranteed. [Setup, source and limitations](docs/airplay-prototype.md). The standalone launcher APK does not include the receiver.
+![PeachOS TV home screen](docs/images/home_new.png)
+
+<details>
+<summary>View the control panel and HDMI picker</summary>
+
+![Input picker](docs/images/sources_new.png)
+
+</details>
 
 ## Controls
 
-| Action | Remote control |
+| Action | How |
 | --- | --- |
-| Enter artwork from the dock | Up |
-| Browse artwork | Left / Right |
-| Open a card in its app | OK |
-| Return from artwork to the dock | Down / Back |
-| Open the control center | Press OK on the settings gear |
-| Open launcher settings | Dedicated control center button; hold gear when enabled |
-| Choose artwork sources | Launcher menu → Top shelf |
-| Rearrange apps / edit the dock | Launcher menu → Reorder / Edit dock |
-| App context menu | Hold OK on an app icon |
-| Home while the control center is open | Close the panel and keep the selected app |
+| Select an app or poster | Remote arrow buttons |
+| Open / go back | OK / Back |
+| Move from the dock to posters | Up |
+| Edit app order or dock | Hold OK on an app |
+| Open the control center | OK on the gear beside the clock |
+| Open launcher settings | Launcher-settings button inside the panel |
 
-Enable **Launcher settings → Remote and sounds → Control Center over apps** to open the panel over the current app by holding Settings, with the Remote buttons helper enabled. Home and Back dismiss only the panel. This optional feature remains experimental: a small blurred snapshot is used when available, while protected video or firmware restrictions can require a simpler material.
+Settings-button hold is optional. Enable it in launcher settings and grant access to **PeachOS TV · Remote buttons**. [Remote setup, posters and troubleshooting](docs/usage.md).
 
-Apps must publish their cards through Android TV Preview / Watch Next. Lampa history uses Lampa's published history channel. Private app databases are not read, and root is not required. Availability and freshness depend on the publishing app; empty or temporarily refreshed channels can show no cards.
+**AirPlay from iPhone** can be added through the installer. It is an optional experimental module: [instructions and limitations](docs/airplay-prototype.md).
 
-The control center also provides shortcuts to system settings, apps, Bluetooth, accessibility, search when available, and the clock screen. VPN controls open the detected client or system VPN settings; the launcher cannot read another app's private VPN profiles. **Sleep** requires Android 9+ and the optional **PeachOS TV · Sleep** accessibility helper. This helper does not read screen content or intercept remote keys. The physical power button remains available without it.
+[Installer and recovery guide](tools/pc-setup/README.ru.md) · [Build from source](docs/build.md)
 
-### Remote Settings button
-
-In **1.5.15**, the channel screen requests TV listings access when uninstalling has cleared it. Select **Allow channel access** and approve Android’s prompt to read published sources and posters. Without access, sync explains the requirement instead of reporting success.
-
-Since **1.5.14**, enabling Settings hold or starting key learning with the helper disconnected explains the requirement and offers system accessibility settings. After uninstalling, grant **PeachOS TV · Remote buttons** again through that prompt and return to the launcher. Installing the APK alone does not grant this system permission.
-
-Starting with **1.5.3**, holding the physical Settings button can open our control center instead of Android settings.
-
-1. Enable **Launcher settings → Hold Settings for Control Center**.
-2. To use it inside other apps, enable **PeachOS TV · Remote buttons** in Android Accessibility settings. The explanatory row opens that screen and shows the helper status. Before 1.5.4 it was called “Home button”.
-3. If the button is not recognized, select **Settings button** and press your remote Settings key within 15 seconds. The launcher saves its code; **Use default** clears the assignment. Navigation, volume, power and Home cannot be assigned.
-4. Check Settings and held-volume behavior with your remote.
-
-When enabled, **a short press does nothing**. Holding opens the panel once, with no second action on release. The top gear is excluded from directional navigation; Back from the panel restores the last selected app icon.
-
-The option is off by default. Disabling it lets directional navigation reach the top gear; OK opens the panel and Back restores gear focus.
-
-The separate **Hold gear for launcher settings** option controls holding OK on either the top gear or the gear tab inside the panel, as well as holding Settings again while the panel is open. It is on by default. When off, these holds do nothing; the dedicated launcher settings button in the panel stays available.
-
-Support depends on firmware and the remote keycode; some devices reserve Settings. The helper requires key filtering in the device configuration (`key_filter`). On some TCL firmware, filtering can break held-volume repeat; disable the helper and use the on-screen gear if this happens. The sleep helper is a separate service and is not required for this feature.
-
-## Install
-
-Fresh installs use six dock slots filled by the first available apps in catalogue order, without a fixed SmartTube/Kinopoisk favourites list. Existing on-TV choices and saved app order survive an upgrade.
-
-Requires **Android TV / Google TV 8.0+ (API 26)**. This APK is not for Samsung Tizen or LG webOS.
-
-1. Download `PeachOS-TV.apk` from [Releases](https://github.com/BrainDeLook/peachos-tv/releases/latest).
-2. Install it on your TV or box and open **PeachOS TV**.
-3. Choose it as the default Home app if your firmware allows it. ADB can be used as follows.
-
-```sh
-adb -s <device> install -r -g PeachOS-TV.apk
-adb -s <device> shell am start -n com.gathin.tvhome.backdrops/com.gathin.tvhome.MainActivity
-```
-
-After confirming that it opens and your remote works:
-
-```sh
-adb -s <device> shell cmd package set-home-activity com.gathin.tvhome.backdrops/com.gathin.tvhome.MainActivity
-```
-
-These commands do not debloat the device or disable its original launcher. Firmware may restrict Home replacement. Keep the original launcher available so you can switch back in system settings.
-
-**Updating:** install the newer signed APK over the existing one. Do not uninstall first if you want to preserve settings. The package remains `com.gathin.tvhome.backdrops`, including for older CleanYourTV + Art installations. The original `com.gathin.tvhome` can remain installed alongside it.
-
-## Optional PC setup wizard
-
-Download the single portable **PeachOS-TV-Setup-Portable.exe** from the [latest release](https://github.com/BrainDeLook/peachos-tv/releases/latest). ADB, the launcher APK and its runtime are included. The [Windows wizard](tools/pc-setup/README.ru.md) opens in simple mode: connect, review, install or update. A card-based layout with optional, remembered dark mode separates the main workflow from advanced options; the advanced sidebar groups Device, Apps, Cleanup and Backups. Plans show a concise summary with expandable details. Cleanup is optional and off by default. Existing users can choose an update-only plan that preserves Home and disables no packages. The normal APK remains independent.
-
-**1.5.13** adds [compatible Home setup](docs/home-setup.md) with explicit consent when native assignment fails. It verifies the actual Home transition and keeps stock system packages enabled. The installer contains a reference index of 1,981 packages from 442 upstream device lists; normal cleanup offers 122 described candidates, not automatic cleanup for every listed TV.
-
-The advanced wizard supports multiple local APKs, manual package selection, retained features, backups and restoration. It includes 116 described candidates and a reference index of 1,403 package names from 260 CleanYourTV device lists. References from other devices do not establish safety on yours. Normal mode protects unknown and critical packages; a separate expert toggle permits installed-package selection after explicit warnings. Firmware restrictions remain, and disabling ADB or system components can make recovery impossible. See the wizard guide for supported profiles and limits.
-
-## Data and network access
-
-No account or API key is required by the launcher. Artwork may be fetched from URLs published by your apps. When metadata backgrounds are enabled, title matching can contact Stremio/Cinemeta services. Lampa TMDB image links are upgraded from HTTP to HTTPS.
-
-With a card source selected, full-screen metadata backgrounds for that app are disabled. The decoded thumbnail cache is limited to 2 MiB, disk thumbnails to 32 MiB; one background worker loads artwork. Inter fonts are bundled locally.
-
-Screenshots show a real installation. App logos and film/series artwork belong to their respective owners; they are not supplied media subscriptions or included streaming content.
-
-## Build
-
-Use **JDK 17**, **Android SDK Platform 34**, **Build Tools 34.0.0**, and the bundled **Gradle 8.9** wrapper. Set `JAVA_HOME` and `ANDROID_HOME`.
-
-```sh
-cd launcher
-./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease
-```
-
-On Windows, use `gradlew.bat`. The APK is written to `launcher/app/build/outputs/apk/release/app-release.apk`.
-
-Release APKs currently use the project's original local debug signing certificate for update compatibility. **The private signing key is not in this repository.** A self-built APK signed with another key cannot update an installed release. Set `ANDROID_USER_HOME` to the directory containing your original `debug.keystore` only if you already have that key.
-
-## Tested devices
-
-- **Homatics Box R 4K Plus / Android 12:** dock and grid navigation, portrait/landscape cards, history sources, card opening, Home return, and hiding the source control when no passthrough inputs exist.
-- **TCL Smart TV Pro / Android 12:** compact source picker, connection indicators, HDMI 1 selection, and existing short/held settings actions.
-
-313 unit tests pass; release lint reports no errors. Firmware and remote behaviour vary, and smooth 60 fps is not guaranteed on every device. The first cold navigation or control-center opening can still take longer than subsequent transitions.
-
-## Credits and license
-
-PeachOS TV is an independent fork of [CleanYourTV](https://github.com/Gathin23/cleanyourtv) 2.7, based on commit `ab7a89e7543f2ef12aac0fa66a4d58c7f4452781`. Metadata/background work was adapted from [Vibe Launcher](https://github.com/maydings/vibe-launcher) v1.9.3, commit `fe00ad13730146def04275967e1df4b8365b670e`.
-
-- Code: MIT; see [LICENSE](LICENSE), [CleanYourTV license](LICENSE-CleanYourTV), and [Vibe Launcher license](LICENSE-VibeLauncher).
-- [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1): [SIL OFL 1.1](launcher/FONT-LICENSE-INTER.txt). Original Outfit resources retain their [OFL license](launcher/FONT-LICENSE-OFL.txt).
-- PeachOS TV's original peach-coloured screen mark and branding assets are included under this repository's MIT license.
-
-This Android TV launcher is not affiliated with Apple, Google, the unrelated peachOS Linux project, or the apps shown in screenshots. No Apple logos, SF fonts, or SF Symbols are bundled as PeachOS TV branding.
+Based on [CleanYourTV](https://github.com/Gathin23/cleanyourtv) and [Vibe Launcher](https://github.com/maydings/vibe-launcher). The launcher is [MIT licensed](LICENSE). [Credits and resource licenses](docs/credits.md).
