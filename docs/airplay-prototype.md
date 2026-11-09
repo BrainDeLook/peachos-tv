@@ -1,6 +1,6 @@
-# Optional AirPlay companion — 0.1.0-preview
+# Optional AirPlay companion — 1.5.17
 
-Optional preview bundled with the stable PeachOS TV 1.5.9 launcher, not a universal receiver APK. Device testing uses Homatics Box R 4K Plus, Android 12, with a 32-bit ARMv7 OS.
+Optional experimental receiver bundled with PeachOS TV 1.5.17. Device testing uses Homatics Box R 4K Plus, Android 12, with a 32-bit ARMv7 OS; compatibility with every sender and device is not established.
 
 The fourth round Control Center shortcut remains Search without a trusted companion. Installing `com.gathin.peachos.airplay`, signed with the launcher's certificate, replaces that slot with an AirPlay on/off shortcut without changing panel layout. Blue means both discovery services registered, not that an iPhone is connected. The integration is shared by Control Center on Home and over applications.
 
@@ -54,6 +54,24 @@ An early idle sample was about 11 MiB PSS without an Activity or active decoder.
 The player supports remote OK for pause/play, Left/Right for timeline selection, OK to confirm and Back to cancel seeking. Holding a direction progressively accelerates the timeline; only a confirmed seek changes decoder/network position. Its lightweight transport stops drawing when hidden or settled.
 
 Repeated VK stop/reconnect and YouTube compatibility were user-confirmed after the lifecycle fixes. A subsequent VK format failure was fixed in the production Media3 compatibility parser and the user confirmed picture/sound. Screen mirroring keeps its aspect ratio and returns to the preceding task on stop. These checks supersede the earlier outstanding stop/return note above, without establishing compatibility with every provider or device.
+
+## Performance update — 1.5.17
+
+Initial HLS preparation allows two correlated FCUP requests at once and handles
+fragmented/coalesced replies without losing HTTP message boundaries. Mirroring
+requests Android's optional low-latency codec mode only when advertised, with an
+ordinary decoder fallback. A stale presentation anchor is repaired instead of
+continuously adding the maximum 50 ms scheduling delay. Input keeps its bounded
+wake-on-arrival wait and encoded frames remain in FIFO order.
+
+Sequential Homatics/iPhone trials averaged 103.992 ms before and 73.834 ms after
+the update from Java receipt to the Surface timestamp. This excludes phone
+encoding, network transit and physical display output. Workloads differed and
+isolated long samples remain; it is not an end-to-end latency or FPS guarantee.
+The owner reported fewer visible jerks. Detailed frame timing is off by default.
+Build/lint, timing and lifecycle checks, generated MP4/HLS and repeated-disconnect
+tests passed. The final APK changes only version metadata relative to the tested
+candidate; launcher visuals, controls and cleanup rules are unchanged.
 
 ## Source and packaging
 

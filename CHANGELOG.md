@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.5.17 — 2026-11-09
+
+## Русский
+
+- Обновлён необязательный модуль AirPlay: ускорена начальная подготовка HLS-видео, улучшены обработка ответов iPhone, остановка и повторное подключение. Сохранены рабочие пути YouTube и VK.
+- В зеркалировании исправлена привязка времени кадров, которая могла постоянно добавлять 50 мс ожидания. В последовательных замерах Homatics среднее от поступления кадра в Java до отметки Surface изменилось примерно со 104 до 74 мс; это не полная задержка iPhone → ТВ. Владелец отметил меньше рывков.
+- Сохранены порядок зависимых видеокадров и экономное ожидание очереди. Низколатентный режим декодера используется только при заявленной поддержке, с обычным декодером как резервным вариантом.
+- Усилены проверки нативных пакетов, обработка частичных зашифрованных данных и очистка ресурсов. Подробные измерения кадров выключены по умолчанию.
+- Portable-установщик содержит обновлённый модуль, соответствующие исходники и лицензии. AirPlay по-прежнему необязателен и изначально не выбран. Интерфейс лаунчера и правила очистки не менялись.
+
+Проверки: сборка/lint обоих APK, 357 JVM-тестов лаунчера, 109 тестов установщика, проверки временных меток и жизненного цикла AirPlay. На Homatics проверены зеркалирование с iPhone, YouTube/VK, локальные MP4/HLS и повторные отключения с возвратом к прежнему экрану. Стабильная сборка сохраняет проверенный код, меняя метаданные версии. Модуль остаётся экспериментальным, только для ОС с поддержкой ARMv7; совместимость со всеми приложениями и телевизорами не заявляется.
+
+**Рекомендуемая установка:** `PeachOS-TV-Setup-Portable.exe`. Для обычной ручной установки лаунчера — `PeachOS-TV.apk`.
+
+## English
+
+- Update the optional AirPlay receiver: speed up initial HLS preparation and improve iPhone-response handling, stopping and reconnection. Preserve the working YouTube and VK paths.
+- Repair the mirroring presentation anchor that could continuously add a 50 ms wait. Sequential Homatics trials averaged approximately 104 → 74 ms from Java frame receipt to the Surface timestamp; this is not total iPhone-to-TV latency. The owner reported fewer visible jerks.
+- Preserve dependent-frame FIFO ordering and economical queue waits. Request low-latency decoding only when advertised, with an ordinary decoder fallback.
+- Harden native packet validation, partial encrypted-data handling and resource cleanup. Detailed frame diagnostics are off by default.
+- Bundle the updated receiver, matching source and licenses in the portable installer. AirPlay remains optional and unchecked initially. Launcher visuals and cleanup rules are unchanged.
+
+Validation: both APK builds/lint, 357 launcher JVM tests, 109 installer tests, AirPlay timing and lifecycle checks. Homatics testing covered iPhone mirroring, YouTube/VK, generated MP4/HLS and repeated disconnect/return scenarios. Stable preserves the tested code and updates version metadata. The receiver remains experimental and requires ARMv7 OS support; universal provider/device compatibility is not claimed.
+
+**Recommended installation:** `PeachOS-TV-Setup-Portable.exe`. Use `PeachOS-TV.apk` for a manual launcher-only installation.
+
+
 ## 1.5.16 — 2026-11-06
 
 ### Русский
