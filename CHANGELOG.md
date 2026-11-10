@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.18 — 2026-11-11
+
+### Русский
+
+- Небольшие улучшения главного экрана. Подробности оставим сюрпризом.
+- Обновлён portable-установщик; AirPlay остаётся необязательным. Поддерживаются обновление существующей установки и установка отдельного APK.
+
+Проверено на Homatics. Сборка, тесты лаунчера и lint прошли.
+
+### English
+
+- Small Home screen refinements. The details are left as a surprise.
+- Updated the portable installer. AirPlay remains optional; existing installs can be updated, and a standalone APK is available.
+
+Verified on Homatics. Launcher build, tests, and lint passed.
+
 ## 1.5.17 — 2026-11-09
 
 ## Русский

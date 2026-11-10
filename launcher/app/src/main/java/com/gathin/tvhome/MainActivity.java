@@ -149,6 +149,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
     private final Rect navigationFocusRect = new Rect();
     private RecyclerView grid;
     private FrameLayout root;
+    private final DuckCode duckCode = new DuckCode();
+    private DuckWalker duck;
+    private boolean duckFinalHeld;
+    private final Rect duckDockRect = new Rect();
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
     private View ambient;
@@ -730,6 +734,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                if (duck != null) positionDuck();
                 if (!glassShown) return;
                 glassTargetY -= dy;
                 glassScrollShift -= dy;
@@ -1098,6 +1103,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (pendingThemeRebuild) { applyPendingTheme(); if (themeRecreationRequested) return; }
         if (catalogueDrawReported && !themeChecked) verifyTheme(SystemClock.uptimeMillis());
         restartIdleClock();
+        if (duck != null) positionDuck();
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
@@ -1444,6 +1450,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         super.onPause();
         if (foregroundHome.get() == this) foregroundHome = NO_HOME;
         remoteSettingsButton.cancel();
+        duckCode.reset();
+        duckFinalHeld = false;
+        if (duck != null) duck.stop();
         boolean openingApp = appSoundState.paused();
         if (!openingApp && navigationSound != null) navigationSound.stop();
         root.removeCallbacks(showIdleClock);
@@ -1524,6 +1533,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (themeRefresh != null) themeRefresh.cancel();
         if (watchingThemeStorage) unregisterReceiver(themeStorageMounted);
         cancelCatalogueLoad();
+        if (duck != null) duck.stop();
         catalogueWorker.shutdownNow();
         root.removeCallbacks(initializeChannels);
         if (navigationSound != null) navigationSound.close();
@@ -1601,9 +1611,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        int code = event.getKeyCode();
+        boolean select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+        if (duckFinalHeld && select) {
+            if (event.getAction() == KeyEvent.ACTION_UP) duckFinalHeld = false;
+            return true;
+        }
+        if (reordering || appContextMenu != null || controlCenter != null || appLibrary != null
+                || openPopup != null || cardPrompt != null) duckCode.reset();
+        else if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
+                && !event.isCanceled() && duckCode.enter(code, SystemClock.uptimeMillis())) {
+            duckFinalHeld = true;
+            toggleDuck();
+            return true;
+        }
         if (appContextMenu != null) return appContextMenu.dispatch(event);
         if (handleSettingsKey(event)) return true;
-        int code = event.getKeyCode();
         int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
                 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
                 : code == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP
@@ -1678,6 +1702,44 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             return true;
         }
         return super.dispatchKeyEvent(event);   // arrows navigate; OK on a top-bar pill works as usual
+    }
+
+    private void toggleDuck() {
+        if (duck != null && duck.getParent() == root) {
+            duck.stop();
+            root.removeView(duck);
+            duck = null;
+            return;
+        }
+        float density = getResources().getDisplayMetrics().density;
+        int pixel = Math.max(2, Math.round(3 * density));
+        duck = new DuckWalker(this, Math.round(24 * density));
+        duck.setVisibility(View.INVISIBLE);
+        root.addView(duck, new FrameLayout.LayoutParams(26 * pixel, 16 * pixel,
+                Gravity.TOP | Gravity.START));
+        duck.post(this::positionDuck);
+    }
+
+    private void positionDuck() {
+        if (duck.getHeight() == 0) return;
+        RecyclerView.ViewHolder holder = grid.findViewHolderForAdapterPosition(0);
+        if (!(holder instanceof AppAdapter.Holder tile) || !dockRow) {
+            duck.setVisibility(View.INVISIBLE);
+            duck.stop();
+            return;
+        }
+        View card = tile.card;
+        duckDockRect.set(0, 0, card.getWidth(), card.getHeight());
+        root.offsetDescendantRectToMyCoords(card, duckDockRect);
+        int top = duckDockRect.top - Math.round(20.5f * density);
+        if (top < 0 || top >= root.getHeight()) {
+            duck.setVisibility(View.INVISIBLE);
+            duck.stop();
+            return;
+        }
+        duck.setBaseline(top - duck.getHeight() + Math.round(2 * density));
+        duck.setVisibility(View.VISIBLE);
+        if (started) duck.start();
     }
 
     /** Keep the normal key listeners and focus search, but replace ViewRoot's stock navigation click.
