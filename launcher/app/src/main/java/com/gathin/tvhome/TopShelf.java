@@ -56,6 +56,7 @@ final class TopShelf {
     private final List<View> targets = new ArrayList<>();
     private final ShelfImages images;
     private final android.graphics.Typeface bodyFace;
+    private final int captionHeight;
     private final boolean animateRows;
     private ExecutorService queries;
     private java.util.concurrent.Future<?> metadataQuery;
@@ -66,6 +67,7 @@ final class TopShelf {
                 task.run();
             }, "shelf-images"));
     private final List<Binding> bindings = new ArrayList<>();
+    private final List<Binding> recycled = new ArrayList<>();
     private static final class Snapshot {
         final ShelfRepository.Result result;
         final long at = android.os.SystemClock.elapsedRealtime();
@@ -84,6 +86,7 @@ final class TopShelf {
         float aspect;
         boolean loading, loaded;
         volatile boolean wanted;
+        int ticket;
         long failedAt;
         android.animation.ObjectAnimator reveal;
     }
@@ -121,6 +124,10 @@ final class TopShelf {
         this.animateRows = animateRows;
         images = new ShelfImages(activity);
         bodyFace = activity.getResources().getFont(R.font.inter_regular);
+        TextView captionMeasure = new TextView(activity);
+        captionMeasure.setTextSize(11);
+        captionMeasure.setTypeface(bodyFace);
+        captionHeight = (int) Math.ceil(captionMeasure.getPaint().getFontSpacing() * 2) + dp(2);
         dim = new View(activity);
         // Flatten the static gradients once: scrolling and fades then draw one small texture.
         android.util.DisplayMetrics screen = activity.getResources().getDisplayMetrics();
@@ -349,14 +356,14 @@ final class TopShelf {
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
         if (!animateRows || panel.getVisibility() != View.VISIBLE || bindings.isEmpty() || panel.getAlpha() == 0f) {
-            clear(); return;
+            clear(true); return;
         }
         rowExiting = true;
         panel.animate().alpha(0f).setDuration(120)
                 .setInterpolator(ROW_EASING)
                 .withEndAction(() -> {
                     if (!valid(ticket, pkg)) return;
-                    clear();
+                    clear(true);
                     if (!cardMode) navigation.fallback(dockTop);
                 }).start();
     }
@@ -402,10 +409,6 @@ final class TopShelf {
         int viewport = activity.getResources().getDisplayMetrics().widthPixels;
         // Five full portrait cards, with the next one peeking in at the physical right edge.
         int widthForFive = (viewport - dp(80) - 4 * dp(20)) / 5;
-        TextView captionMeasure = new TextView(activity);
-        captionMeasure.setTextSize(11);
-        captionMeasure.setTypeface(bodyFace);
-        int captionHeight = (int) Math.ceil(captionMeasure.getPaint().getFontSpacing() * 2) + dp(2);
         int headingHeight = (int) Math.ceil(heading.getPaint().getFontMetrics().descent
                 - heading.getPaint().getFontMetrics().ascent) + heading.getPaddingBottom();
         int available = (int) dockTop - dp(28) - topClearance() - headingHeight - dp(38)
@@ -418,35 +421,43 @@ final class TopShelf {
             }
         };
         for (ShelfRepository.Item item : result.items) {
-            FrameLayout tile = new FrameLayout(activity);
-            tile.setClipChildren(false);
-            // Artwork and caption have separate bounds, including the artwork's focus zoom clearance.
-            tile.forceHasOverlappingRendering(false);
-            tile.setFocusable(true); tile.setClickable(true);
+            Binding binding = recycled.isEmpty() ? new Binding() : recycled.remove(recycled.size() - 1);
+            FrameLayout tile;
+            ImageView poster;
+            TextView title;
+            if (binding.tile == null) {
+                tile = new FrameLayout(activity);
+                tile.setClipChildren(false);
+                // Artwork and caption have separate bounds, including the artwork's focus zoom clearance.
+                tile.forceHasOverlappingRendering(false);
+                tile.setFocusable(true); tile.setClickable(true);
+                poster = new ImageView(activity);
+                poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                binding.placeholder = new android.graphics.drawable.ColorDrawable(0xff25303d);
+                poster.setOutlineProvider(posterOutline);
+                poster.setClipToOutline(true);
+                poster.forceHasOverlappingRendering(false);
+                tile.addView(poster, new FrameLayout.LayoutParams(-1, height,
+                        android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
+                title = new TextView(activity);
+                title.setTextSize(11); title.setTypeface(bodyFace);
+                title.setIncludeFontPadding(false);
+                title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                tile.addView(title, new FrameLayout.LayoutParams(-1, captionHeight,
+                        android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
+                binding.tile = tile; binding.image = poster; binding.title = title;
+            } else {
+                tile = binding.tile; poster = binding.image; title = binding.title;
+            }
             tile.setContentDescription(item.title);
-            ImageView poster = new ImageView(activity);
             // Fill the rounded bounds even when a provider's aspect hint is slightly inaccurate.
-            poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            android.graphics.drawable.ColorDrawable placeholder = new android.graphics.drawable.ColorDrawable(0xff25303d);
-            poster.setImageDrawable(placeholder);
-            poster.setOutlineProvider(posterOutline);
-            poster.setClipToOutline(true);
-            // A poster draws one image, rather than an overlapping placeholder background plus bitmap.
-            poster.forceHasOverlappingRendering(false);
-            tile.addView(poster, new FrameLayout.LayoutParams(-1, height, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
-            TextView title = new TextView(activity);
-            title.setText(item.title); title.setTextSize(11); title.setTextColor(0xf2ffffff);
-            title.setTypeface(bodyFace);
+            poster.setImageDrawable(binding.placeholder);
+            title.setText(item.title); title.setTextColor(0xf2ffffff);
             title.setAlpha(0f);
-            title.setIncludeFontPadding(false);
-            title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            tile.addView(title, new FrameLayout.LayoutParams(-1, captionHeight,
-                    android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(widthForFive,
                     height + captionHeight + dp(14) + Math.round(height * .0225f));
             lp.rightMargin = dp(20); cards.addView(tile, lp); targets.add(tile);
-            Binding binding = new Binding();
-            binding.tile = tile; binding.image = poster; binding.placeholder = placeholder; binding.title = title; binding.item = item;
+            binding.item = item; binding.ticket = ticket;
             binding.rowHeight = height; binding.maxWidth = Math.round(viewport * .35f);
             bindings.add(binding);
             size(binding, item.aspect);
@@ -632,12 +643,12 @@ final class TopShelf {
         if (metadataObservation != null) { metadataObservation.close(); metadataObservation = null; }
         metadataHandler.removeCallbacksAndMessages(null);
         metadataDirty = false;
-        active = false; generation++; clear();
+        active = false; generation++; clear(false);
         cancelMetadataQuery();
         dim.animate().cancel(); dimTarget = 0f; dim.setAlpha(0f); dim.setVisibility(View.GONE);
         if (queries != null) queries.shutdownNow();
         downloads.getQueue().clear();
-        // Keep only the existing 2 MiB LRU for a quick Home return; all poster views are released.
+        // Keep the small device-scaled LRU for a quick Home return; all poster views are released.
         // Real background pressure and close() still release it, including an in-flight result.
         lists.clear();
         images.stats();
@@ -649,10 +660,11 @@ final class TopShelf {
     void trim(int level) {
         if (MemoryTrimPolicy.shouldRelease(level, false)) {
             images.trim();
+            recycled.clear();
             if (!active) releaseFinishedImages = true;
         }
     }
-    private void clear() {
+    private void clear(boolean reuseViews) {
         scrollSpring.cancel(); scrollHeadingTarget = Integer.MIN_VALUE; rowFocused = false;
         headingHold.reset();
         headingSpring.cancel(); headingTarget = Float.NaN;
@@ -660,12 +672,25 @@ final class TopShelf {
         refreshQueued = false;
         panel.removeCallbacks(refreshImages); panel.removeCallbacks(releaseImages);
         downloads.getQueue().clear();
-        for (Binding b : bindings) if (b.reveal != null) b.reveal.cancel();
+        for (Binding b : bindings) {
+            if (b.reveal != null) { b.reveal.cancel(); b.reveal = null; }
+            b.image.animate().cancel(); b.title.animate().cancel();
+            b.image.setImageDrawable(b.placeholder); b.image.setImageAlpha(255);
+            b.image.setScaleX(1f); b.image.setScaleY(1f); b.image.setTranslationZ(0f);
+            b.title.setAlpha(0f);
+            b.tile.setOnFocusChangeListener(null);
+            b.tile.setOnKeyListener(null);
+            b.tile.setOnClickListener(null);
+            b.ticket = -1; b.item = null; b.wanted = false; b.loaded = false; b.loading = false;
+            b.failedAt = 0;
+            if (reuseViews && recycled.size() < 20) recycled.add(b);
+        }
         bindings.clear();
         renderedPkg = null;
         renderedResult = null;
         panel.setAlpha(0f);
         panel.setVisibility(View.GONE); cards.removeAllViews(); targets.clear();
+        if (!reuseViews) recycled.clear();
     }
 
     private void open(String pkg, ShelfRepository.Item item) {
@@ -736,16 +761,19 @@ final class TopShelf {
             Bitmap cached = images.peek(b.item.image);
             if (cached != null) { bind(b, cached); continue; }
             b.loading = true;
+            String imageUrl = b.item.image;
             downloads.execute(() -> {
                 if (!valid(ticket, pkg) || !b.wanted) {
                     activity.runOnUiThread(() -> {
+                        if (b.ticket != ticket) return;
                         b.loading = false;
                         if (valid(ticket, pkg) && b.wanted) scheduleVisible();
                     });
                     return;
                 }
-                Bitmap ready = images.load(b.item.image);
+                Bitmap ready = images.load(imageUrl);
                 activity.runOnUiThread(() -> {
+                    if (b.ticket != ticket) return;
                     b.loading = false;
                     if (ready == null) b.failedAt = android.os.SystemClock.elapsedRealtime();
                     if (releaseFinishedImages || downloads.isShutdown()) images.trim();

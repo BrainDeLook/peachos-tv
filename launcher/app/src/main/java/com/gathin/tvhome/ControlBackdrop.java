@@ -309,8 +309,12 @@ final class ControlBackdrop extends Drawable {
         return super.setVisible(visible, restart);
     }
     @Override public void getOutline(Outline outline) {
-        if (mask.isEmpty()) { outline.setEmpty(); return; }
-        outline.setConvexPath(mask);
+        if (bounds.isEmpty()) { outline.setEmpty(); return; }
+        // Android 9 rejects the continuous-corner path as non-convex while rebuilding
+        // a View's shadow. The rendered material still uses that exact path; only its
+        // elevation outline needs the equivalent safe rounded rectangle.
+        outline.setRoundRect(Math.round(bounds.left), Math.round(bounds.top),
+                Math.round(bounds.right), Math.round(bounds.bottom), radius);
         outline.setAlpha(.28f * alpha / 255);
     }
     @Override protected void onBoundsChange(Rect area) {

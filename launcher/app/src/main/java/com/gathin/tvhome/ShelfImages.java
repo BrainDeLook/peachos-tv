@@ -10,19 +10,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 
-/** One worker calls load; UI calls peek/trim. Decoded RAM cache is 2 MiB, disk thumbnails 32 MiB. */
+/** One worker calls load; UI calls peek/trim. Decoded RAM cache scales with device memory. */
 final class ShelfImages {
     private final Context context;
     private final ShelfDiskCache disk;
-    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(2 * 1024 * 1024) {
-        @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
-    };
+    private final LruCache<String, Bitmap> memory;
     private final java.util.concurrent.atomic.AtomicInteger network = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.concurrent.atomic.AtomicInteger diskHits = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.concurrent.atomic.AtomicInteger memoryHits = new java.util.concurrent.atomic.AtomicInteger();
     private final LruCache<String, Long> failures = new LruCache<>(64);
     ShelfImages(Context context) {
         this.context = context.getApplicationContext();
+        android.app.ActivityManager manager = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        int cacheMiB = manager.isLowRamDevice() ? 2 : manager.getMemoryClass() >= 192 ? 6 : 4;
+        memory = new LruCache<String, Bitmap>(cacheMiB * 1024 * 1024) {
+            @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
+        };
         disk = new ShelfDiskCache(new File(context.getCacheDir(), "shelf-thumbnails"), 32L * 1024 * 1024);
     }
     Bitmap peek(String url) { Bitmap found = memory.get(url); if (found != null) memoryHits.incrementAndGet(); return found; }

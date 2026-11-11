@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.19 — 2026-11-12
+
+### Русский
+
+- Переключение приложений с постерами стало легче: карточки верхнего ряда используются повторно, а небольшой кэш готовых изображений уменьшает повторное декодирование. Размер кэша зависит от памяти устройства — от 2 до 6 МиБ.
+- На Android 9 исправлено построение тени панели управления, которое могло приводить к сбою при открытии сетевой вкладки. Видимая форма кнопок не меняется.
+- Обновлён portable-установщик со стабильным APK. Необязательный модуль AirPlay и правила очистки не менялись.
+
+Проверки: release build, тесты и lint; навигация по доку и панели на Homatics, TCL и Sumavision. В повторном замере Homatics при 30 переключениях между приложениями с постерами задержался 1 кадр из 510; результат не гарантирует ту же частоту кадров на других устройствах.
+
+### English
+
+- Make poster-equipped app switching lighter by reusing Top Shelf views and keeping a small device-scaled cache of decoded artwork (2–6 MiB), reducing repeated disk decoding.
+- Fix the control-panel shadow outline on Android 9, which could fail when opening the network tab. The visible button shape is unchanged.
+- Update the portable installer with the stable APK. The optional AirPlay module and cleanup rules are unchanged.
+
+Validation: release build, tests and lint; dock and panel navigation on Homatics, TCL and Sumavision. In a repeated Homatics run, 1 of 510 frames missed its deadline during 30 switches between poster-equipped apps. This does not guarantee the same frame rate on other devices.
+
 ## 1.5.18 — 2026-11-11
 
 ### Русский
