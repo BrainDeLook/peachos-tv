@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@drawable/settings_landing_bg"
+    android:paddingStart="40dp" android:paddingEnd="40dp" android:paddingTop="20dp" android:paddingBottom="20dp">
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:text="@string/settings_landing_title"
+        android:textColor="#FFE8E9EA" android:textSize="32sp" android:fontFamily="@string/font_medium" />
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:layout_marginTop="18dp" android:orientation="horizontal" android:gravity="center_vertical" android:baselineAligned="false">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent"
+            android:orientation="vertical" android:gravity="center" android:paddingStart="0dp" android:paddingEnd="28dp">
+            <FrameLayout android:layout_width="240dp" android:layout_height="240dp"
+                android:background="@drawable/settings_landing_tile">
+                <ImageView android:layout_width="112dp" android:layout_height="112dp"
+                    android:layout_gravity="center" android:src="@drawable/ic_settings_home"
+                    android:contentDescription="@string/settings_landing_title" />
+            </FrameLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="76dp"
+                android:layout_marginTop="26dp" android:gravity="center" android:text="@string/settings_landing_hint"
+                android:textColor="#FFC6CCCF" android:textSize="16sp" />
+        </LinearLayout>
+
+        <ScrollView android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent"
+            android:fillViewport="true" android:clipToPadding="false" android:padding="12dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:clipChildren="false" android:clipToPadding="false">
+                <TextView android:id="@+id/landingSetup" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_landing_setup" />
+                <TextView style="@style/SettingsLandingHeading" android:text="@string/settings_landing_brand" />
+                <TextView android:id="@+id/landingAppearance" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_section_appearance" />
+                <TextView android:id="@+id/landingDock" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_section_dock" />
+                <TextView android:id="@+id/landingCards" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_section_cards" />
+                <TextView android:id="@+id/landingRemote" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_section_remote" />
+                <TextView android:id="@+id/landingSystem" style="@style/SettingsLandingRow"
+                    android:text="@string/settings_section_system" />
+                <TextView style="@style/SettingsLandingHeading" android:text="@string/settings_landing_device" />
+                <TextView android:id="@+id/landingAndroid" style="@style/SettingsLandingRow"
+                    android:text="@string/tv_settings" />
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+</LinearLayout>

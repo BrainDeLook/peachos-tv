@@ -123,6 +123,11 @@
             android:excludeFromRecents="true"
             android:screenOrientation="landscape" />
         <activity
+            android:name=".FirstRunActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape" />
+        <activity
             android:name=".WifiPermissionActivity"
             android:exported="false"
             android:taskAffinity=""

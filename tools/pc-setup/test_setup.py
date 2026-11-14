@@ -106,6 +106,14 @@ class SetupTests(unittest.TestCase):
         self.assertIn('com.google.android.tungsten.setupwraith', REFERENCE['packages'])
         self.assertEqual({}, candidates({}, {'com.google.android.tungsten.setupwraith'}, set(), '')[1])
 
+    def test_latest_reference_additions_remain_manual_evidence(self):
+        self.assertGreaterEqual(REFERENCE['profile_count'], 472)
+        self.assertEqual('https://github.com/Gathin23/cleanyourtv', REFERENCE['repository'])
+        self.assertIn('com.example.testad', REFERENCE['packages'])
+        self.assertIn('com.mediatek.wwtv.setupwizard', REFERENCE['packages'])
+        self.assertNotIn('com.mediatek.wwtv.setupwizard',
+                         candidates({}, {'com.mediatek.wwtv.setupwizard'}, set(), '')[1])
+
     def test_update_only_rejects_cleanup_home_and_missing_install_before_mutation(self):
         current = device()
         current.installed.add(PEACH.split('/')[0])

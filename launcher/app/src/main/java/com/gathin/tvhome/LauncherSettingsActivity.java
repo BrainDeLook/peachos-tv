@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -30,8 +31,16 @@ public final class LauncherSettingsActivity extends Activity {
     private SharedPreferences choices;
     private Config settingsConfig;
     private int section;
+    private View settingsDetail;
+    private View settingsLanding;
+    private boolean showingLanding;
     private final int[] sectionIds = {R.id.sectionDock, R.id.sectionCards, R.id.sectionAppearance, R.id.sectionRemote, R.id.sectionSystem};
-    private final int[] navigationIds = {R.id.navDock, R.id.navCards, R.id.navAppearance, R.id.navRemote, R.id.navSystem};
+    private final int[] firstFocusIds = {R.id.reorderChoice, R.id.topShelfChoice, R.id.liquidGlassChoice,
+            R.id.settingsHoldChoice, R.id.idleClockChoice};
+    private final int[] sectionHints = {R.string.settings_detail_dock_hint, R.string.settings_detail_cards_hint,
+            R.string.settings_detail_appearance_hint, R.string.settings_detail_remote_hint, R.string.settings_detail_system_hint};
+    private final int[] landingIds = {R.id.landingDock, R.id.landingCards, R.id.landingAppearance,
+            R.id.landingRemote, R.id.landingSystem};
     private final TextView[] columnChoices = new TextView[4];
     private final TextView[] rowChoices = new TextView[4];
     private static final int[] DOCK_OPACITIES = {100, 70, 50, 30};
@@ -59,12 +68,7 @@ public final class LauncherSettingsActivity extends Activity {
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
         section = state == null ? 0 : state.getInt("section", 0);
-        for (int i = 0; i < navigationIds.length; i++) {
-            final int at = i;
-            View nav = findViewById(navigationIds[i]);
-            nav.setOnFocusChangeListener((v, focused) -> { if (focused) showSection(at); });
-            nav.setOnClickListener(v -> { showSection(at); findViewById(sectionIds[at]).requestFocus(View.FOCUS_DOWN); });
-        }
+        showingLanding = state == null || state.getBoolean("landing", true);
         TextView gearHoldChoice = findViewById(R.id.gearHoldChoice);
         gearHoldChoice.setText(getString(R.string.gear_hold_settings_state,
                 getString(choices.getBoolean(GEAR_HOLD_SETTINGS_KEY, true) ? R.string.on : R.string.off)));
@@ -280,19 +284,53 @@ public final class LauncherSettingsActivity extends Activity {
         refresh();
         refreshVisibility();
         showSection(section);
-        findViewById(navigationIds[section]).requestFocus();
+        ViewGroup content = findViewById(android.R.id.content);
+        settingsDetail = content.getChildAt(0);
+        settingsLanding = getLayoutInflater().inflate(R.layout.activity_settings_landing, content, false);
+        content.addView(settingsLanding);
+        for (int i = 0; i < landingIds.length; i++) {
+            final int at = i;
+            settingsLanding.findViewById(landingIds[i]).setOnClickListener(v -> {
+                showSection(at);
+                showLanding(false);
+                findViewById(firstFocusIds[at]).requestFocus();
+            });
+        }
+        settingsLanding.findViewById(R.id.landingSetup).setOnClickListener(v ->
+                startActivity(new Intent(this, FirstRunActivity.class)));
+        settingsLanding.findViewById(R.id.landingAndroid).setOnClickListener(v ->
+                open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
+        SettingsFocusMotion.bind(settingsDetail, () -> animations && !settingsConfig.reducedMotion);
+        SettingsFocusMotion.bind(settingsLanding, () -> animations && !settingsConfig.reducedMotion);
+        showLanding(showingLanding);
+        if (state == null) settingsLanding.findViewById(R.id.landingSetup).requestFocus();
+        else if (!showingLanding) findViewById(firstFocusIds[section]).requestFocus();
+    }
+
+    private void showLanding(boolean landing) {
+        showingLanding = landing;
+        settingsDetail.setVisibility(landing ? View.GONE : View.VISIBLE);
+        settingsLanding.setVisibility(landing ? View.VISIBLE : View.GONE);
+        if (landing) settingsLanding.findViewById(landingIds[section]).requestFocus();
+    }
+
+    @Override public void onBackPressed() {
+        if (!showingLanding) showLanding(true);
+        else super.onBackPressed();
     }
 
     private void showSection(int selected) {
         section = Math.max(0, Math.min(selected, sectionIds.length - 1));
+        ((TextView) findViewById(R.id.settingsDetailHint)).setText(sectionHints[section]);
         for (int i = 0; i < sectionIds.length; i++) {
             findViewById(sectionIds[i]).setVisibility(i == section ? View.VISIBLE : View.GONE);
-            findViewById(navigationIds[i]).setSelected(i == section);
         }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
-        state.putInt("section", section); super.onSaveInstanceState(state);
+        state.putInt("section", section);
+        state.putBoolean("landing", showingLanding);
+        super.onSaveInstanceState(state);
     }
 
     private void refreshIdleClock() {

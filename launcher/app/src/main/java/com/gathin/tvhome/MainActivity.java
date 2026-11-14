@@ -930,10 +930,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
 
         // Hide the glass when focus leaves the tiles.
-        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
-            boolean onTile = newF != null && newF.getId() == R.id.card;
-            if (!onTile) hideGlass();
-        });
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(glassFocusListener);
 
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
         packageFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
@@ -948,7 +945,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
             registerReceiver(packageReceiver, packageFilter);
         }
 
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);
         if (cm != null) {
             try {
                 cm.registerDefaultNetworkCallback(networkCallback);
@@ -970,7 +967,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())
                 && !requestControlCenter(getIntent())) openInputsIfAsked(getIntent());
         else if (savedInstanceState != null) requestControlCenter(getIntent());
+        if (savedInstanceState == null && getIntent() != null
+                && Intent.ACTION_MAIN.equals(getIntent().getAction())) maybeShowFirstRun();
         startupStep("Activity created");
+    }
+
+    /** Existing installations keep their established flow; a fresh APK gets the guide after Home first draws. */
+    private void maybeShowFirstRun() {
+        android.content.SharedPreferences preferences = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        if (preferences.contains(FirstRunActivity.DONE_KEY)) return;
+        boolean freshInstall;
+        try {
+            android.content.pm.PackageInfo app = getPackageManager().getPackageInfo(getPackageName(), 0);
+            freshInstall = app.lastUpdateTime - app.firstInstallTime < 1000;
+        } catch (PackageManager.NameNotFoundException missing) {
+            return;
+        }
+        if (!freshInstall) {
+            preferences.edit().putBoolean(FirstRunActivity.DONE_KEY, true).apply();
+            return;
+        }
+        root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                root.getViewTreeObserver().removeOnPreDrawListener(this);
+                handler.post(() -> {
+                    if (!isFinishing() && !isDestroyed()
+                            && !preferences.getBoolean(FirstRunActivity.DONE_KEY, false))
+                        startActivity(new Intent(MainActivity.this, FirstRunActivity.class));
+                });
+                return true;
+            }
+        });
+        root.invalidate();
     }
 
     /**
@@ -1527,9 +1555,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         }
     }
 
+    private final ViewTreeObserver.OnGlobalFocusChangeListener glassFocusListener = (oldFocus, newFocus) -> {
+        if (newFocus == null || newFocus.getId() != R.id.card) hideGlass();
+    };
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        ViewTreeObserver tree = getWindow().getDecorView().getViewTreeObserver();
+        if (tree.isAlive()) tree.removeOnGlobalFocusChangeListener(glassFocusListener);
         if (themeRefresh != null) themeRefresh.cancel();
         if (watchingThemeStorage) unregisterReceiver(themeStorageMounted);
         cancelCatalogueLoad();
@@ -1541,7 +1575,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         if (topShelf != null) topShelf.close();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);
         if (cm != null) {
             if (networkCallbackRegistered) {
                 networkCallbackRegistered = false;
@@ -3041,7 +3075,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, C
         int flame = 0;
         boolean steady = false;
         try {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            ConnectivityManager cm = getApplicationContext().getSystemService(ConnectivityManager.class);
             boolean wifi = false, ethernet = false;
             // All networks, not just the active one: with a VPN up the active network is the VPN itself.
             for (Network net : cm != null ? cm.getAllNetworks() : new Network[0]) {

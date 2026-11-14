@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.20 — 2026-11-15
+
+### Русский
+
+- Добавлен короткий мастер первого запуска для новой установки APK: проверка главного экрана, доступа к каналам постеров и службы кнопок пульта. Существующие установки сохраняют привычный запуск.
+- Настройки получили отдельный главный экран и прямые разделы с параметрами. Выделение кнопок подпружинивается; исправлены обрезанные края и меняющийся размер плитки с домиком.
+- Справочная база Windows-установщика обновлена по CleanYourTV 3.5: 472 профиля устройств. Список служит подсказкой для выбора пакетов; новые пакеты не отключаются автоматически.
+- Устранено удержание старого экрана Home в памяти после закрытия и выровнено получение сетевого сервиса. Необязательный AirPlay не менялся.
+
+Проверки: сборка и тесты лаунчера, lint, тесты установщика; переходы между экранами настроек и форма выделения проверены на Homatics. Мастер первого запуска на других моделях пока не проверен.
+
+### English
+
+- Add a short first-run guide for fresh APK installs: check the Home role, poster-channel access and remote-button service. Existing installations keep their normal startup.
+- Give Settings a landing screen and direct sections containing their controls. Focus uses a small spring; fix clipped selection edges and the changing Home tile size.
+- Refresh the Windows installer's reference catalog from CleanYourTV 3.5 to 472 device profiles. The catalog guides package selection; new entries are never disabled automatically.
+- Release the old Home screen after Settings closes and obtain the network service consistently. The optional AirPlay receiver is unchanged.
+
+Validation: launcher build and tests, lint, installer tests; Settings navigation and focus shape checked on Homatics. The first-run guide has not been checked on other models yet.
+
 ## 1.5.19 — 2026-11-12
 
 ### Русский
