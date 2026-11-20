@@ -14,6 +14,8 @@ from tkinter.scrolledtext import ScrolledText
 
 from ui import BACKGROUND, configure_styles, apply_theme, card, paragraph, ScrollPage
 
+from host_runtime import cache_adb
+
 from catalog import FEATURES, PROFILES, RULES, REFERENCE, candidates
 from core import Adb, discover, wait_for_device, apply_plan, restore, read_preset, inspect_apk, airplay_compatibility, AIRPLAY
 
@@ -64,24 +66,7 @@ def write_ui_settings(path, dark):
 
 
 def portable_adb():
-    # ADB's server can outlive the GUI. Run it from the persistent portable cache,
-    # so it does not lock the one-file runtime's temporary extraction directory.
-    target = DATA / 'platform-tools'
-    target.mkdir(parents=True, exist_ok=True)
-    for source in sorted((ASSETS / 'platform-tools').rglob('*')):
-        if not source.is_file():
-            continue
-        destination = target / source.relative_to(ASSETS / 'platform-tools')
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            with source.open('rb') as original, destination.open('rb') as cached:
-                if hashlib.file_digest(original, 'sha256').digest() == hashlib.file_digest(cached, 'sha256').digest():
-                    continue
-        shutil.copyfile(source, destination)
-    executable = target / ADB_NAME
-    if sys.platform != 'win32':
-        executable.chmod(executable.stat().st_mode | 0o100)
-    return executable
+    return cache_adb(ASSETS, DATA, ADB_NAME)
 
 
 class Wizard:

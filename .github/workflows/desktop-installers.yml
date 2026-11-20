@@ -29,6 +29,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb libx11-6 libxcb1 libxrender1 libxext6
       - name: Build dependencies
         run: python -m pip install PyInstaller==6.22.3
+      - name: Native Mac UI dependency
+        if: runner.os == 'macOS'
+        run: python -m pip install pyobjc-framework-Cocoa==11.1
       - name: Download versioned application assets and official ADB
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,7 +48,9 @@ jobs:
         run: xvfb-run -a python -m unittest discover -s tools/pc-setup -p 'test_*.py'
       - name: Test macOS
         if: runner.os == 'macOS'
-        run: python -m unittest discover -s tools/pc-setup -p 'test_*.py'
+        run: |
+          python -m unittest discover -s tools/pc-setup -p 'test_*.py'
+          python -m unittest discover -s tools/pc-setup -p 'native_mac_checks.py'
       - name: Build native installer
         run: python tools/pc-setup/build.py --apk assets/PeachOS-TV.apk --adb-directory assets/platform-tools --output dist --airplay-apk assets/PeachOS-AirPlay.apk --airplay-source assets/PeachOS-AirPlay-source.zip --airplay-license assets/LICENSE-AirPlay.txt
       - name: Smoke test Linux bundle
@@ -57,6 +62,9 @@ jobs:
       - name: Validate bundled assets
         run: |
           python -c "import json; p=json.load(open('dist/self-test.json')); assert p['apk'] and p['airplay_bundled'] and p['adb_version'].startswith('Android Debug Bridge') and p['simple_default']; print(p)"
+      - name: Verify native Mac backend
+        if: runner.os == 'macOS'
+        run: python -c "import json; p=json.load(open('dist/self-test.json')); assert p['ui_backend'] == 'AppKit' and not p['tk_loaded'] and p['tabs'] == 4; print('Native AppKit verified')"
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.runner }}

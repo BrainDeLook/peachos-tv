@@ -69,7 +69,9 @@ def main():
         icon = stage / 'peachos.icns'
         subprocess.run(['iconutil', '-c', 'icns', str(iconset), '-o', str(icon)], check=True)
         command += ['--windowed', '--icon', str(icon), '--osx-bundle-identifier', 'tv.peachos.setup']
-    command.append(str(here / 'wizard.py'))
+    if sys.platform == 'darwin':
+        command += ['--exclude-module', 'tkinter', '--hidden-import', 'AppKit', '--hidden-import', 'Foundation', '--hidden-import', 'PyObjCTools.AppHelper']
+    command.append(str(here / ('mac_app.py' if sys.platform == 'darwin' else 'wizard.py')))
     subprocess.run(command, check=True)
     machine = os.uname().machine
     if sys.platform == 'darwin':
