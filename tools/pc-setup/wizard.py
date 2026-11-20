@@ -110,7 +110,8 @@ class Wizard:
         header.pack(fill='x', pady=(0, 16))
         if (ASSETS / 'peachos.png').exists():
             self.brand = tk.PhotoImage(file=str(ASSETS / 'peachos.png'))
-            root.iconphoto(True, self.brand)
+            if sys.platform != 'darwin':
+                root.iconphoto(True, self.brand)
             self.brand = self.brand.subsample(max(1, (self.brand.width() + 43) // 44))
             ttk.Label(header, image=self.brand).pack(side='left', padx=(0, 12))
         title = ttk.Frame(header)
