@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.21
+
+### Русский
+
+- Windows-мастер ведёт от подключения телевизора к настройкам и подтверждению установки. Интерфейс получил тёплую светлую палитру и тёмную тему.
+- AirPlay, очистка и совместимый режим Home доступны в дополнительных параметрах. Расширенный режим сохраняет установку своих APK, выбор пакетов и восстановление из копии.
+- В комплект входят APK лаунчера и AirPlay из v1.5.20. Версия 1.5.21 относится к Windows-установщику.
+
+Проверки: 111 автотестов установщика и самопроверка portable EXE.
+
+### English
+
+- The Windows installer guides users through connection, options and confirmation. It includes a warm light palette and a dark theme.
+- AirPlay, cleanup and Home compatibility are available under additional options. Advanced mode retains custom APK installation, package selection and recovery.
+- The installer bundles the launcher and AirPlay APKs from v1.5.20. Version 1.5.21 applies to the Windows installer.
+
+Validation: 111 installer tests and the portable EXE self-test.
+
 ## 1.5.20 — 2026-11-15
 
 ### Русский
