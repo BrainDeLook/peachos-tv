@@ -13,7 +13,7 @@ Requires an **Android TV / Google TV device running Android 8.0 or newer**. Sams
 1. Open the installer on Windows. It is portable: the launcher and ADB are already included.
 2. On the TV, open **Settings → System / About** and select **Build** seven times. Then enable **USB / ADB debugging** in **Developer options**. Names vary by device.
 3. Connect the PC and TV to the same network. Enter the TV's IP address from its network settings and select **Подключиться (Connect)**. Approve debugging on the TV.
-4. Choose launcher installation and Home-button setup. Select **Проверить план (Review plan)**, then **Применить план (Apply plan)**.
+4. Choose whether the Home button should open PeachOS. Select **Продолжить (Continue)**, review the changes, then choose **Установить (Install)** or **Обновить (Update)**.
 5. Press Home on the remote and check that your apps open.
 
 **Cleanup and AirPlay are optional and off by default.** Installing the launcher does not require disabling anything.

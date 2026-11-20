@@ -551,7 +551,7 @@ class WizardHomeConsentTests(unittest.TestCase):
         pending = [plan]
         while pending:
             widget = pending.pop()
-            if isinstance(widget, ttk.Button) and widget.cget('text') == 'Применить план':
+            if isinstance(widget, ttk.Button) and widget.cget('text') in ('Установить', 'Обновить', 'Применить план'):
                 apply_button = widget
                 break
             pending.extend(widget.winfo_children())

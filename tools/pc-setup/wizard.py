@@ -81,10 +81,10 @@ class Wizard:
         configure_styles(root, self.dark_mode.get())
         if (ASSETS / 'peachos.ico').exists():
             root.iconbitmap(str(ASSETS / 'peachos.ico'))
-        self.frame = ttk.Frame(root, padding=(26, 20))
+        self.frame = ttk.Frame(root, padding=(34, 22))
         self.frame.pack(fill='both', expand=True)
         header = ttk.Frame(self.frame)
-        header.pack(fill='x', pady=(0, 20))
+        header.pack(fill='x', pady=(0, 16))
         if (ASSETS / 'peachos.png').exists():
             self.brand = tk.PhotoImage(file=str(ASSETS / 'peachos.png'))
             self.brand = self.brand.subsample(max(1, (self.brand.width() + 43) // 44))
@@ -96,18 +96,19 @@ class Wizard:
         ttk.Label(brand_line, text='PeachOS TV', style='Title.TLabel').pack(side='left')
         ttk.Label(brand_line, text='  ' + SETUP_VERSION, style='Version.TLabel').pack(side='left', pady=(6, 0))
         ttk.Label(title, text='Установка и обновление для Android TV', style='Muted.TLabel').pack(anchor='w')
-        self.mode_button = ttk.Button(header, text='Расширенный мастер', command=self.switch_mode)
+        self.mode_button = ttk.Button(header, text='Расширенный режим', style='Small.TButton', command=self.switch_mode)
         self.mode_button.pack(side='right')
         self.theme_button = ttk.Checkbutton(header, text='Тёмная тема', variable=self.dark_mode,
                                            style='Plain.TCheckbutton', command=self.change_theme)
         self.theme_button.pack(side='right', padx=(10, 16))
-        self.status = tk.StringVar(value='Подключите устройство, выберите параметры и проверьте план.')
+        self.status = tk.StringVar(value='Для Android TV и Google TV')
         footer = ttk.Frame(self.frame)
         footer.pack(side='bottom', fill='x', pady=(16, 0))
         self.operation_progress = ttk.Progressbar(footer, mode='indeterminate')
-        self.plan_button = ttk.Button(footer, text='Проверить план  →', style='Accent.TButton', command=self.review, state='disabled')
+        self.plan_button = ttk.Button(footer, text='Продолжить', style='Accent.TButton', command=self.review, state='disabled')
         self.plan_button.pack(side='right', padx=(18, 0))
-        paragraph(footer, textvariable=self.status, style='Muted.TLabel').pack(side='left', fill='x', expand=True)
+        self.footer_status = paragraph(footer, textvariable=self.status, style='Muted.TLabel')
+        self.footer_status.pack(side='left', fill='x', expand=True)
 
         self.target = tk.StringVar()
         self.device_text = tk.StringVar(value='Устройство пока не подключено')
@@ -130,47 +131,55 @@ class Wizard:
         self.simple_cleanup = tk.BooleanVar(value=False)
         self.simple_hint = tk.StringVar(value='При обновлении сохранятся настройки и порядок приложений.')
 
-        self.simple_container = ScrollPage(self.frame)
+        self.simple_container = ScrollPage(self.frame, max_width=680)
         self.simple_container.pack(fill='both', expand=True)
         simple = self.simple_container.body
-        ttk.Label(simple, text='Начнём с вашего телевизора', style='Heading.TLabel').pack(anchor='w', pady=(0, 6))
-        paragraph(simple, 'Три понятных шага. Изменения начнутся только после вашего подтверждения.',
-                  style='Muted.TLabel').pack(fill='x', pady=(0, 16))
-        self.simple_stage = tk.StringVar(value='1  Подключение     →     2  Параметры     →     3  Проверка плана')
-        ttk.Label(simple, textvariable=self.simple_stage, style='Version.TLabel').pack(anchor='w', pady=(0, 14))
-        connection_card = card(simple)
-        connection_card.pack(fill='x', pady=(0, 12))
-        ttk.Label(connection_card, text='1. Подключение', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 5))
-        paragraph(connection_card, 'ПК и телевизор должны быть в одной сети. Включите отладку и введите IP-адрес телевизора.').pack(fill='x', pady=(0, 12))
+        self.simple_stage = tk.StringVar()
+        ttk.Label(simple, textvariable=self.simple_stage, style='Step.TLabel').pack(anchor='w', pady=(16, 10))
+        self.simple_title = ttk.Label(simple, style='Hero.TLabel')
+        self.simple_title.pack(anchor='w', pady=(0, 6))
+        self.simple_intro = paragraph(simple, style='Muted.TLabel')
+        self.simple_intro.pack(fill='x', pady=(0, 22))
+        connection_card = self.connection_card = card(simple, padding=24)
+        ttk.Label(connection_card, text='IP-адрес телевизора', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 8))
+        paragraph(connection_card, 'Например, 192.168.1.199. Для одного телевизора по USB оставьте поле пустым.').pack(fill='x', pady=(0, 12))
         simple_connection = ttk.Frame(connection_card, style='Card.TFrame')
         simple_connection.pack(fill='x')
-        entry = ttk.Entry(simple_connection, textvariable=self.target, width=28)
-        entry.pack(side='left', padx=(0, 10))
-        entry.bind('<Return>', lambda event: self.connect())
+        self.simple_entry = ttk.Entry(simple_connection, textvariable=self.target, width=14)
+        self.simple_entry.pack(side='left', fill='x', expand=True, padx=(0, 10))
+        self.simple_entry.bind('<Return>', lambda event: self.connect())
         self.simple_connect_button = ttk.Button(simple_connection, text='Подключиться', style='Accent.TButton', command=self.connect)
         self.simple_connect_button.pack(side='left')
-        ttk.Button(simple_connection, text='Как подготовить ТВ?', style='Small.TButton', command=self.preparation).pack(side='right')
-        paragraph(connection_card, 'Например: 192.168.1.199. При первом подключении подтвердите запрос на экране ТВ.',
-                  style='CardSmall.TLabel').pack(fill='x', pady=(9, 0))
-        paragraph(connection_card, textvariable=self.device_text, style='Card.TLabel').pack(fill='x', pady=(12, 0))
-        options = card(simple)
-        options.pack(fill='x', pady=(0, 12))
-        ttk.Label(options, text='2. Параметры установки', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 5))
-        paragraph(options, textvariable=self.simple_hint).pack(fill='x', pady=(0, 7))
+        ttk.Button(connection_card, text='Как подготовить телевизор?', style='Small.TButton',
+                   command=self.preparation).pack(anchor='w', pady=(14, 0))
+        self.options = options = card(simple, padding=(24, 18))
+        device_row = ttk.Frame(options, style='Card.TFrame')
+        device_row.pack(fill='x', pady=(0, 16))
+        ttk.Button(device_row, text='Сменить ТВ', style='Small.TButton',
+                   command=self.change_device).pack(side='right', padx=(10, 0))
+        ttk.Label(device_row, text='ПОДКЛЮЧЕНО', style='CardSmall.TLabel').pack(anchor='w')
+        self.simple_device = tk.StringVar()
+        paragraph(device_row, textvariable=self.simple_device, style='Card.TLabel').pack(fill='x')
+        ttk.Separator(options).pack(fill='x', pady=(0, 10))
         self.simple_home_choice = ttk.Checkbutton(options, text='Настроить открытие PeachOS по кнопке Home', variable=self.simple_home,
                                                 command=lambda: self.compat_home.set(False) if not self.simple_home.get() else None)
         self.simple_home_choice.pack(anchor='w')
-        ttk.Checkbutton(options, text='Совместимый Home через службу пульта', variable=self.compat_home,
+        self.more_button = ttk.Button(options, text='Дополнительные параметры  ▸', style='Small.TButton',
+                                      command=self.toggle_simple_more)
+        self.more_button.pack(anchor='w', pady=(10, 0))
+        self.simple_more = more = ttk.Frame(options, style='Card.TFrame')
+        ttk.Checkbutton(more, text='Совместимый режим кнопки Home', variable=self.compat_home,
                         command=self.select_compatible_home).pack(anchor='w')
-        paragraph(options, 'Если обычное назначение не работает: разрешить службу пульта и автозапуск PeachOS, если прошивка его поддерживает. Системные приложения сохранятся.', style='CardSmall.TLabel').pack(fill='x', pady=(0, 6))
-        ttk.Checkbutton(options, text='Лёгкая очистка рекомендованных пакетов', variable=self.simple_cleanup).pack(anchor='w')
-        airplay_choice = ttk.Checkbutton(options, text='Добавить AirPlay с iPhone · необязательный прототип', variable=self.airplay,
+        paragraph(more, 'Если обычный способ не сработает, поможет служба пульта.',
+                  style='CardSmall.TLabel').pack(fill='x', pady=(0, 6))
+        ttk.Checkbutton(more, text='Отключить рекомендованные приложения', variable=self.simple_cleanup).pack(anchor='w')
+        paragraph(more, 'Их данные сохранятся. Приложения можно вернуть из копии.',
+                  style='CardSmall.TLabel').pack(fill='x', pady=(0, 6))
+        airplay_choice = ttk.Checkbutton(more, text='Добавить AirPlay для iPhone', variable=self.airplay,
                                         state='normal' if self.airplay_module else 'disabled')
         airplay_choice.pack(anchor='w')
         self.airplay_choices.append(airplay_choice)
-        paragraph(options, textvariable=self.airplay_hint, style='CardSmall.TLabel').pack(fill='x', pady=(2, 0))
-        paragraph(simple, 'Голосовой поиск, трансляция, обновления и эфирные каналы сохраняются. Для своих APK и выбора отдельных пакетов откройте расширенный мастер.',
-                  style='Muted.TLabel').pack(fill='x', pady=(0, 10))
+        paragraph(more, textvariable=self.airplay_hint, style='CardSmall.TLabel').pack(fill='x', pady=(2, 0))
 
         self.advanced_container = ttk.Frame(self.frame)
         navigation = ttk.Frame(self.advanced_container, width=180)
@@ -344,8 +353,50 @@ class Wizard:
         preset_row.pack(fill='x')
         ttk.Button(preset_row, text='Сохранить выбор…', command=self.save_preset).pack(side='left')
         ttk.Button(preset_row, text='Загрузить выбор…', command=self.load_preset).pack(side='left', padx=8)
+        self.sync_simple_page()
         apply_theme(root, self.dark_mode.get())
         root.after(80, self.poll)
+
+    def sync_simple_page(self):
+        if self.device:
+            updating = 'com.gathin.tvhome.backdrops' in self.device.installed
+            self.simple_stage.set('ШАГ 2 ИЗ 3  ·  ПАРАМЕТРЫ')
+            self.simple_title.configure(text='Обновите PeachOS TV' if updating else 'Установите PeachOS TV')
+            if any(option.get() for option in (self.compat_home, self.airplay, self.simple_cleanup)):
+                self.set_simple_more(True)
+            self.simple_intro.configure(textvariable=self.simple_hint)
+            self.connection_card.pack_forget()
+            self.options.pack(fill='x', pady=(0, 12))
+        else:
+            self.simple_stage.set('ШАГ 1 ИЗ 3  ·  ПОДКЛЮЧЕНИЕ')
+            self.simple_title.configure(text='Подключите телевизор')
+            self.simple_intro.configure(textvariable='', text='Подключите компьютер и телевизор к одной сети и включите отладку на ТВ.')
+            self.options.pack_forget()
+            self.connection_card.pack(fill='x', pady=(0, 12))
+        if self.advanced or self.device:
+            if not self.plan_button.winfo_manager():
+                self.plan_button.pack(side='right', before=self.footer_status, padx=(18, 0))
+            self.plan_button.configure(text='Проверить план' if self.advanced else 'Продолжить')
+        else:
+            self.plan_button.pack_forget()
+
+    def toggle_simple_more(self):
+        self.set_simple_more(not self.simple_more.winfo_manager())
+
+    def set_simple_more(self, expanded):
+        if not expanded:
+            self.simple_more.pack_forget()
+            self.more_button.configure(text='Дополнительные параметры  ▸')
+        else:
+            self.simple_more.pack(fill='x', pady=(8, 0))
+            self.more_button.configure(text='Дополнительные параметры  ▾')
+
+    def change_device(self):
+        if self.busy: return
+        self.invalidate_device('Устройство пока не подключено')
+        self.status.set('Введите адрес телевизора, к которому хотите подключиться.')
+        self.simple_entry.focus_set()
+        self.simple_entry.selection_range(0, 'end')
 
     def change_theme(self):
         apply_theme(self.root, self.dark_mode.get())
@@ -382,7 +433,8 @@ class Wizard:
                 self.toggle_expert()
             self.advanced_container.pack_forget()
             self.simple_container.pack(fill='both', expand=True)
-        self.mode_button.configure(text='Простой установщик' if self.advanced else 'Расширенный мастер')
+        self.sync_simple_page()
+        self.mode_button.configure(text='Простая установка' if self.advanced else 'Расширенный режим')
 
     def add_apks(self):
         if self.busy: return
@@ -442,7 +494,7 @@ class Wizard:
                 if isinstance(widget, (ttk.Button, ttk.Checkbutton, ttk.Entry, ttk.Combobox, ttk.Treeview, ttk.Notebook)):
                     self.frozen_controls[widget] = widget.instate(('disabled',))
                     widget.state(('disabled',))
-            self.operation_progress.pack(side='top', fill='x', before=self.plan_button, pady=(0, 8))
+            self.operation_progress.pack(side='top', fill='x', before=self.footer_status, pady=(0, 8))
             self.operation_progress.start(14)
         else:
             self.operation_progress.stop()
@@ -467,7 +519,9 @@ class Wizard:
     def poll(self):
         while not self.events.empty():
             event = self.events.get()
-            if event[0] == 'status': self.status.set(event[1])
+            if event[0] == 'status':
+                if self.advanced:
+                    self.status.set(event[1])
             else:
                 if self.wait_window:
                     self.wait_window.destroy()
@@ -481,10 +535,46 @@ class Wizard:
                 elif event[0] == 'cancelled': self.status.set('Подключение отменено. Изменений нет.')
                 else:
                     self.invalidate_device('Операция остановлена. Подключитесь заново, чтобы перечитать устройство.')
-                    self.simple_stage.set('1  Подключение     →     2  Параметры     →     3  Проверка плана')
-                    self.status.set('Операция остановлена. Журнал и копии: ' + str(DATA))
-                    messagebox.showerror('Операция не завершена', event[1] + '\n\nПодключитесь заново перед повтором.\nКопии и журнал: ' + str(DATA), parent=self.root)
+                    self.status.set('Подключитесь снова, чтобы повторить операцию.')
+                    self.show_error(event[1])
         self.root.after(80, self.poll)
+
+    def show_error(self, details):
+        if self.advanced:
+            messagebox.showerror('Операция не завершена', details, parent=self.root)
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title('Операция не завершена · PeachOS TV')
+        dialog.transient(self.root)
+        content = ttk.Frame(dialog, padding=24)
+        content.pack(fill='both', expand=True)
+        ttk.Label(content, text='Операция не завершена', style='Heading.TLabel').pack(anchor='w')
+        paragraph(content, 'Проверьте соединение и разрешение на экране ТВ, затем подключитесь снова.',
+                  style='Muted.TLabel').pack(fill='x', pady=(8, 16))
+        technical = ScrolledText(content, wrap='word', height=6, width=52, relief='flat')
+        technical.insert('1.0', details)
+        technical.configure(state='disabled')
+        actions = ttk.Frame(content)
+        actions.pack(side='bottom', fill='x')
+
+        details_visible = False
+
+        def toggle_details():
+            nonlocal details_visible
+            details_visible = not details_visible
+            if details_visible:
+                technical.pack(fill='both', expand=True, pady=(0, 12))
+            else:
+                technical.pack_forget()
+
+        ttk.Button(actions, text='Подробности', command=toggle_details).pack(side='left')
+        ttk.Button(actions, text='Открыть журнал', command=self.open_logs).pack(side='left', padx=8)
+        ok = ttk.Button(actions, text='Закрыть', style='Accent.TButton', command=dialog.destroy)
+        ok.pack(side='right')
+        dialog.bind('<Escape>', lambda event: dialog.destroy())
+        apply_theme(self.root, self.dark_mode.get())
+        dialog.grab_set()
+        ok.focus_set()
 
     def progress(self, text): self.events.put(('status', text))
 
@@ -498,6 +588,7 @@ class Wizard:
         for button in (self.plan_button, self.restore_button, self.update_button):
             button.configure(state='disabled')
         self.selection_summary()
+        self.sync_simple_page()
 
     def connect(self):
         if self.busy: return
@@ -508,7 +599,6 @@ class Wizard:
         adb_path = self.adb_path
         # A failed connection must not leave actions targeting the previously connected TV.
         self.invalidate_device('Подключение к ' + (target or 'единственному ADB-устройству') + '…')
-        self.simple_stage.set('1  Подключение     →     2  Параметры     →     3  Проверка плана')
         self.status.set('Подключение и чтение устройства… Подтвердите отладку на ТВ.')
         self.cancel_connect.clear()
         self.wait_window = tk.Toplevel(self.root)
@@ -550,7 +640,7 @@ class Wizard:
         self.refresh()
         already_installed = 'com.gathin.tvhome.backdrops' in d.installed
         self.update_button.configure(state='normal' if already_installed else 'disabled')
-        self.simple_stage.set('✓  Устройство подключено     →     2  Параметры     →     3  Проверка плана')
+        self.simple_device.set(' '.join(filter(None, (d.props.get('ro.product.manufacturer'), d.props.get('ro.product.model')))) or 'Android TV')
         self.simple_home.set(not already_installed)
         self.compat_home.set(False)
         self.simple_home_choice.configure(state='normal')
@@ -562,7 +652,8 @@ class Wizard:
             if reason: self.airplay.set(False)
             self.airplay_hint.set(reason or ('Модуль уже установлен. Снятая галочка оставит его как есть; выбранная обновит без удаления данных.'
                                              if AIRPLAY in d.installed else 'Необязательный модуль: iPhone → «Повтор экрана». Без него в панели остаётся поиск.'))
-        self.status.set('Устройство подключено. Выберите APK и необязательную очистку, затем проверьте план.')
+        self.sync_simple_page()
+        self.status.set('Изменения начнутся после вашего подтверждения.')
 
     def blocked(self, package):
         if package in self.device.disabled: return 'Уже отключено до этой операции'
@@ -752,7 +843,8 @@ class Wizard:
         selected, keep = tuple(selected), frozenset(keep)
         adb, device = self.adb, self.device
         window = tk.Toplevel(self.root)
-        window.title('Проверка плана · PeachOS TV')
+        window.title('Подтверждение · PeachOS TV')
+        window.bind('<Escape>', lambda event: window.destroy())
         window.geometry(f'{min(860, self.root.winfo_screenwidth() - 60)}x{min(650, self.root.winfo_screenheight() - 70)}')
         window.minsize(min(720, self.root.winfo_screenwidth() - 60), min(520, self.root.winfo_screenheight() - 70))
         colors = self.root.peach_palette
@@ -767,8 +859,11 @@ class Wizard:
         page = ScrollPage(shell)
         page.pack(fill='both', expand=True)
         content = page.body
-        ttk.Label(content, text='Проверим изменения', style='Heading.TLabel').pack(anchor='w', pady=(0, 6))
-        paragraph(content, self.device_text.get(), style='Muted.TLabel').pack(fill='x', pady=(0, 14))
+        if not self.advanced:
+            ttk.Label(content, text='ШАГ 3 ИЗ 3  ·  ПОДТВЕРЖДЕНИЕ', style='Step.TLabel').pack(anchor='w', pady=(0, 8))
+        ttk.Label(content, text='Проверьте изменения', style='Heading.TLabel').pack(anchor='w', pady=(0, 6))
+        paragraph(content, self.device_text.get() if self.advanced else self.simple_device.get(),
+                  style='Muted.TLabel').pack(fill='x', pady=(0, 14))
         summary = card(content)
         summary.pack(fill='x', pady=(0, 12))
         launcher_action = ('Обновить PeachOS TV' if 'com.gathin.tvhome.backdrops' in device.installed else 'Установить PeachOS TV') if apk else 'Не устанавливать'
@@ -825,7 +920,8 @@ class Wizard:
             self.job(lambda: apply_plan(adb, device, selected, keep, apk, set_home, DATA / 'backups', self.progress,
                                        allow_home_redirect=allow_home_redirect, extra_apks=extra_apks, expert=expert, update_only=update_only,
                                        airplay_apk=airplay_apk), self.completed)
-        ttk.Button(controls, text='Применить план', style='Accent.TButton', command=apply).pack(side='right')
+        action = 'Применить план' if self.advanced else 'Обновить' if 'com.gathin.tvhome.backdrops' in device.installed else 'Установить'
+        ttk.Button(controls, text=action, style='Accent.TButton', command=apply).pack(side='right')
         apply_theme(self.root, self.dark_mode.get())
 
     def completed(self, path):

@@ -53,6 +53,31 @@ class InstallerUiSmokeTests(unittest.TestCase):
         self.assertTrue(self.app.simple_connect_button.instate(('!disabled',)))
         self.assertTrue(all(choice.instate(('disabled',)) for choice in self.app.airplay_choices))
 
+    def test_simple_flow_reviews_before_install_and_can_change_television(self):
+        app = self.app
+        self.assertEqual('pack', app.connection_card.winfo_manager())
+        self.assertFalse(app.options.winfo_manager())
+        self.assertFalse(app.plan_button.winfo_manager())
+        device = Device('fixture', 'a' * 64, 0, {'ro.product.model': 'Fixture TV'},
+                        set(), set(), set(), '', set())
+        app.connected((Mock(), device))
+        self.assertFalse(app.connection_card.winfo_manager())
+        self.assertEqual('pack', app.options.winfo_manager())
+        self.assertFalse(app.simple_more.winfo_manager())
+        app.more_button.invoke()
+        self.assertEqual('pack', app.simple_more.winfo_manager())
+        with patch('wizard.apply_plan') as apply:
+            app.plan_button.invoke()
+            dialog = next(widget for widget in self.root.winfo_children() if isinstance(widget, tk.Toplevel))
+            self.assertTrue(any(isinstance(widget, ttk.Button) and widget.cget('text') == 'Установить'
+                                for widget in descendants(dialog)))
+            apply.assert_not_called()
+            dialog.destroy()
+        app.change_device()
+        self.assertIsNone(app.device)
+        self.assertEqual('pack', app.connection_card.winfo_manager())
+        self.assertFalse(app.plan_button.winfo_manager())
+
     def test_theme_roundtrip_preserves_fields_and_recolors_plan_and_canvas(self):
         self.app.target.set('fixture-device')
         self.app.connected((Mock(), Device('fixture', 'a' * 64, 0, {}, {PEACH.split('/')[0]}, set(), set(), PEACH, set())))
@@ -90,9 +115,14 @@ class InstallerUiSmokeTests(unittest.TestCase):
         self.app.selected.add('com.test.stale')
         self.app.set_busy(True)
         self.app.events.put(('error', 'fixture failure'))
-        with patch('wizard.messagebox.showerror') as error:
-            self.app.poll()
-        error.assert_called_once()
+        self.app.poll()
+        dialog = next(widget for widget in self.root.winfo_children() if isinstance(widget, tk.Toplevel))
+        text = next(widget for widget in descendants(dialog) if isinstance(widget, tk.Text))
+        self.assertEqual('fixture failure', text.get('1.0', 'end-1c'))
+        self.assertFalse(text.frame.winfo_manager())
+        next(widget for widget in descendants(dialog)
+             if isinstance(widget, ttk.Button) and widget.cget('text') == 'Подробности').invoke()
+        self.assertEqual('pack', text.frame.winfo_manager())
         self.assertIsNone(self.app.device)
         self.assertIsNone(self.app.adb)
         self.assertFalse(self.app.selected)
