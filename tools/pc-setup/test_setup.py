@@ -420,7 +420,8 @@ class SetupTests(unittest.TestCase):
             bundled = output / 'build' / 'portable-assets' / 'PeachOS-TV.apk'
             self.assertEqual(source.read_bytes(), bundled.read_bytes())
             arguments = (root / 'args.txt').read_text(encoding='utf-8-sig')
-            self.assertIn(str(bundled) + ';.', arguments)
+            bundled_paths = {Path(line[:-2]).resolve() for line in arguments.splitlines() if line.endswith(';.')}
+            self.assertIn(bundled.resolve(), bundled_paths)
             self.assertNotIn('PeachOS-AirPlay', arguments)
 
     @unittest.skipUnless(shutil.which('powershell') or shutil.which('pwsh'), 'PowerShell unavailable')
@@ -451,10 +452,11 @@ class SetupTests(unittest.TestCase):
                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             arguments = (root / 'args.txt').read_text(encoding='utf-8-sig')
+            bundled_paths = {Path(line[:-2]).resolve() for line in arguments.splitlines() if line.endswith(';.')}
             for original, name in ((module, 'PeachOS-AirPlay.apk'), (source, 'PeachOS-AirPlay-source.zip'), (license_file, 'LICENSE-AirPlay.txt')):
                 bundled = root / 'output' / 'build' / 'portable-assets' / name
                 self.assertEqual(original.read_bytes(), bundled.read_bytes())
-                self.assertIn(str(bundled) + ';.', arguments)
+                self.assertIn(bundled.resolve(), bundled_paths)
             result = subprocess.run(command[:-2], capture_output=True, text=True, errors='replace', timeout=30,
                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)

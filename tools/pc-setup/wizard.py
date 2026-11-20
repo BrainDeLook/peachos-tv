@@ -367,10 +367,10 @@ class Wizard:
         self.restore_button = ttk.Button(recovery_actions, text='Восстановить из копии…', command=self.restore, state='disabled')
         self.restore_button.pack(side='left')
         ttk.Button(recovery_actions, text='Открыть папку копий', style='Small.TButton', command=self.open_logs).pack(side='left', padx=8)
-        recovery_checks = ttk.Frame(recovery_card, style='Card.TFrame')
-        recovery_checks.pack(fill='x', pady=(8, 0))
-        ttk.Button(recovery_checks, text='Проверить пакеты после обновления…', command=self.check_reenabled).pack(side='left')
-        ttk.Button(recovery_checks, text='Перезапустить ТВ и проверить Home…', command=self.check_reboot).pack(side='left', padx=8)
+        ttk.Button(recovery_card, text='Проверить пакеты после обновления…',
+                   command=self.check_reenabled).pack(anchor='w', pady=(8, 0))
+        ttk.Button(recovery_card, text='Перезапустить ТВ и проверить Home…',
+                   command=self.check_reboot).pack(anchor='w', pady=(8, 0))
         preset_card = card(recovery)
         preset_card.pack(fill='x')
         ttk.Label(preset_card, text='Свой набор для следующего устройства', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 7))
