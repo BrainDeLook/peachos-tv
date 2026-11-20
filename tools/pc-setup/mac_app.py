@@ -43,7 +43,13 @@ def label(text, frame, size=13, bold=False):
     return field
 
 
-class Document(A.NSView):
+class Surface(A.NSView):
+    def drawRect_(self, rect):
+        A.NSColor.windowBackgroundColor().setFill()
+        A.NSRectFill(rect)
+
+
+class Document(Surface):
     def isFlipped(self):
         return True
 
@@ -68,7 +74,7 @@ class Installer(A.NSObject):
         self.window.setMinSize_(A.NSMakeSize(940, 680))
         self.window.setDelegate_(self)
         self.window.center()
-        root = A.NSView.alloc().initWithFrame_(self.window.contentView().bounds())
+        root = Surface.alloc().initWithFrame_(self.window.contentView().bounds())
         self.window.setContentView_(root)
         heading = label('PeachOS TV', A.NSMakeRect(28, 730, 400, 34), 26, True)
         heading.setAutoresizingMask_(A.NSViewMinYMargin | A.NSViewWidthSizable)
@@ -591,6 +597,7 @@ def main():
                   'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(), 'reference_packages': len(REFERENCE['packages'])}
         Path(sys.argv[2]).write_text(json.dumps(report), encoding='utf-8')
         controller.window.makeKeyAndOrderFront_(None)
+        F.NSRunLoop.currentRunLoop().runUntilDate_(F.NSDate.dateWithTimeIntervalSinceNow_(0.2))
         controller.window.displayIfNeeded()
         view = controller.window.contentView()
         bitmap = view.bitmapImageRepForCachingDisplayInRect_(view.bounds())
