@@ -56,6 +56,7 @@ class Installer(A.NSObject):
         self.selected = set()
         self.visible_packages = []
         self.extras = []
+        self.launcher_apk = ASSETS / 'PeachOS-TV.apk'
         self.busy = False
         self.controls = []
         self.cancelled = threading.Event()
@@ -154,6 +155,9 @@ class Installer(A.NSObject):
         self.button(page, 'Добавить APK…', 'addApks:', 24, 120)
         self.button(page, 'Убрать выбранный', 'removeApk:', 230, 120)
         self.apk_table = self.table(page, [('file', 'Файл', 280), ('path', 'Путь', 570)], 170, 320, 1)
+        self.button(page, 'Другой APK лаунчера…', 'chooseLauncher:', 24, 516, 280)
+        self.launcher_label = label('Лаунчер: встроенный PeachOS TV', A.NSMakeRect(24, 558, 880, 36))
+        page.addSubview_(self.launcher_label)
 
     @objc.python_method
     def table(self, parent, columns, y, height, tag):
@@ -222,6 +226,8 @@ class Installer(A.NSObject):
         theme.setTarget_(self)
         theme.setAction_('theme:')
         page.addSubview_(theme)
+        theme.selectItemAtIndex_(F.NSUserDefaults.standardUserDefaults().integerForKey_('PeachOSSetupTheme'))
+        self.theme_(theme)
 
     @objc.python_method
     def sync_controls(self):
@@ -407,6 +413,13 @@ class Installer(A.NSObject):
             self.extras = list(dict.fromkeys(self.extras + [Path(str(url.path())) for url in panel.URLs()]))
             self.apk_table.reloadData()
 
+    def chooseLauncher_(self, sender):
+        panel = A.NSOpenPanel.openPanel()
+        panel.setAllowedFileTypes_(['apk'])
+        if panel.runModal() == A.NSModalResponseOK:
+            self.launcher_apk = Path(str(panel.URL().path()))
+            self.launcher_label.setStringValue_('Лаунчер: ' + self.launcher_apk.name)
+
     def removeApk_(self, sender):
         row = self.apk_table.selectedRow()
         if row >= 0:
@@ -424,7 +437,7 @@ class Installer(A.NSObject):
                 return
         plan = Plan(self.adb, self.device, tuple(sorted(self.selected)) if self.clean_choice.state() else (),
                     frozenset(key for key, choice in self.keep_choices.items() if choice.state()),
-                    ASSETS / 'PeachOS-TV.apk' if self.install_choice.state() else None,
+                    self.launcher_apk if self.install_choice.state() else None,
                     bool(self.home_choice.state()), bool(self.compat_choice.state()), tuple(self.extras), bool(self.expert_choice.state()), module)
         if not (plan.apk or plan.home or plan.extras or plan.selected or plan.airplay):
             self.message('План пуст', 'Выберите хотя бы одну операцию.')
@@ -524,7 +537,9 @@ class Installer(A.NSObject):
 
     def theme_(self, sender):
         names = [None, A.NSAppearanceNameAqua, A.NSAppearanceNameDarkAqua]
-        name = names[sender.indexOfSelectedItem()]
+        index = sender.indexOfSelectedItem()
+        name = names[index]
+        F.NSUserDefaults.standardUserDefaults().setInteger_forKey_(index, 'PeachOSSetupTheme')
         self.window.setAppearance_(A.NSAppearance.appearanceNamed_(name) if name else None)
 
     def help_(self, sender):
@@ -575,6 +590,12 @@ def main():
                   'adb_version': Adb(adb).run('version', target=False),
                   'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(), 'reference_packages': len(REFERENCE['packages'])}
         Path(sys.argv[2]).write_text(json.dumps(report), encoding='utf-8')
+        controller.window.makeKeyAndOrderFront_(None)
+        controller.window.displayIfNeeded()
+        view = controller.window.contentView()
+        bitmap = view.bitmapImageRepForCachingDisplayInRect_(view.bounds())
+        view.cacheDisplayInRect_toBitmapImageRep_(view.bounds(), bitmap)
+        bitmap.representationUsingType_properties_(A.NSBitmapImageFileTypePNG, {}).writeToFile_atomically_(str(Path(sys.argv[2]).with_suffix('.png')), True)
         controller.window.orderOut_(None)
     else:
         controller.window.makeKeyAndOrderFront_(None)

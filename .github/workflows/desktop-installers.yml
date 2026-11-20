@@ -73,6 +73,7 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
             dist/self-test.json
+            dist/self-test.png
             dist/build/assets/peachos-mac.png
             assets/input-sha256.txt
           if-no-files-found: error
