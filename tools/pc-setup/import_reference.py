@@ -1,14 +1,28 @@
 """Build a reproducible, read-only evidence index from CleanYourTV's example lists."""
 import argparse
+import hashlib
 import json
 import re
 import subprocess
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
-parser.add_argument('source', type=Path)
+operation = parser.add_mutually_exclusive_group(required=True)
+operation.add_argument('source', type=Path, nargs='?')
+operation.add_argument('--verify', action='store_true')
 args = parser.parse_args()
+catalog = Path(__file__).with_name('reference-catalog.json')
+pin = catalog.with_name('reference-catalog.lock.json')
+if args.verify:
+    contents = catalog.read_text(encoding='utf-8')
+    locked = json.loads(pin.read_text(encoding='utf-8'))
+    if (json.loads(contents)['revision'] != locked['revision']
+            or hashlib.sha256(contents.encode('utf-8')).hexdigest() != locked['sha256']):
+        parser.error('Reference catalog does not match its pinned revision and SHA-256.')
+    raise SystemExit(0)
 revision = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
+if subprocess.check_output(['git', '-C', str(args.source), 'status', '--porcelain', '--untracked-files=all', '--', 'examples'], text=True).strip():
+    parser.error('Upstream examples must match the checked-out commit.')
 entries = {}
 profiles = 0
 for file in sorted((args.source / 'examples').glob('*/debloat.txt')):
@@ -29,5 +43,8 @@ for file in sorted((args.source / 'examples').glob('*/debloat.txt')):
             entry['notes'].append(note)
 output = {'repository': 'https://github.com/Gathin23/cleanyourtv', 'revision': revision,
           'profile_count': profiles, 'packages': entries}
-Path(__file__).with_name('reference-catalog.json').write_text(json.dumps(output, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+contents = (json.dumps(output, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+catalog.write_bytes(contents)
+pin.write_text(json.dumps({'revision': revision, 'sha256': hashlib.sha256(contents).hexdigest()}, indent=2) + '\n',
+               encoding='utf-8', newline='\n')
 print(f'{profiles} device lists; {len(entries)} package references; revision {revision}')

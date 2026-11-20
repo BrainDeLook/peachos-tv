@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
 from home_setup import HomeVerification
 from core import Adb, Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
+from core import pair_wifi, wifi_services, diagnostic_report, packages_reenabled, check_home_after_reboot
 from wizard import Wizard, portable_adb, ADB_NAME
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
@@ -44,6 +45,65 @@ def device(identity='a' * 64):
 
 
 class SetupTests(unittest.TestCase):
+    def test_wireless_pairing_uses_stdin_and_the_separate_connection_port(self):
+        adb = Mock()
+        cancelled, progress = threading.Event(), Mock()
+        adb.run.return_value = 'Enter pairing code: Successfully paired to 192.168.1.12:37123'
+        with patch('core.wait_for_device', return_value='192.168.1.12:48042') as connect:
+            self.assertEqual('192.168.1.12:48042',
+                             pair_wifi(adb, '192.168.1.12:37123', '192.168.1.12:48042', '012345', cancelled, progress))
+            connect.assert_called_once_with(adb, '192.168.1.12:48042', cancelled, progress)
+        adb.run.assert_called_once_with('pair', '192.168.1.12:37123', target=False, timeout=20,
+                                        check=False, stdin='012345\n')
+        for address in ('192.168.1.12:37123', '192.168.1.13:48042'):
+            with self.assertRaises(ValueError):
+                pair_wifi(adb, '192.168.1.12:37123', address, '012345', cancelled, progress)
+
+    def test_wireless_discovery_ignores_pairing_ports_and_invalid_records(self):
+        adb = Mock()
+        adb.run.return_value = ('List of discovered mdns services\n'
+                                'one\t_adb-tls-connect._tcp\t192.168.1.12:48042\n'
+                                'two\t_adb-tls-pairing._tcp\t192.168.1.12:37123\n'
+                                'broken\t_adb-tls-connect._tcp\t999.1.1.1:81\n')
+        self.assertEqual(('192.168.1.12:48042',), wifi_services(adb))
+        adb.run.assert_called_once_with('mdns', 'services', target=False, timeout=10)
+
+    def test_diagnostics_use_allowlist_instead_of_exporting_device_inventory(self):
+        current = device()
+        current.serial = '192.168.1.111:5555'
+        current.props = {**current.props, 'ro.serialno': 'PRIVATE-SERIAL'}
+        current.installed.add('com.private.inventory')
+        adb = Mock()
+        adb.run.return_value = '  com.google.android.tvlauncher/.Main\n'
+        with patch('core.discover', return_value=current):
+            report = diagnostic_report(adb, current, 'test')
+        self.assertIn('MiTV-AESP0', report)
+        self.assertIn('com.google.android.tvlauncher/com.google.android.tvlauncher.Main', report)
+        for private_value in (current.serial, current.identity, 'PRIVATE-SERIAL', 'com.private.inventory'):
+            self.assertNotIn(private_value, report)
+
+    def test_firmware_scan_only_reselects_confirmed_still_allowed_changes(self):
+        current = device()
+        changes = [{'package': package, 'original': 0, 'confirmed': True} for package in current.installed]
+        changes.append({'package': 'com.miui.tv.analytics', 'original': 0, 'confirmed': False})
+        journal = {'identity': current.identity, 'user': current.user, 'changes': changes}
+        with patch('core.read_restore', return_value=journal), patch('core.discover', return_value=current):
+            self.assertEqual({'com.miui.tv.analytics'}, packages_reenabled(Mock(), current, Path('restore.json'), set())[1])
+            current.disabled.add('com.miui.tv.analytics')
+            self.assertEqual(set(), packages_reenabled(Mock(), current, Path('restore.json'), set())[1])
+
+    def test_home_reboot_waits_for_new_boot_before_verification(self):
+        current = device()
+        current.installed.add(PEACH.split('/')[0])
+        boot = '11111111-1111-1111-1111-111111111111'
+        adb, cancelled = Mock(), Mock()
+        cancelled.is_set.return_value = False
+        adb.shell.return_value = boot
+        adb.run.side_effect = ['', 'device', boot, 'device', boot.replace('1', '2'), '1']
+        with patch('core.discover', return_value=current), patch('core.verify_home', return_value=HomeVerification('passed', 'passed')) as verify:
+            self.assertIn('PeachOS открывается', check_home_after_reboot(adb, current, cancelled, Mock()))
+        verify.assert_called_once_with(adb, current.user)
+
     def setUp(self):
         # These tests exercise plan ordering/rollback. Foreground timing and real
         # capability parsing have separate tests in test_home_setup.py.
@@ -656,7 +716,8 @@ class SetupTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 apply_plan(adb, current, ['com.miui.tv.analytics'], set(), None, True, Path(folder))
         self.assertFalse(any(call[:2] == ('pm', 'disable-user') for call in adb.calls))
-        self.assertEqual(current.home, adb.calls[-1][-1])
+        home_changes = [call for call in adb.calls if call[:3] == ('cmd', 'package', 'set-home-activity')]
+        self.assertEqual(current.home, home_changes[-1][-1])
 
     def test_explicit_enabled_state_restores_enable_not_default(self):
         class EnabledAdb(FakeAdb):

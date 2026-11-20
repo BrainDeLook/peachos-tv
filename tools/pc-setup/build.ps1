@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 if (($AirPlayApk -or $AirPlaySource -or $AirPlayLicense) -and -not ($AirPlayApk -and $AirPlaySource -and $AirPlayLicense)) {
     throw 'AirPlay requires -AirPlayApk, -AirPlaySource (complete corresponding GPL source ZIP), and -AirPlayLicense.'
 }
+& $Python (Join-Path $PSScriptRoot 'import_reference.py') '--verify'
+if ($LASTEXITCODE -ne 0) { throw 'Reference catalog verification failed.' }
 $Apk = (Resolve-Path -LiteralPath $Apk).Path
 $AdbDirectory = (Resolve-Path -LiteralPath $AdbDirectory).Path
 $Output = [System.IO.Path]::GetFullPath($Output)

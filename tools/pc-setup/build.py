@@ -25,6 +25,7 @@ def main():
     if any(companions) and not all(companions):
         parser.error('AirPlay requires APK, complete corresponding source ZIP and license.')
     here = Path(__file__).resolve().parent
+    subprocess.run([sys.executable, str(here / 'import_reference.py'), '--verify'], check=True)
     repo = here.parent.parent
     output = args.output.resolve()
     stage = output / 'build' / 'assets'

@@ -295,8 +295,9 @@ class HomeSetupTests(unittest.TestCase):
         adb = HomeAdb()
         current = core.Device('fixture', 'a' * 64, 0, {}, {PACKAGE}, set(), set(), STOCK)
         with tempfile.TemporaryDirectory() as folder, patch('core.discover', return_value=current), \
-                patch('core.verify_home', return_value=HomeVerification('failed', 'failed')), patch('core.configure_compat') as configure:
-            with self.assertRaisesRegex(RuntimeError, 'Совместимый Home'):
+                patch('core.verify_home', return_value=HomeVerification('failed', 'failed')), \
+                patch('core.home_candidates', return_value=[STOCK]), patch('core.configure_compat') as configure:
+            with self.assertRaisesRegex(RuntimeError, 'Кандидаты Home: ' + STOCK):
                 core.apply_plan(adb, current, [], set(), None, True, Path(folder))
         configure.assert_not_called()
         self.assertEqual([], [call for call in adb.calls if call[:2] == ('am', 'broadcast') and 'write' in call])

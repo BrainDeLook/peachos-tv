@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.23
+
+### Русский
+
+- Установщик для Windows, macOS и Linux находит устройства с отладкой по Wi‑Fi и поддерживает сопряжение по шестизначному коду.
+- В диагностике видны текущий Home, другие доступные лаунчеры и состояние службы пульта. Отчёт можно скопировать без IP, серийного номера и списка личных приложений.
+- Во вкладке «Копии» можно проверить Home после перезагрузки и найти пакеты, которые прошивка снова включила после очистки. Повторное отключение требует проверки плана.
+- Справочник CleanYourTV 3.6.0 включает 504 профиля и 2162 пакета. Новые записи сами по себе не попадают в автоматическую очистку.
+- Для Coocaa и Skyworth добавлен запасной способ чтения HDMI-входов. Для TCL добавлен ещё один способ открыть системные настройки. Модуль AirPlay без изменений.
+
+### English
+
+- The Windows, macOS and Linux installers can discover devices with wireless debugging and pair using a six-digit code.
+- Diagnostics show the current Home, other available launchers and the remote service status. The copyable report omits IP addresses, serial numbers and personal app lists.
+- The Backups tab can verify Home after a reboot and find packages re-enabled by a firmware update. Disabling them again requires reviewing a new plan.
+- The CleanYourTV 3.6.0 catalog includes 504 device profiles and 2,162 packages. New entries are never selected for automatic cleanup based on catalog membership alone.
+- Added an HDMI input lookup fallback for Coocaa and Skyworth and an extra system Settings entry point for TCL. The AirPlay module is unchanged.
+
 ## 1.5.22
 
 ### Русский

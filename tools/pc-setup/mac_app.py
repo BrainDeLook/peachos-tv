@@ -15,9 +15,10 @@ from PyObjCTools import AppHelper
 
 from catalog import candidates, FEATURES, REFERENCE, protected
 from core import Adb, discover, wait_for_device, apply_plan, restore, read_preset, inspect_apk, airplay_compatibility, PEACH, Device
+from core import pair_wifi, wifi_services, diagnostic_report, check_home_after_reboot, packages_reenabled
 from host_runtime import cache_adb
 
-VERSION = '1.5.22'
+VERSION = '1.5.23'
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(Path.home() / 'Library' / 'Application Support' / 'PeachOS TV Setup')))
 
@@ -144,8 +145,11 @@ class Installer(A.NSObject):
         self.controls.append(self.target)
         self.button(page, 'Подключиться', 'connect:', 512, 113, 180)
         self.button(page, 'Как подготовить ТВ?', 'help:', 708, 113, 200)
-        self.device_label = label('Устройство не подключено', A.NSMakeRect(24, 160, 880, 44), 14, True)
+        self.device_label = label('Устройство не подключено', A.NSMakeRect(24, 160, 440, 44), 14, True)
         page.addSubview_(self.device_label)
+        self.button(page, 'Найти ТВ', 'findWifi:', 478, 154, 130)
+        self.button(page, 'Сопрячь по коду', 'pairWifi:', 614, 154, 146)
+        self.diagnostics_button = self.button(page, 'Диагностика', 'copyDiagnostics:', 770, 154, 138)
         self.install_choice = self.button(page, 'Установить / обновить PeachOS TV с сохранением данных', 'changed:', 24, 220, 850, True, True)
         self.home_choice = self.button(page, 'Назначить PeachOS главным экраном', 'changed:', 24, 266, 850, True)
         self.compat_choice = self.button(page, 'Совместимый Home — если прошивка игнорирует обычный выбор', 'compatible:', 24, 312, 880, True)
@@ -235,6 +239,8 @@ class Installer(A.NSObject):
         page.addSubview_(theme)
         theme.selectItemAtIndex_(F.NSUserDefaults.standardUserDefaults().integerForKey_('PeachOSSetupTheme'))
         self.theme_(theme)
+        self.reenabled_button = self.button(page, 'Проверить пакеты после обновления…', 'checkReenabled:', 24, 554, 310)
+        self.reboot_button = self.button(page, 'Перезапустить ТВ и проверить Home…', 'checkReboot:', 350, 554, 328)
 
     @objc.python_method
     def sync_controls(self):
@@ -242,6 +248,9 @@ class Installer(A.NSObject):
             control.setEnabled_(not self.busy)
         self.review_button.setEnabled_(not self.busy and self.device is not None)
         self.restore_button.setEnabled_(not self.busy and self.device is not None)
+        self.diagnostics_button.setEnabled_(not self.busy and self.device is not None)
+        self.reenabled_button.setEnabled_(not self.busy and self.device is not None)
+        self.reboot_button.setEnabled_(not self.busy and self.device is not None)
         self.airplay_choice.setEnabled_(not self.busy and self.module is not None)
         self.cancel_button.setEnabled_(self.busy and self.connecting)
 
@@ -291,7 +300,102 @@ class Installer(A.NSObject):
             success(result)
         self.sync_controls()
 
+    def findWifi_(self, sender):
+        self.work(lambda: wifi_services(Adb(cache_adb(ASSETS, DATA, 'adb'))), self.show_wifi)
+
+    @objc.python_method
+    def show_wifi(self, endpoints):
+        if not endpoints:
+            self.message('Поиск телевизора', 'Адреса отладки по Wi-Fi не найдены. Включите отладку на ТВ или введите адрес вручную.')
+            return
+        alert = A.NSAlert.alloc().init()
+        alert.setMessageText_('Выберите устройство')
+        choices = A.NSPopUpButton.alloc().initWithFrame_pullsDown_(A.NSMakeRect(0, 0, 360, 30), False)
+        choices.addItemsWithTitles_(endpoints)
+        alert.setAccessoryView_(choices)
+        alert.addButtonWithTitle_('Использовать адрес')
+        alert.addButtonWithTitle_('Отмена')
+        if alert.runModal() == A.NSAlertFirstButtonReturn:
+            self.target.setStringValue_(choices.titleOfSelectedItem())
+
+    def pairWifi_(self, sender):
+        alert = A.NSAlert.alloc().init()
+        alert.setMessageText_('Сопряжение по Wi-Fi')
+        alert.setInformativeText_('На ТВ откройте «Отладка по Wi-Fi» → «Сопряжение по коду».')
+        view = A.NSView.alloc().initWithFrame_(A.NSMakeRect(0, 0, 455, 106))
+        fields = []
+        for index, (title, initial) in enumerate((
+                ('IP:порт из окна с кодом', ''),
+                ('IP:порт с главного экрана отладки', str(self.target.stringValue())),
+                ('Шестизначный код', ''))):
+            y = 72 - index * 34
+            view.addSubview_(label(title, A.NSMakeRect(0, y, 232, 26)))
+            field_type = A.NSSecureTextField if index == 2 else A.NSTextField
+            field = field_type.alloc().initWithFrame_(A.NSMakeRect(242, y + 2, 212, 24))
+            field.setStringValue_(initial)
+            view.addSubview_(field)
+            fields.append(field)
+        alert.setAccessoryView_(view)
+        alert.addButtonWithTitle_('Сопрячь')
+        alert.addButtonWithTitle_('Отмена')
+        alert.window().setInitialFirstResponder_(fields[0])
+        if alert.runModal() == A.NSAlertFirstButtonReturn:
+            pairing = tuple(str(field.stringValue()).strip() for field in fields)
+            self.target.setStringValue_(pairing[1])
+            self.connect_device(pairing)
+
+    def copyDiagnostics_(self, sender):
+        if not self.device:
+            return
+        adb, device = self.adb, self.device
+        def copy(report):
+            pasteboard = A.NSPasteboard.generalPasteboard()
+            pasteboard.clearContents()
+            pasteboard.setString_forType_(report, A.NSPasteboardTypeString)
+            self.message('Диагностика скопирована', report)
+        self.work(lambda: diagnostic_report(adb, device, VERSION), copy)
+
+    def checkReboot_(self, sender):
+        if not self.device or not self.message('Перезапустить телевизор?', 'Открытые приложения закроются. После загрузки мастер проверит переход на главный экран. Оставьте ADB включённым.', True):
+            return
+        adb, device = self.adb, self.device
+        self.cancelled.clear()
+        self.work(lambda: check_home_after_reboot(adb, device, self.cancelled, self.progress_text),
+                  lambda result: self.message('Проверка Home', result), connecting=True)
+
+    def checkReenabled_(self, sender):
+        if not self.device:
+            return
+        panel = A.NSOpenPanel.openPanel()
+        panel.setAllowedFileTypes_(['json'])
+        if panel.runModal() != A.NSModalResponseOK:
+            return
+        path = Path(str(panel.URL().path()))
+        adb, device = self.adb, self.device
+        keep = {key for key, choice in self.keep_choices.items() if choice.state()}
+        def show(result):
+            current, selected, protected_now = result
+            preserved = '\nСохранены текущими правилами: ' + ', '.join(sorted(protected_now)) if protected_now else ''
+            if not selected:
+                self.message('Проверка пакетов', 'Снова включённых пакетов для обычной очистки нет.' + preserved)
+                return
+            if not self.message('Проверка пакетов', f'Доступно для повторной очистки: {len(selected)}.' + preserved
+                                + '\nПеренести доступные пакеты в выбор для проверки плана?', True):
+                return
+            self.device = current
+            _, self.rules = candidates(current.props, current.installed, current.user_apps, current.home.split('/')[0])
+            self.expert_choice.setState_(0)
+            self.selected = selected
+            self.clean_choice.setState_(1)
+            self.refresh_packages()
+            self.status.setStringValue_('Пакеты отмечены во вкладке «Очистка». Проверьте план перед применением.')
+        self.work(lambda: packages_reenabled(adb, device, path, keep), show)
+
     def connect_(self, sender):
+        self.connect_device()
+
+    @objc.python_method
+    def connect_device(self, pairing=None):
         if self.busy:
             return
         self.device = self.adb = None
@@ -300,7 +404,8 @@ class Installer(A.NSObject):
         self.status.setStringValue_('Подключение… Подтвердите отладку на телевизоре. Мастер дождётся ответа.')
         def operation():
             adb = Adb(cache_adb(ASSETS, DATA, 'adb'), log=DATA / 'adb-log.jsonl')
-            serial = wait_for_device(adb, target, self.cancelled, self.progress_text)
+            serial = (pair_wifi(adb, *pairing, self.cancelled, self.progress_text) if pairing
+                      else wait_for_device(adb, target, self.cancelled, self.progress_text))
             device = discover(adb, serial)
             if self.cancelled.is_set():
                 raise InterruptedError('Подключение отменено')

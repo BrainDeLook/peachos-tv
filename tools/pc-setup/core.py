@@ -1,5 +1,6 @@
 """ADB boundary and journalled, reversible package changes. No uninstall or data clearing."""
 import hashlib
+import ipaddress
 import json
 import re
 import shlex
@@ -94,12 +95,12 @@ class Adb:
     def __init__(self, executable, serial='', log=None):
         self.executable, self.serial, self.log = str(executable), serial, log
 
-    def run(self, *args, target=True, timeout=40, check=True):
+    def run(self, *args, target=True, timeout=40, check=True, stdin=None):
         command = [self.executable] + (['-s', self.serial] if target and self.serial else []) + list(args)
-        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
+        result = subprocess.run(command, input=stdin, capture_output=True, text=True, encoding='utf-8', errors='replace',
                                 timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         output = result.stdout.strip()
-        if self.log:
+        if self.log and stdin is None:
             self.log.parent.mkdir(parents=True, exist_ok=True)
             with self.log.open('a', encoding='utf-8') as stream:
                 stream.write(json.dumps({'time': datetime.now().isoformat(), 'args': args,
@@ -114,6 +115,115 @@ class Adb:
         # ADB forwards a command to Android's shell. Quote at that boundary so
         # empty bridge fields and service classes containing '$' remain literal.
         return self.run('shell', ' '.join(shlex.quote(str(arg)) for arg in args))
+
+
+def wifi_endpoint(value):
+    match = re.fullmatch(r'(\[[0-9A-Fa-f:]+\]|[0-9.]+):([0-9]{1,5})', value.strip())
+    if not match or not 1 <= int(match[2]) <= 65535:
+        raise ValueError('Введите IP и порт с экрана телевизора, например 192.168.1.100:37123.')
+    try:
+        address = ipaddress.ip_address(match[1].strip('[]'))
+    except ValueError:
+        raise ValueError('Некорректный IP-адрес. Сверьте его с экраном отладки на ТВ.') from None
+    return (f'[{address}]' if address.version == 6 else str(address)), int(match[2])
+
+
+def wifi_services(adb):
+    """List ADB mDNS records without connecting to discovered devices."""
+    output = adb.run('mdns', 'services', target=False, timeout=10)
+    targets = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) != 3 or fields[1].rstrip('.') != '_adb-tls-connect._tcp':
+            continue
+        try:
+            host, port = wifi_endpoint(fields[2])
+        except ValueError:
+            continue
+        targets.add(f'{host}:{port}')
+    return tuple(sorted(targets))
+
+
+def pair_wifi(adb, pair_address, connect_address, code, cancelled, progress):
+    pair_host, pair_port = wifi_endpoint(pair_address)
+    host, port = wifi_endpoint(connect_address)
+    if pair_host != host or pair_port == port:
+        raise ValueError('Укажите два разных порта одного ТВ: из окна кода и с главного экрана отладки по Wi-Fi.')
+    if not re.fullmatch(r'[0-9]{6}', code):
+        raise ValueError('Код сопряжения состоит из шести цифр.')
+    if cancelled.is_set():
+        raise InterruptedError('Сопряжение отменено.')
+    progress('Сопрягаю устройство. Оставьте на ТВ открытым окно с кодом…')
+    result = adb.run('pair', f'{pair_host}:{pair_port}', target=False, timeout=20, check=False, stdin=code + '\n')
+    if not re.search(r'\bSuccessfully paired to\b', result, re.I):
+        raise RuntimeError('Сопряжение не подтверждено. Откройте на ТВ новый код и проверьте порт из этого окна.')
+    return wait_for_device(adb, f'{host}:{port}', cancelled, progress)
+
+
+def home_candidates(adb, user):
+    output = adb.run('shell', 'cmd', 'package', 'query-activities', '--brief', '--user', str(user),
+                     '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME',
+                     timeout=8, check=False)
+    return sorted({normalized for line in output.splitlines() if (normalized := component(line))})
+
+
+def diagnostic_report(adb, saved, setup_version):
+    current = discover(adb, saved.serial)
+    if current.identity != saved.identity:
+        raise RuntimeError('Устройство по этому адресу изменилось. Подключитесь заново.')
+    candidates = home_candidates(adb, current.user)
+    remote = 'PeachOS не установлен'
+    if PEACH.split('/')[0] in current.installed:
+        try:
+            status = bridge(adb, current.user)
+            remote = f'подключена: {status.bound}, фильтрация: {status.filter_keys_active}'
+        except (RuntimeError, ValueError, subprocess.TimeoutExpired):
+            remote = 'состояние недоступно'
+    fields = ('ro.product.manufacturer', 'ro.product.model', 'ro.build.version.release',
+              'ro.build.version.sdk', 'ro.build.id')
+    props = [re.sub(r'[^\w .()+-]', '', current.props.get(key, ''))[:100] or '—' for key in fields]
+    return '\n'.join((f'PeachOS TV Setup {setup_version}', f'Устройство: {props[0]} {props[1]}',
+                     f'Android: {props[2]} (SDK {props[3]}), сборка {props[4]}',
+                     'Выбранный Home: ' + (current.home or 'не определён'),
+                     'Кандидаты Home: ' + (', '.join(candidates) or 'не определены'),
+                     'Служба пульта: ' + remote))
+
+
+def check_home_after_reboot(adb, saved, cancelled, progress, timeout=150):
+    current = discover(adb, saved.serial)
+    if current.identity != saved.identity or PEACH.split('/')[0] not in current.installed:
+        raise ValueError('Проверьте подключённое устройство и наличие PeachOS TV.')
+    boot = adb.shell('cat', '/proc/sys/kernel/random/boot_id')
+    if not re.fullmatch(r'[0-9a-f-]{36}', boot):
+        raise RuntimeError('Android не предоставил идентификатор загрузки. Перезагрузите ТВ вручную и проверьте Home пультом.')
+    if cancelled.is_set():
+        raise InterruptedError('Проверка отменена.')
+    adb.run('reboot', timeout=10, check=False)
+    progress('Жду перезагрузку ТВ и восстановление ADB…')
+    deadline = time.monotonic() + timeout
+    while not cancelled.is_set() and time.monotonic() < deadline:
+        state = adb.run('get-state', timeout=5, check=False)
+        if state != 'device' and ':' in saved.serial:
+            adb.run('connect', saved.serial, target=False, timeout=5, check=False)
+        elif state == 'device':
+            new_boot = adb.run('shell', 'cat', '/proc/sys/kernel/random/boot_id', timeout=5, check=False)
+            if (re.fullmatch(r'[0-9a-f-]{36}', new_boot) and new_boot != boot
+                    and adb.run('shell', 'getprop', 'sys.boot_completed', timeout=5, check=False) == '1'):
+                current = discover(adb, saved.serial)
+                if current.identity != saved.identity:
+                    raise ValueError('Устройство по этому адресу изменилось. Подключитесь заново.')
+                progress('Android загрузился. Проверяю переход на Home…')
+                outcome = verify_home(adb, current.user)
+                if outcome:
+                    return 'PeachOS открывается после перезагрузки. Проверьте также физическую кнопку Home.'
+                return ('PeachOS не подтвердил переход на Home после перезагрузки. '
+                        'Сейчас Android выбирает: ' + (current.home or 'не определено')
+                        + '. Проверьте Home пультом или воспользуйтесь копией во вкладке «Копии».')
+        cancelled.wait(2)
+    if cancelled.is_set():
+        raise InterruptedError('Ожидание отменено. Если ТВ уже начал перезагрузку, он завершит её самостоятельно.')
+    return ('Не удалось дождаться подтверждения загрузки по ADB. Проверьте сеть и отладку на ТВ. '
+            'Состояние Home после перезагрузки пока неизвестно.')
 
 
 def wait_for_device(adb, target, cancelled, progress=lambda text: None, timeout=120):
@@ -315,12 +425,17 @@ def apply_plan(adb, device, selected, keep, apk, set_home, backup_root, progress
                 journal['home_method'] = 'compatible'
                 save_json(path, journal)
             elif not xiaomi_home_fallback:
+                try:
+                    candidates_home = home_candidates(adb, current.user)
+                except (OSError, subprocess.TimeoutExpired):
+                    candidates_home = []
                 raise RuntimeError('Назначение Home не подтверждено автоматической проверкой перехода. '
                                    'Уже установленные APK сохранены. '
                                    'Исходное назначение возвращено; очистка не выполнялась. '
                                    'Разрешите «Совместимый Home через службу пульта» и проверьте новый план '
                                    'либо снимите «Назначить PeachOS главным экраном». '
-                                   'Не отключайте SetupWraith и сетевые службы вручную.')
+                                   'Не отключайте SetupWraith и сетевые службы вручную.\n'
+                                   'Кандидаты Home: ' + (', '.join(candidates_home) or 'не определены.'))
         if journal.get('home_method') is None and xiaomi_home_fallback:
             dump = adb.shell('dumpsys', 'package', stock_package)
             match = re.search(r'User ' + str(current.user) + r':[^\n]*\benabled=(\d+)', dump)
@@ -407,6 +522,21 @@ def read_preset(path):
     if any(k not in FEATURES or type(v) is not bool for k, v in raw['keep'].items()):
         raise ValueError('Некорректные функции в выборе')
     return raw
+
+
+def packages_reenabled(adb, saved, path, keep):
+    journal = read_restore(path)
+    current = discover(adb, saved.serial)
+    if current.identity != saved.identity or current.identity != journal['identity'] or current.user != journal['user']:
+        raise ValueError('Эта копия относится к другому устройству или пользователю Android.')
+    home = current.home.split('/')[0]
+    _, available = candidates(current.props, current.installed, current.user_apps, home)
+    previous = {entry['package'] for entry in journal['changes'] if entry.get('confirmed') is True}
+    reenabled = (previous & current.installed) - current.disabled
+    eligible = {package for package in reenabled
+                if package in available and package not in current.protected_packages and not protected(package, home)
+                and not keep.intersection(available[package].features)}
+    return current, eligible, reenabled - eligible
 
 
 def restore(adb, device, path, progress=lambda text: None):

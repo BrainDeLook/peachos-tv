@@ -2,12 +2,14 @@ name: Desktop installers
 on:
   workflow_dispatch:
   push:
-    branches: [feat/cross-platform-setup]
-    paths: ['tools/pc-setup/**', '.github/workflows/desktop-installers.yml']
+    tags: ['v*']
 permissions:
   contents: read
 jobs:
   build:
+    # The release stays in draft until all installers have been verified.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -18,9 +20,13 @@ jobs:
             platform: darwin
           - runner: macos-15-intel
             platform: darwin
+          - runner: windows-2022
+            platform: windows
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -33,16 +39,31 @@ jobs:
         if: runner.os == 'macOS'
         run: python -m pip install pyobjc-framework-Cocoa==11.1
       - name: Download versioned application assets and official ADB
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          [[ "$GITHUB_REF_TYPE" == tag ]] || { echo "Run from a release tag"; exit 1; }
           mkdir -p assets
-          gh release download v1.5.21 --repo "$GITHUB_REPOSITORY" --dir assets --pattern 'PeachOS-TV.apk' --pattern 'PeachOS-AirPlay.apk' --pattern 'PeachOS-AirPlay-source.zip' --pattern 'LICENSE-AirPlay.txt'
+          release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv' |
+            awk -F '\t' -v tag="$GITHUB_REF_NAME" '$2 == tag { print $1 }')
+          test -n "$release_id"
+          release_assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq '.[] | [.id, .name] | @tsv')
+          for name in PeachOS-TV.apk PeachOS-AirPlay.apk PeachOS-AirPlay-source.zip LICENSE-AirPlay.txt; do
+            asset_id=$(printf '%s\n' "$release_assets" | awk -F '\t' -v name="$name" '$2 == name { print $1 }')
+            test -n "$asset_id"
+            gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "assets/$name"
+            test -s "assets/$name"
+          done
           curl --fail --location --retry 3 "https://dl.google.com/android/repository/platform-tools-latest-${{ matrix.platform }}.zip" -o assets/platform-tools.zip
-          unzip -q assets/platform-tools.zip -d assets
-          chmod +x assets/platform-tools/adb
-          assets/platform-tools/adb version
-          shasum -a 256 assets/*.apk assets/platform-tools.zip > assets/input-sha256.txt
+          python -m zipfile -e assets/platform-tools.zip assets
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            assets/platform-tools/adb.exe version
+          else
+            chmod +x assets/platform-tools/adb
+            assets/platform-tools/adb version
+          fi
+          python -c "from pathlib import Path; import hashlib; root=Path('assets'); files=[*sorted(root.glob('*.apk')), root/'platform-tools.zip']; (root/'input-sha256.txt').write_text(''.join(f'{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}\n' for f in files))"
       - name: Test Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a python -m unittest discover -s tools/pc-setup -p 'test_*.py'
@@ -51,14 +72,26 @@ jobs:
         run: |
           python -m unittest discover -s tools/pc-setup -p 'test_*.py'
           python -m unittest discover -s tools/pc-setup -p 'native_mac_checks.py'
+      - name: Test Windows
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s tools/pc-setup -p 'test_*.py'
       - name: Build native installer
+        if: runner.os != 'Windows'
         run: python tools/pc-setup/build.py --apk assets/PeachOS-TV.apk --adb-directory assets/platform-tools --output dist --airplay-apk assets/PeachOS-AirPlay.apk --airplay-source assets/PeachOS-AirPlay-source.zip --airplay-license assets/LICENSE-AirPlay.txt
+      - name: Build portable Windows installer
+        if: runner.os == 'Windows'
+        run: tools/pc-setup/build.ps1 -Apk assets/PeachOS-TV.apk -AdbDirectory assets/platform-tools -Output dist -AirPlayApk assets/PeachOS-AirPlay.apk -AirPlaySource assets/PeachOS-AirPlay-source.zip -AirPlayLicense assets/LICENSE-AirPlay.txt
       - name: Smoke test Linux bundle
         if: runner.os == 'Linux'
         run: xvfb-run -a dist/PeachOS-TV-Setup/PeachOS-TV-Setup --self-test dist/self-test.json
       - name: Smoke test macOS bundle
         if: runner.os == 'macOS'
         run: dist/PeachOS-TV-Setup.app/Contents/MacOS/PeachOS-TV-Setup --self-test dist/self-test.json
+      - name: Smoke test Windows bundle
+        if: runner.os == 'Windows'
+        run: |
+          $process = Start-Process -FilePath dist/PeachOS-TV-Setup-Portable.exe -ArgumentList '--self-test', 'dist/self-test.json' -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
       - name: Validate bundled assets
         run: |
           python -c "import json; p=json.load(open('dist/self-test.json')); assert p['apk'] and p['airplay_bundled'] and p['adb_version'].startswith('Android Debug Bridge') and p['simple_default']; print(p)"
@@ -70,6 +103,7 @@ jobs:
           name: installer-${{ matrix.runner }}
           path: |
             dist/*.dmg
+            dist/*.exe
             dist/*.tar.gz
             dist/*.sha256
             dist/self-test.json

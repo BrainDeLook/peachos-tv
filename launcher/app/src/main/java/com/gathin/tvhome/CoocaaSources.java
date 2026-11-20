@@ -17,6 +17,7 @@ import java.util.List;
 final class CoocaaSources {
 
     private static final Uri LIST = Uri.parse("content://com.skyworth.tv.provider/system/source_list");
+    private static final Uri SDK_LIST = Uri.parse("content://com.skyworth.tv.sdk.provider/system/source_list");
     private static final Uri METHOD = Uri.parse("content://com.skyworth.tv.sdk.provider/method");
     private static final String[] COLUMNS = {"sourceName", "sourceIndex", "displayName"};
 
@@ -38,8 +39,17 @@ final class CoocaaSources {
 
     /** HDMI ports in port order, then AV, then the tuner; empty where the provider is missing. */
     static List<Source> list(Context ctx) {
+        List<Source> out = query(ctx, LIST);
+        if (out.isEmpty()) out = query(ctx, SDK_LIST);
+        if (out.isEmpty()) return out;
+        Collections.sort(out, (a, b) -> a.name.equals(b.name) ? Integer.compare(a.index, b.index)
+                : Integer.compare(rank(a.name), rank(b.name)));
+        return out;
+    }
+
+    private static List<Source> query(Context ctx, Uri uri) {
         List<Source> out = new ArrayList<>();
-        try (Cursor c = ctx.getContentResolver().query(LIST, COLUMNS, null, null, null)) {
+        try (Cursor c = ctx.getContentResolver().query(uri, COLUMNS, null, null, null)) {
             while (c != null && c.moveToNext()) {
                 String name = c.getString(0);
                 String label = c.getString(2);
@@ -49,8 +59,6 @@ final class CoocaaSources {
         } catch (RuntimeException e) {
             return Collections.emptyList();
         }
-        Collections.sort(out, (a, b) -> a.name.equals(b.name) ? Integer.compare(a.index, b.index)
-                : Integer.compare(rank(a.name), rank(b.name)));
         return out;
     }
 

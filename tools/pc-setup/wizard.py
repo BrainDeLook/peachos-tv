@@ -9,7 +9,7 @@ import threading
 import subprocess
 from pathlib import Path
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
 
 from ui import BACKGROUND, configure_styles, apply_theme, card, paragraph, ScrollPage
@@ -18,6 +18,7 @@ from host_runtime import cache_adb
 
 from catalog import FEATURES, PROFILES, RULES, REFERENCE, candidates
 from core import Adb, discover, wait_for_device, apply_plan, restore, read_preset, inspect_apk, airplay_compatibility, AIRPLAY
+from core import pair_wifi, wifi_services, diagnostic_report, check_home_after_reboot, packages_reenabled
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else BASE
@@ -30,7 +31,7 @@ else:
     default_data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share'))) / 'peachos-tv-setup'
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(default_data)))
 BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
-SETUP_VERSION = '1.5.22'
+SETUP_VERSION = '1.5.23'
 
 
 def open_folder(path):
@@ -160,8 +161,12 @@ class Wizard:
         self.simple_entry.bind('<Return>', lambda event: self.connect())
         self.simple_connect_button = ttk.Button(simple_connection, text='Подключиться', style='Accent.TButton', command=self.connect)
         self.simple_connect_button.pack(side='left')
+        shortcuts = ttk.Frame(connection_card, style='Card.TFrame')
+        shortcuts.pack(fill='x', pady=(14, 0))
+        ttk.Button(shortcuts, text='Найти ТВ', command=self.find_wifi).pack(side='left')
+        ttk.Button(shortcuts, text='Сопрячь по коду', command=self.pair_dialog).pack(side='left', padx=8)
         ttk.Button(connection_card, text='Как подготовить телевизор?', style='Small.TButton',
-                   command=self.preparation).pack(anchor='w', pady=(14, 0))
+                   command=self.preparation).pack(anchor='w', pady=(8, 0))
         self.options = options = card(simple, padding=(24, 18))
         device_row = ttk.Frame(options, style='Card.TFrame')
         device_row.pack(fill='x', pady=(0, 16))
@@ -170,6 +175,8 @@ class Wizard:
         ttk.Label(device_row, text='ПОДКЛЮЧЕНО', style='CardSmall.TLabel').pack(anchor='w')
         self.simple_device = tk.StringVar()
         paragraph(device_row, textvariable=self.simple_device, style='Card.TLabel').pack(fill='x')
+        ttk.Button(device_row, text='Диагностика', style='Small.TButton',
+                   command=self.copy_diagnostics).pack(anchor='w', pady=(5, 0))
         ttk.Separator(options).pack(fill='x', pady=(0, 10))
         self.simple_home_choice = ttk.Checkbutton(options, text='Настроить открытие PeachOS по кнопке Home', variable=self.simple_home,
                                                 command=lambda: self.compat_home.set(False) if not self.simple_home.get() else None)
@@ -230,11 +237,16 @@ class Wizard:
         help_card = card(connection)
         help_card.pack(fill='x')
         ttk.Label(help_card, text='Если подключение не получилось', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 7))
-        paragraph(help_card, 'Проверьте, что включена отладка, адрес не изменился, а ПК и телевизор видят друг друга в локальной сети. Для сопряжения по коду используйте adb pair отдельно.').pack(fill='x', pady=(0, 12))
+        paragraph(help_card, 'Проверьте, что включена отладка, а ПК и телевизор в одной сети. Если ТВ показывает код отладки по Wi-Fi, выберите «Сопрячь по коду».').pack(fill='x', pady=(0, 12))
         actions = ttk.Frame(help_card, style='Card.TFrame')
         actions.pack(fill='x')
         ttk.Button(actions, text='Подготовка телевизора', style='Small.TButton', command=self.preparation).pack(side='left')
         ttk.Button(actions, text='Выбрать другой ADB…', style='Small.TButton', command=self.choose_adb).pack(side='left', padx=(8, 0))
+        tools_row = ttk.Frame(help_card, style='Card.TFrame')
+        tools_row.pack(fill='x', pady=(8, 0))
+        for title, action in (('Найти ТВ', self.find_wifi), ('Сопрячь по коду', self.pair_dialog),
+                              ('Диагностика', self.copy_diagnostics)):
+            ttk.Button(tools_row, text=title, command=action).pack(side='left', padx=(0, 8))
 
         ttk.Label(apps, text='Приложения', style='Heading.TLabel').pack(anchor='w', pady=(0, 14))
         launcher_card = card(apps)
@@ -355,6 +367,10 @@ class Wizard:
         self.restore_button = ttk.Button(recovery_actions, text='Восстановить из копии…', command=self.restore, state='disabled')
         self.restore_button.pack(side='left')
         ttk.Button(recovery_actions, text='Открыть папку копий', style='Small.TButton', command=self.open_logs).pack(side='left', padx=8)
+        recovery_checks = ttk.Frame(recovery_card, style='Card.TFrame')
+        recovery_checks.pack(fill='x', pady=(8, 0))
+        ttk.Button(recovery_checks, text='Проверить пакеты после обновления…', command=self.check_reenabled).pack(side='left')
+        ttk.Button(recovery_checks, text='Перезапустить ТВ и проверить Home…', command=self.check_reboot).pack(side='left', padx=8)
         preset_card = card(recovery)
         preset_card.pack(fill='x')
         ttk.Label(preset_card, text='Свой набор для следующего устройства', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 7))
@@ -421,7 +437,7 @@ class Wizard:
             '2. В меню «Для разработчиков» включите отладку USB (на некоторых ТВ — отладку ADB или по сети).\n\n'
             '3. В настройках сети ТВ посмотрите его локальный IP. Подключите ПК к той же сети и введите этот IP в мастер.\n\n'
             '4. Нажмите «Подключиться» и разрешите отладку на экране ТВ.\n\n'
-            'Названия пунктов зависят от прошивки. Если нужно сопряжение по коду, выполните его отдельно через adb pair.', parent=self.root)
+            'Названия пунктов зависят от прошивки. Если ТВ предлагает код отладки по Wi-Fi, нажмите «Сопрячь по коду» в мастере.', parent=self.root)
 
     def open_airplay_sources(self):
         if self.busy: return
@@ -600,7 +616,107 @@ class Wizard:
         self.selection_summary()
         self.sync_simple_page()
 
-    def connect(self):
+    def find_wifi(self):
+        if self.busy or not self.adb_path:
+            return
+        adb_path = self.adb_path
+        def show(endpoints):
+            if not endpoints:
+                messagebox.showinfo('Поиск телевизора', 'Адреса отладки по Wi-Fi не найдены. Включите отладку на ТВ или введите адрес вручную.', parent=self.root)
+                return
+            dialog = tk.Toplevel(self.root)
+            dialog.title('Выберите устройство')
+            dialog.transient(self.root)
+            frame = ttk.Frame(dialog, padding=18)
+            frame.pack(fill='both', expand=True)
+            choices = ttk.Combobox(frame, state='readonly', values=endpoints, width=34)
+            choices.current(0)
+            choices.pack(fill='x', pady=(0, 12))
+            def choose():
+                self.target.set(choices.get())
+                dialog.destroy()
+            ttk.Button(frame, text='Использовать адрес', command=choose).pack(anchor='e')
+            dialog.grab_set()
+            choices.focus_set()
+        self.job(lambda: wifi_services(Adb(portable_adb() if adb_path == str(ASSETS / 'platform-tools' / ADB_NAME)
+                                         else adb_path)), show)
+
+    def pair_dialog(self):
+        if self.busy or not self.adb_path:
+            return
+        parent = self.root
+        connection = self.target.get().strip()
+        class PairDialog(simpledialog.Dialog):
+            def body(dialog, frame):
+                ttk.Label(frame, text='На ТВ откройте «Отладка по Wi-Fi» → «Сопряжение по коду».').grid(row=0, columnspan=2, pady=(0, 12))
+                dialog.fields = []
+                for row, (title, initial) in enumerate((
+                        ('IP:порт из окна с кодом', ''),
+                        ('IP:порт с главного экрана отладки', connection),
+                        ('Шестизначный код', '')), 1):
+                    ttk.Label(frame, text=title).grid(row=row, column=0, sticky='w', padx=(0, 12), pady=4)
+                    field = ttk.Entry(frame, show='•' if row == 3 else '')
+                    field.insert(0, initial)
+                    field.grid(row=row, column=1, sticky='ew')
+                    dialog.fields.append(field)
+                return dialog.fields[0]
+
+            def apply(dialog):
+                dialog.result = tuple(field.get().strip() for field in dialog.fields)
+        pairing = PairDialog(parent, title='Сопряжение по Wi-Fi').result
+        if pairing:
+            self.target.set(pairing[1])
+            self.connect(pairing)
+
+    def copy_diagnostics(self):
+        if self.busy or not self.device:
+            return
+        adb, device = self.adb, self.device
+        def copy(report):
+            self.root.clipboard_clear()
+            self.root.clipboard_append(report)
+            messagebox.showinfo('Диагностика скопирована', report, parent=self.root)
+        self.job(lambda: diagnostic_report(adb, device, SETUP_VERSION), copy)
+
+    def check_reboot(self):
+        if self.busy or not self.device:
+            return
+        if not messagebox.askyesno('Перезапустить телевизор?', 'Открытые приложения закроются. После загрузки мастер проверит переход на главный экран. Оставьте ADB включённым.', parent=self.root):
+            return
+        adb, device = self.adb, self.device
+        self.cancel_connect.clear()
+        self.job(lambda: check_home_after_reboot(adb, device, self.cancel_connect, self.progress),
+                 lambda result: messagebox.showinfo('Проверка Home', result, parent=self.root))
+
+    def check_reenabled(self):
+        if self.busy or not self.device:
+            return
+        path = filedialog.askopenfilename(title='Выберите копию до обновления ТВ', initialdir=str(DATA / 'backups'),
+                                          filetypes=[('Журнал восстановления', '*.json')], parent=self.root)
+        if not path:
+            return
+        adb, device = self.adb, self.device
+        keep = {key for key, value in self.keep.items() if value.get()}
+        def show(result):
+            current, selected, protected_now = result
+            preserved = '\nСохранены текущими правилами: ' + ', '.join(sorted(protected_now)) if protected_now else ''
+            if not selected:
+                messagebox.showinfo('Проверка пакетов', 'Снова включённых пакетов для обычной очистки нет.' + preserved, parent=self.root)
+                return
+            if not messagebox.askyesno('Проверка пакетов', f'Доступно для повторной очистки: {len(selected)}.' + preserved
+                                       + '\nПеренести доступные пакеты в выбор для проверки плана?', parent=self.root):
+                return
+            self.device = current
+            _, self.rows = candidates(current.props, current.installed, current.user_apps, current.home.split('/')[0])
+            self.expert.set(False)
+            self.toggle_expert()
+            self.selected = selected
+            self.clean.set(True)
+            self.tabs.select(2)
+            self.refresh()
+        self.job(lambda: packages_reenabled(adb, device, Path(path), keep), show)
+
+    def connect(self, pairing=None):
         if self.busy: return
         if not self.adb_path:
             messagebox.showinfo('Нужен ADB', 'Выберите ADB из официальных Android Platform Tools: https://developer.android.com/tools/releases/platform-tools')
@@ -629,7 +745,8 @@ class Wizard:
         def read_device():
             executable = portable_adb() if adb_path == str(ASSETS / 'platform-tools' / ADB_NAME) else adb_path
             adb = Adb(executable, log=DATA / 'adb-log.jsonl')
-            serial = wait_for_device(adb, target, self.cancel_connect, self.progress)
+            serial = (pair_wifi(adb, *pairing, self.cancel_connect, self.progress) if pairing
+                      else wait_for_device(adb, target, self.cancel_connect, self.progress))
             self.progress('Разрешение получено. Читаю приложения и параметры устройства…')
             device = discover(adb, serial)
             if self.cancel_connect.is_set():
