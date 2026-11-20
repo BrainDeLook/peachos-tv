@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import subprocess
 from dataclasses import dataclass
 
 import objc
@@ -596,13 +597,19 @@ def main():
                   'adb_version': Adb(adb).run('version', target=False),
                   'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(), 'reference_packages': len(REFERENCE['packages'])}
         Path(sys.argv[2]).write_text(json.dumps(report), encoding='utf-8')
+        app.finishLaunching()
         controller.window.makeKeyAndOrderFront_(None)
+        app.activateIgnoringOtherApps_(True)
         F.NSRunLoop.currentRunLoop().runUntilDate_(F.NSDate.dateWithTimeIntervalSinceNow_(0.2))
         controller.window.displayIfNeeded()
         view = controller.window.contentView()
         bitmap = view.bitmapImageRepForCachingDisplayInRect_(view.bounds())
         view.cacheDisplayInRect_toBitmapImageRep_(view.bounds(), bitmap)
         bitmap.representationUsingType_properties_(A.NSBitmapImageFileTypePNG, {}).writeToFile_atomically_(str(Path(sys.argv[2]).with_suffix('.png')), True)
+        # Capture Cocoa's composited controls as well as ordinary NSView drawing.
+        # The runner contains only this fixture window, without connected TVs.
+        subprocess.run(['/usr/sbin/screencapture', '-x', '-l', str(controller.window.windowNumber()),
+                        str(Path(sys.argv[2]).with_suffix('.png'))], capture_output=True, timeout=15)
         controller.window.orderOut_(None)
     else:
         controller.window.makeKeyAndOrderFront_(None)
