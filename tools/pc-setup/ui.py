@@ -42,6 +42,9 @@ def configure_styles(root, dark=False):
     apply_theme(root, dark)
     # One application binding, rather than one retained callback per transient plan.
     root.bind_all('<MouseWheel>', scroll_page_wheel, add='+')
+    if sys.platform.startswith('linux'):
+        root.bind_all('<Button-4>', scroll_page_wheel, add='+')
+        root.bind_all('<Button-5>', scroll_page_wheel, add='+')
 
 
 def rounded_button_layout(root, style, colors, dark):
@@ -167,7 +170,8 @@ def card(parent, padding=20):
 def paragraph(parent, text=None, *, textvariable=None, style='CardMuted.TLabel'):
     label = ttk.Label(parent, text=text, textvariable=textvariable, style=style,
                       wraplength=640, justify='left', anchor='w')
-    label.bind('<Configure>', lambda event: label.configure(wraplength=max(120, event.width)))
+    label.bind('<Configure>', lambda event: label.configure(wraplength=max(120, event.width))
+               if int(label.cget('wraplength')) != max(120, event.width) else None)
     return label
 
 
@@ -186,7 +190,8 @@ class ScrollPage(ttk.Frame):
 
         def resize(event):
             width = min(event.width, max_width) if max_width else event.width
-            self.canvas.itemconfigure(item, width=width)
+            if int(self.canvas.itemcget(item, 'width')) != width:
+                self.canvas.itemconfigure(item, width=width)
             self.canvas.coords(item, (event.width - width) // 2, 0)
 
         self.canvas.bind('<Configure>', resize)
@@ -202,7 +207,7 @@ def scroll_page_wheel(event):
             return
         if isinstance(widget, ScrollPage):
             if widget.canvas.yview() != (0.0, 1.0):
-                widget.canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+                widget.canvas.yview_scroll(-1 if event.num == 4 or (event.num != 5 and event.delta > 0) else 1, 'units')
                 return 'break'
             return
         widget = widget.master
