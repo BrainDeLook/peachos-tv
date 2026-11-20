@@ -100,3 +100,22 @@
 Для запуска исходников нужен Python 3.12+ с Tk: `python wizard.py`. Тесты без изменений ТВ: `python -m unittest discover -s tools/pc-setup -p "test*.py" -v` из корня репозитория. Для сборки установите PyInstaller и запустите `build.ps1 -Apk <APK> -AdbDirectory <официальные platform-tools>`. В EXE включается [официальный ADB Google](https://developer.android.com/tools/releases/platform-tools) с его NOTICE. Проверки применения/отката в автоматических тестах используют имитацию ADB; их успех сам по себе не подтверждает поведение всех реальных прошивок.
 
 Для сборки с необязательным AirPlay передайте вместе **все три** параметра: `-AirPlayApk <receiver.apk> -AirPlaySource <полный-исходный-код.zip> -AirPlayLicense <GPL-LICENSE>`. APK и GPL-архив не коммитятся в репозиторий лаунчера. Скрипт проверяет наличие манифеста и нативных библиотек в APK, наличие ZIP исходников и включает их под постоянными именами `PeachOS-AirPlay.apk`, `PeachOS-AirPlay-source.zip`, `LICENSE-AirPlay.txt`. Без этих параметров AirPlay не включается в EXE, в том числе при повторной сборке в ту же папку.
+
+## macOS и Linux
+
+Мастер использует тот же интерфейс и план операций, что версия Windows. ADB, Python, Tk и APK включаются в сборку; устанавливать Python пользователю не нужно. Очистка и AirPlay остаются необязательными.
+
+- **macOS:** откройте DMG, перенесите PeachOS-TV-Setup в «Программы» и запустите. Выбирайте ARM64 для Apple Silicon или x86_64 для Intel. Текущая сборка не подписана Developer ID и не нотарифицирована; если macOS блокирует запуск, разрешите его в «Системные настройки → Конфиденциальность и безопасность» после проверки источника файла.
+- **Linux x86_64:** распакуйте `.tar.gz` целиком и запустите `Launch-PeachOS.sh` в папке приложения. При необходимости разрешите исполнение файла в свойствах. Нужен графический сеанс X11 либо Wayland с XWayland, glibc 2.35+ (например Ubuntu 22.04+); ARM Linux пока не поддерживается. Подключение к ТВ по IP не требует root. Для USB могут потребоваться udev-правила вашего дистрибутива; не запускайте весь мастер через sudo.
+
+Копии и настройки на macOS: `~/Library/Application Support/PeachOS TV Setup`. На Linux: `${XDG_DATA_HOME:-~/.local/share}/peachos-tv-setup`. Кнопка открытия копий ведёт в нужную папку. Переменная `PEACHOS_SETUP_DATA` задаёт другой каталог. На Windows сохраняется папка рядом с EXE.
+
+### Сборка на macOS / Linux
+
+Собирать нужно на целевой ОС и архитектуре с Python 3.12+ и Tk. Установите `PyInstaller==6.22.3`, скачайте официальные Platform Tools для этой ОС и выполните из корня репозитория:
+
+```sh
+python tools/pc-setup/build.py --apk /path/PeachOS-TV.apk --adb-directory /path/platform-tools --output dist
+```
+
+Для модуля AirPlay одновременно добавьте `--airplay-apk`, `--airplay-source` (полные соответствующие исходники ZIP) и `--airplay-license`. Скрипт создаёт DMG или tar.gz с SHA-256. Workflow `Desktop installers` собирает и проверяет обе архитектуры Mac и Linux x86_64; файлы доступны в его артефактах. Автоматическая проверка запускает собранный мастер и встроенный ADB, но не меняет устройство.

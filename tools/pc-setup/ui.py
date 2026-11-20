@@ -1,6 +1,7 @@
 """Shared presentation widgets for the portable Tk installer; no device logic."""
+import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, font as tkfont
 from dataclasses import dataclass
 
 BACKGROUND = '#f5f3f0'
@@ -66,46 +67,47 @@ def rounded_button_layout(root, style, colors, dark):
 
 
 def apply_theme(root, dark):
+    root.peach_font = 'Segoe UI' if sys.platform == 'win32' else tkfont.nametofont('TkDefaultFont').actual('family')
     colors = DARK if dark else LIGHT
     root.peach_palette = colors
     root.peach_dark = dark
     style = ttk.Style(root)
-    style.configure('.', background=colors.background, foreground=colors.text, font=('Segoe UI', 10),
+    style.configure('.', background=colors.background, foreground=colors.text, font=(root.peach_font, 10),
                     borderwidth=0, bordercolor=colors.background, lightcolor=colors.background, darkcolor=colors.background)
     style.configure('TFrame', background=colors.background)
     style.configure('Card.TFrame', background=colors.surface, bordercolor=colors.border,
                     lightcolor=colors.border, darkcolor=colors.border)
     style.configure('TLabel', padding=0)
     style.configure('Muted.TLabel', foreground=colors.muted)
-    style.configure('Title.TLabel', font=('Segoe UI', 20, 'bold'))
-    style.configure('Hero.TLabel', font=('Segoe UI', 27, 'bold'))
-    style.configure('Step.TLabel', font=('Segoe UI', 9, 'bold'), foreground=colors.selected_text)
+    style.configure('Title.TLabel', font=(root.peach_font, 20, 'bold'))
+    style.configure('Hero.TLabel', font=(root.peach_font, 27, 'bold'))
+    style.configure('Step.TLabel', font=(root.peach_font, 9, 'bold'), foreground=colors.selected_text)
     style.configure('TSeparator', background=colors.border)
-    style.configure('Heading.TLabel', font=('Segoe UI', 17, 'bold'))
-    style.configure('Version.TLabel', foreground=colors.muted, font=('Segoe UI', 10))
+    style.configure('Heading.TLabel', font=(root.peach_font, 17, 'bold'))
+    style.configure('Version.TLabel', foreground=colors.muted, font=(root.peach_font, 10))
     for name, font, color in (
-            ('Card.TLabel', ('Segoe UI', 10), colors.text),
-            ('CardTitle.TLabel', ('Segoe UI', 13, 'bold'), colors.text),
-            ('CardMuted.TLabel', ('Segoe UI', 10), colors.muted),
-            ('CardSmall.TLabel', ('Segoe UI', 9), colors.muted),
-            ('Warning.TLabel', ('Segoe UI', 10), colors.warning),
-            ('Success.TLabel', ('Segoe UI', 14, 'bold'), colors.success)):
+            ('Card.TLabel', (root.peach_font, 10), colors.text),
+            ('CardTitle.TLabel', (root.peach_font, 13, 'bold'), colors.text),
+            ('CardMuted.TLabel', (root.peach_font, 10), colors.muted),
+            ('CardSmall.TLabel', (root.peach_font, 9), colors.muted),
+            ('Warning.TLabel', (root.peach_font, 10), colors.warning),
+            ('Success.TLabel', (root.peach_font, 14, 'bold'), colors.success)):
         style.configure(name, background=colors.surface, font=font, foreground=color)
     style.configure('TButton', background=colors.button, foreground=colors.text, padding=(14, 9),
                     borderwidth=0, focusthickness=1, focuscolor=ACCENT)
     style.map('TButton', background=[('disabled', colors.disabled), ('pressed', colors.pressed), ('active', colors.hover)],
               foreground=[('disabled', colors.disabled_text)])
     style.configure('Accent.TButton', background=ACCENT, foreground='#ffffff', focuscolor='#ffffff',
-                    font=('Segoe UI', 10, 'bold'), padding=(20, 10))
+                    font=(root.peach_font, 10, 'bold'), padding=(20, 10))
     style.map('Accent.TButton', background=[('disabled', colors.disabled), ('pressed', '#064eaa'), ('active', '#075bbd')],
               foreground=[('disabled', colors.disabled_text)])
     rounded_button_layout(root, style, colors, dark)
-    style.configure('Small.TButton', padding=(10, 6), font=('Segoe UI', 9))
+    style.configure('Small.TButton', padding=(10, 6), font=(root.peach_font, 9))
     style.configure('Link.TButton', background=colors.background, foreground=colors.selected_text, padding=(6, 5))
     style.map('Link.TButton', background=[('active', colors.hover)])
     style.configure('Nav.TButton', anchor='w', background=colors.background, foreground=colors.muted, padding=(16, 12))
     style.configure('Active.Nav.TButton', anchor='w', background=colors.selected, foreground=colors.selected_text,
-                    font=('Segoe UI', 10, 'bold'), padding=(16, 12))
+                    font=(root.peach_font, 10, 'bold'), padding=(16, 12))
     style.map('Active.Nav.TButton', background=[('active', colors.selected)])
     style.configure('TEntry', fieldbackground=colors.surface, foreground=colors.text, padding=9,
                     borderwidth=1, bordercolor=colors.border, lightcolor=colors.border, darkcolor=colors.border, insertcolor=colors.text)
@@ -128,10 +130,10 @@ def apply_theme(root, dark):
     style.configure('TNotebook', borderwidth=0)
     style.layout('TNotebook.Tab', [])
     style.configure('Treeview', background=colors.surface, fieldbackground=colors.surface, foreground=colors.text,
-                    rowheight=29, borderwidth=0, font=('Segoe UI', 9))
+                    rowheight=29, borderwidth=0, font=(root.peach_font, 9))
     style.map('Treeview', background=[('selected', colors.selected)], foreground=[('selected', colors.text)])
     style.configure('Treeview.Heading', background=colors.heading, foreground=colors.muted,
-                    padding=(7, 8), relief='flat', font=('Segoe UI', 9, 'bold'))
+                    padding=(7, 8), relief='flat', font=(root.peach_font, 9, 'bold'))
     style.configure('Vertical.TScrollbar', background=colors.scrollbar, troughcolor=colors.background,
                     borderwidth=0, arrowcolor=colors.muted, width=11, bordercolor=colors.background,
                     lightcolor=colors.scrollbar, darkcolor=colors.scrollbar)

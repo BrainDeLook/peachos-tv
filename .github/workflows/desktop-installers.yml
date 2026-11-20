@@ -1,0 +1,69 @@
+name: Desktop installers
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/cross-platform-setup]
+    paths: ['tools/pc-setup/**', '.github/workflows/desktop-installers.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux
+          - runner: macos-15
+            platform: darwin
+          - runner: macos-15-intel
+            platform: darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb libx11-6 libxcb1 libxrender1 libxext6
+      - name: Build dependencies
+        run: python -m pip install PyInstaller==6.22.3
+      - name: Download versioned application assets and official ADB
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p assets
+          gh release download v1.5.21 --repo "$GITHUB_REPOSITORY" --dir assets --pattern 'PeachOS-TV.apk' --pattern 'PeachOS-AirPlay.apk' --pattern 'PeachOS-AirPlay-source.zip' --pattern 'LICENSE-AirPlay.txt'
+          curl --fail --location --retry 3 "https://dl.google.com/android/repository/platform-tools-latest-${{ matrix.platform }}.zip" -o assets/platform-tools.zip
+          unzip -q assets/platform-tools.zip -d assets
+          chmod +x assets/platform-tools/adb
+          assets/platform-tools/adb version
+          shasum -a 256 assets/*.apk assets/platform-tools.zip > assets/input-sha256.txt
+      - name: Test Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tools/pc-setup -p 'test_*.py'
+      - name: Test macOS
+        if: runner.os == 'macOS'
+        run: python -m unittest discover -s tools/pc-setup -p 'test_*.py'
+      - name: Build native installer
+        run: python tools/pc-setup/build.py --apk assets/PeachOS-TV.apk --adb-directory assets/platform-tools --output dist --airplay-apk assets/PeachOS-AirPlay.apk --airplay-source assets/PeachOS-AirPlay-source.zip --airplay-license assets/LICENSE-AirPlay.txt
+      - name: Smoke test Linux bundle
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dist/PeachOS-TV-Setup/PeachOS-TV-Setup --self-test dist/self-test.json
+      - name: Smoke test macOS bundle
+        if: runner.os == 'macOS'
+        run: dist/PeachOS-TV-Setup.app/Contents/MacOS/PeachOS-TV-Setup --self-test dist/self-test.json
+      - name: Validate bundled assets
+        run: |
+          python -c "import json; p=json.load(open('dist/self-test.json')); assert p['apk'] and p['airplay_bundled'] and p['adb_version'].startswith('Android Debug Bridge') and p['simple_default']; print(p)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.runner }}
+          path: |
+            dist/*.dmg
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/self-test.json
+            assets/input-sha256.txt
+          if-no-files-found: error

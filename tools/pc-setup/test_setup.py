@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from catalog import candidates, protected, matching_profiles, RULES, REFERENCE
 from home_setup import HomeVerification
 from core import Adb, Device, apply_plan, restore, read_restore, read_preset, packages, component, PEACH, AIRPLAY, wait_for_device, inspect_apk, airplay_compatibility
-from wizard import Wizard, portable_adb
+from wizard import Wizard, portable_adb, ADB_NAME
 
 XIAOMI = {'ro.product.manufacturer': 'Xiaomi', 'ro.product.model': 'MiTV-AESP0', 'ro.product.device': 'aquaman', 'ro.build.version.sdk': '28'}
 
@@ -331,7 +331,7 @@ class SetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             assets, data = Path(folder) / 'assets', Path(folder) / 'data'
             (assets / 'platform-tools').mkdir(parents=True)
-            for name in ('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'NOTICE.txt'):
+            for name in (ADB_NAME, 'NOTICE.txt'):
                 (assets / 'platform-tools' / name).write_bytes(name.encode())
             with patch('wizard.ASSETS', assets), patch('wizard.DATA', data), patch.object(Path, 'read_bytes', side_effect=AssertionError('Whole-file hash')):
                 executable = portable_adb()

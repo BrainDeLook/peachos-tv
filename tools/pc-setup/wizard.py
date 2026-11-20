@@ -1,4 +1,4 @@
-"""Standalone Windows setup UI. Workers never touch Tk; all device changes require a reviewed plan."""
+"""Cross-platform setup UI. Workers never touch Tk; all device changes require a reviewed plan."""
 import json
 import hashlib
 import os
@@ -6,6 +6,7 @@ import queue
 import shutil
 import sys
 import threading
+import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -18,9 +19,25 @@ from core import Adb, discover, wait_for_device, apply_plan, restore, read_prese
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else BASE
-DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(BASE / 'PeachOS-TV-data')))
+ADB_NAME = 'adb.exe' if sys.platform == 'win32' else 'adb'
+if sys.platform == 'darwin':
+    default_data = Path.home() / 'Library' / 'Application Support' / 'PeachOS TV Setup'
+elif sys.platform == 'win32':
+    default_data = BASE / 'PeachOS-TV-data'
+else:
+    default_data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share'))) / 'peachos-tv-setup'
+DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(default_data)))
 BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
 SETUP_VERSION = '1.5.21'
+
+
+def open_folder(path):
+    if sys.platform == 'win32':
+        os.startfile(path)
+    else:
+        # Do not retain a running file-manager process or block Tk's UI thread.
+        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(path)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def read_ui_settings(path):
@@ -51,14 +68,19 @@ def portable_adb():
     # so it does not lock the one-file runtime's temporary extraction directory.
     target = DATA / 'platform-tools'
     target.mkdir(parents=True, exist_ok=True)
-    for name in ('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'NOTICE.txt'):
-        source, destination = ASSETS / 'platform-tools' / name, target / name
+    for source in sorted((ASSETS / 'platform-tools').iterdir()):
+        if not source.is_file():
+            continue
+        destination = target / source.name
         if destination.exists():
             with source.open('rb') as original, destination.open('rb') as cached:
                 if hashlib.file_digest(original, 'sha256').digest() == hashlib.file_digest(cached, 'sha256').digest():
                     continue
         shutil.copyfile(source, destination)
-    return target / 'adb.exe'
+    executable = target / ADB_NAME
+    if sys.platform != 'win32':
+        executable.chmod(executable.stat().st_mode | 0o100)
+    return executable
 
 
 class Wizard:
@@ -79,7 +101,7 @@ class Wizard:
         root.configure(background=BACKGROUND)
         self.dark_mode = tk.BooleanVar(value=read_ui_settings(DATA / 'ui-settings.json'))
         configure_styles(root, self.dark_mode.get())
-        if (ASSETS / 'peachos.ico').exists():
+        if sys.platform == 'win32' and (ASSETS / 'peachos.ico').exists():
             root.iconbitmap(str(ASSETS / 'peachos.ico'))
         self.frame = ttk.Frame(root, padding=(34, 22))
         self.frame.pack(fill='both', expand=True)
@@ -87,6 +109,7 @@ class Wizard:
         header.pack(fill='x', pady=(0, 16))
         if (ASSETS / 'peachos.png').exists():
             self.brand = tk.PhotoImage(file=str(ASSETS / 'peachos.png'))
+            root.iconphoto(True, self.brand)
             self.brand = self.brand.subsample(max(1, (self.brand.width() + 43) // 44))
             ttk.Label(header, image=self.brand).pack(side='left', padx=(0, 12))
         title = ttk.Frame(header)
@@ -112,7 +135,7 @@ class Wizard:
 
         self.target = tk.StringVar()
         self.device_text = tk.StringVar(value='Устройство пока не подключено')
-        bundled_adb = ASSETS / 'platform-tools' / 'adb.exe'
+        bundled_adb = ASSETS / 'platform-tools' / ADB_NAME
         self.adb_path = str(bundled_adb) if bundled_adb.exists() else shutil.which('adb') or ''
         self.install = tk.BooleanVar(value=True)
         self.clean = tk.BooleanVar(value=False)
@@ -224,7 +247,7 @@ class Wizard:
         actions = ttk.Frame(help_card, style='Card.TFrame')
         actions.pack(fill='x')
         ttk.Button(actions, text='Подготовка телевизора', style='Small.TButton', command=self.preparation).pack(side='left')
-        ttk.Button(actions, text='Выбрать другой adb.exe…', style='Small.TButton', command=self.choose_adb).pack(side='left', padx=(8, 0))
+        ttk.Button(actions, text='Выбрать другой ADB…', style='Small.TButton', command=self.choose_adb).pack(side='left', padx=(8, 0))
 
         ttk.Label(apps, text='Приложения', style='Heading.TLabel').pack(anchor='w', pady=(0, 14))
         launcher_card = card(apps)
@@ -419,7 +442,7 @@ class Wizard:
         destination.mkdir(parents=True, exist_ok=True)
         for name in ('PeachOS-AirPlay-source.zip', 'LICENSE-AirPlay.txt'):
             shutil.copyfile(ASSETS / name, destination / name)
-        os.startfile(destination)
+        open_folder(destination)
 
     def switch_mode(self):
         if self.busy: return
@@ -467,7 +490,7 @@ class Wizard:
 
     def choose_adb(self):
         if self.busy: return
-        path = filedialog.askopenfilename(title='Выберите adb.exe из Android Platform Tools', filetypes=[('ADB', 'adb.exe')])
+        path = filedialog.askopenfilename(title='Выберите ADB из Android Platform Tools', filetypes=[('ADB', ADB_NAME)])
         if path: self.adb_path = path
 
     def choose_apk(self):
@@ -480,7 +503,7 @@ class Wizard:
 
     def open_logs(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        os.startfile(DATA)
+        open_folder(DATA)
 
     def set_busy(self, busy):
         self.busy = busy
@@ -593,7 +616,7 @@ class Wizard:
     def connect(self):
         if self.busy: return
         if not self.adb_path:
-            messagebox.showinfo('Нужен ADB', 'Выберите adb.exe из официальных Android Platform Tools: https://developer.android.com/tools/releases/platform-tools')
+            messagebox.showinfo('Нужен ADB', 'Выберите ADB из официальных Android Platform Tools: https://developer.android.com/tools/releases/platform-tools')
             return
         target = self.target.get().strip()
         adb_path = self.adb_path
@@ -617,7 +640,7 @@ class Wizard:
         ttk.Button(content, text='Отменить подключение', command=self.cancel_connect.set).pack(anchor='e')
         apply_theme(self.root, self.dark_mode.get())
         def read_device():
-            executable = portable_adb() if adb_path == str(ASSETS / 'platform-tools' / 'adb.exe') else adb_path
+            executable = portable_adb() if adb_path == str(ASSETS / 'platform-tools' / ADB_NAME) else adb_path
             adb = Adb(executable, log=DATA / 'adb-log.jsonl')
             serial = wait_for_device(adb, target, self.cancel_connect, self.progress)
             self.progress('Разрешение получено. Читаю приложения и параметры устройства…')
@@ -898,7 +921,7 @@ class Wizard:
                       style='Warning.TLabel').pack(fill='x')
         details = ttk.Frame(content)
         text = ScrolledText(details, wrap='word', height=14, padx=15, pady=15, background=colors.surface,
-                            foreground=colors.text, insertbackground=colors.text, relief='flat', font=('Segoe UI', 10),
+                            foreground=colors.text, insertbackground=colors.text, relief='flat', font=(self.root.peach_font, 10),
                             highlightthickness=1, highlightbackground=colors.border)
         text.pack(fill='both', expand=True)
         text.insert('1.0', '\n'.join(lines))
@@ -973,7 +996,7 @@ if __name__ == '__main__':
         root.withdraw()
         app = Wizard(root)
         root.update_idletasks()
-        test_adb = portable_adb() if app.adb_path == str(ASSETS / 'platform-tools' / 'adb.exe') else app.adb_path
+        test_adb = portable_adb() if app.adb_path == str(ASSETS / 'platform-tools' / ADB_NAME) else app.adb_path
         Path(sys.argv[2]).write_text(json.dumps({'installer_version': SETUP_VERSION,
                                                'tk': root.tk.call('info', 'patchlevel'), 'rules': len(RULES),
                                                'adb': bool(app.adb_path), 'apk': app.selected_apk().exists(),
