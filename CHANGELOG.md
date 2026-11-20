@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.24
+
+### Русский
+
+- «Найти ТВ» показывает телевизоры и приставки, которые объявляют обычный сетевой ADB на порту 5555. Устройства с сопряжением по коду по-прежнему видны в списке.
+- Обновлены установщики Windows, macOS и Linux. APK лаунчера и AirPlay взяты из v1.5.23. Если PeachOS TV уже установлен, достаточно обновить установщик на компьютере.
+
+### English
+
+- Find TV now lists TVs and boxes that advertise legacy network ADB on port 5555. Devices using code-based wireless debugging still appear in the list.
+- Updated the Windows, macOS and Linux installers. The launcher and AirPlay APKs are carried over from v1.5.23. If PeachOS TV is already installed, only the desktop installer needs updating.
+
 ## 1.5.23
 
 ### Русский

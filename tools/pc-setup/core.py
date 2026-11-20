@@ -134,7 +134,7 @@ def wifi_services(adb):
     targets = set()
     for line in output.splitlines():
         fields = line.split()
-        if len(fields) != 3 or fields[1].rstrip('.') != '_adb-tls-connect._tcp':
+        if len(fields) != 3 or fields[1].rstrip('.') not in ('_adb._tcp', '_adb-tls-connect._tcp'):
             continue
         try:
             host, port = wifi_endpoint(fields[2])

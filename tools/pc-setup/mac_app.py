@@ -18,7 +18,7 @@ from core import Adb, discover, wait_for_device, apply_plan, restore, read_prese
 from core import pair_wifi, wifi_services, diagnostic_report, check_home_after_reboot, packages_reenabled
 from host_runtime import cache_adb
 
-VERSION = '1.5.23'
+VERSION = '1.5.24'
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(Path.home() / 'Library' / 'Application Support' / 'PeachOS TV Setup')))
 

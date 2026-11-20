@@ -59,13 +59,15 @@ class SetupTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pair_wifi(adb, '192.168.1.12:37123', address, '012345', cancelled, progress)
 
-    def test_wireless_discovery_ignores_pairing_ports_and_invalid_records(self):
+    def test_wireless_discovery_accepts_legacy_and_tls_but_ignores_pairing_ports(self):
         adb = Mock()
         adb.run.return_value = ('List of discovered mdns services\n'
+                                'legacy\t_adb._tcp\t192.168.1.11:5555\n'
                                 'one\t_adb-tls-connect._tcp\t192.168.1.12:48042\n'
+                                'duplicate\t_adb._tcp.\t192.168.1.11:5555\n'
                                 'two\t_adb-tls-pairing._tcp\t192.168.1.12:37123\n'
                                 'broken\t_adb-tls-connect._tcp\t999.1.1.1:81\n')
-        self.assertEqual(('192.168.1.12:48042',), wifi_services(adb))
+        self.assertEqual(('192.168.1.11:5555', '192.168.1.12:48042'), wifi_services(adb))
         adb.run.assert_called_once_with('mdns', 'services', target=False, timeout=10)
 
     def test_diagnostics_use_allowlist_instead_of_exporting_device_inventory(self):
