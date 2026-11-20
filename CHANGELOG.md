@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.22
+
+### Русский
+
+- Нативный установщик macOS для Apple Silicon и Intel. Прокрутку и инерцию трекпада обрабатывает AppKit. Размер иконки в Dock скорректирован.
+- Портативный Linux-установщик для x86_64 с APK и ADB. Windows-мастер также доступен в релизе.
+- Версия 1.5.22 относится к установщикам. APK лаунчера и AirPlay взяты из предыдущего релиза.
+
+### English
+
+- Native macOS installer for Apple Silicon and Intel with AppKit trackpad scrolling and momentum, plus a properly sized Dock icon.
+- Portable Linux x86_64 installer with bundled APKs and ADB. The Windows installer is also included.
+- Version 1.5.22 applies to the desktop installers. The launcher and AirPlay APKs are the same as in the previous release.
+
 ## 1.5.21
 
 ### Русский

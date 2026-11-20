@@ -17,7 +17,7 @@ from catalog import candidates, FEATURES, REFERENCE, protected
 from core import Adb, discover, wait_for_device, apply_plan, restore, read_preset, inspect_apk, airplay_compatibility, PEACH, Device
 from host_runtime import cache_adb
 
-VERSION = '1.5.21'
+VERSION = '1.5.22'
 ASSETS = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(Path.home() / 'Library' / 'Application Support' / 'PeachOS TV Setup')))
 

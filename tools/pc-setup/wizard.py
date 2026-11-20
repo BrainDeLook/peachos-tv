@@ -30,7 +30,7 @@ else:
     default_data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share'))) / 'peachos-tv-setup'
 DATA = Path(os.environ.get('PEACHOS_SETUP_DATA', str(default_data)))
 BUNDLED_APK_LABEL = 'Встроенный PeachOS TV'
-SETUP_VERSION = '1.5.21'
+SETUP_VERSION = '1.5.22'
 
 
 def open_folder(path):
