@@ -75,81 +75,84 @@ def apply_theme(root, dark):
     root.peach_palette = colors
     root.peach_dark = dark
     style = ttk.Style(root)
-    style.configure('.', background=colors.background, foreground=colors.text, font=(root.peach_font, 10),
-                    borderwidth=0, bordercolor=colors.background, lightcolor=colors.background, darkcolor=colors.background)
-    style.configure('TFrame', background=colors.background)
-    style.configure('Card.TFrame', background=colors.surface, bordercolor=colors.border,
-                    lightcolor=colors.border, darkcolor=colors.border)
-    style.configure('TLabel', padding=0)
-    style.configure('Muted.TLabel', foreground=colors.muted)
-    style.configure('Title.TLabel', font=(root.peach_font, 20, 'bold'))
-    style.configure('Hero.TLabel', font=(root.peach_font, 27, 'bold'))
-    style.configure('Step.TLabel', font=(root.peach_font, 9, 'bold'), foreground=colors.selected_text)
-    style.configure('TSeparator', background=colors.border)
-    style.configure('Heading.TLabel', font=(root.peach_font, 17, 'bold'))
-    style.configure('Version.TLabel', foreground=colors.muted, font=(root.peach_font, 10))
-    for name, font, color in (
-            ('Card.TLabel', (root.peach_font, 10), colors.text),
-            ('CardTitle.TLabel', (root.peach_font, 13, 'bold'), colors.text),
-            ('CardMuted.TLabel', (root.peach_font, 10), colors.muted),
-            ('CardSmall.TLabel', (root.peach_font, 9), colors.muted),
-            ('Warning.TLabel', (root.peach_font, 10), colors.warning),
-            ('Success.TLabel', (root.peach_font, 14, 'bold'), colors.success)):
-        style.configure(name, background=colors.surface, font=font, foreground=color)
-    style.configure('TButton', background=colors.button, foreground=colors.text, padding=(14, 9),
-                    borderwidth=0, focusthickness=1, focuscolor=ACCENT)
-    style.map('TButton', background=[('disabled', colors.disabled), ('pressed', colors.pressed), ('active', colors.hover)],
-              foreground=[('disabled', colors.disabled_text)])
-    style.configure('Accent.TButton', background=ACCENT, foreground='#ffffff', focuscolor='#ffffff',
-                    font=(root.peach_font, 10, 'bold'), padding=(20, 10))
-    style.map('Accent.TButton', background=[('disabled', colors.disabled), ('pressed', '#064eaa'), ('active', '#075bbd')],
-              foreground=[('disabled', colors.disabled_text)])
-    rounded_button_layout(root, style, colors, dark)
-    style.configure('Small.TButton', padding=(10, 6), font=(root.peach_font, 9))
-    style.configure('Link.TButton', background=colors.background, foreground=colors.selected_text, padding=(6, 5))
-    style.map('Link.TButton', background=[('active', colors.hover)])
-    style.configure('Nav.TButton', anchor='w', background=colors.background, foreground=colors.muted, padding=(16, 12))
-    style.configure('Active.Nav.TButton', anchor='w', background=colors.selected, foreground=colors.selected_text,
-                    font=(root.peach_font, 10, 'bold'), padding=(16, 12))
-    style.map('Active.Nav.TButton', background=[('active', colors.selected)])
-    style.configure('TEntry', fieldbackground=colors.surface, foreground=colors.text, padding=9,
-                    borderwidth=1, bordercolor=colors.border, lightcolor=colors.border, darkcolor=colors.border, insertcolor=colors.text)
-    style.map('TEntry', bordercolor=[('focus', '#cf8a6f')], fieldbackground=[('disabled', colors.disabled)],
-              foreground=[('disabled', colors.disabled_text)])
-    style.configure('TCheckbutton', background=colors.surface, padding=(0, 6), indicatorbackground=colors.surface,
-                    indicatorforeground='#29222a', bordercolor=colors.border)
-    style.map('TCheckbutton', background=[('active', colors.surface)],
-              indicatorbackground=[('disabled', colors.disabled), ('selected', ACCENT)], foreground=[('disabled', colors.disabled_text)])
-    style.configure('Plain.TCheckbutton', background=colors.background)
-    style.map('Plain.TCheckbutton', background=[('active', colors.background)])
-    style.configure('TCombobox', fieldbackground=colors.surface, background=colors.heading, foreground=colors.text,
-                    arrowcolor=colors.muted, padding=7, borderwidth=1, bordercolor=colors.border)
-    style.map('TCombobox', fieldbackground=[('disabled', colors.disabled), ('readonly', colors.surface)],
-              foreground=[('disabled', colors.disabled_text), ('readonly', colors.text)])
-    root.option_add('*TCombobox*Listbox.background', colors.surface)
-    root.option_add('*TCombobox*Listbox.foreground', colors.text)
-    root.option_add('*TCombobox*Listbox.selectBackground', colors.selected)
-    root.option_add('*TCombobox*Listbox.selectForeground', colors.text)
-    style.configure('TNotebook', borderwidth=0)
-    style.layout('TNotebook.Tab', [])
-    style.configure('Treeview', background=colors.surface, fieldbackground=colors.surface, foreground=colors.text,
-                    rowheight=29, borderwidth=0, font=(root.peach_font, 9))
-    style.map('Treeview', background=[('selected', colors.selected)], foreground=[('selected', colors.text)])
-    style.configure('Treeview.Heading', background=colors.heading, foreground=colors.muted,
-                    padding=(7, 8), relief='flat', font=(root.peach_font, 9, 'bold'))
-    style.configure('Vertical.TScrollbar', background=colors.scrollbar, troughcolor=colors.background,
-                    borderwidth=0, arrowcolor=colors.muted, width=11, bordercolor=colors.background,
-                    lightcolor=colors.scrollbar, darkcolor=colors.scrollbar)
-    style.map('Vertical.TScrollbar', background=[('disabled', colors.disabled), ('pressed', colors.pressed), ('active', colors.hover)],
-              lightcolor=[('disabled', colors.disabled)], darkcolor=[('disabled', colors.disabled)],
-              arrowcolor=[('disabled', colors.disabled_text)])
-    style.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=colors.disabled, borderwidth=0)
+    if getattr(root, 'peach_style_theme', None) != dark:
+        style.configure('.', background=colors.background, foreground=colors.text, font=(root.peach_font, 10),
+                        borderwidth=0, bordercolor=colors.background, lightcolor=colors.background, darkcolor=colors.background)
+        style.configure('TFrame', background=colors.background)
+        style.configure('Card.TFrame', background=colors.surface, bordercolor=colors.border,
+                        lightcolor=colors.border, darkcolor=colors.border)
+        style.configure('TLabel', padding=0)
+        style.configure('Muted.TLabel', foreground=colors.muted)
+        style.configure('Title.TLabel', font=(root.peach_font, 20, 'bold'))
+        style.configure('Hero.TLabel', font=(root.peach_font, 27, 'bold'))
+        style.configure('Step.TLabel', font=(root.peach_font, 9, 'bold'), foreground=colors.selected_text)
+        style.configure('TSeparator', background=colors.border)
+        style.configure('Heading.TLabel', font=(root.peach_font, 17, 'bold'))
+        style.configure('Version.TLabel', foreground=colors.muted, font=(root.peach_font, 10))
+        for name, font, color in (
+                ('Card.TLabel', (root.peach_font, 10), colors.text),
+                ('CardTitle.TLabel', (root.peach_font, 13, 'bold'), colors.text),
+                ('CardMuted.TLabel', (root.peach_font, 10), colors.muted),
+                ('CardSmall.TLabel', (root.peach_font, 9), colors.muted),
+                ('Warning.TLabel', (root.peach_font, 10), colors.warning),
+                ('Success.TLabel', (root.peach_font, 14, 'bold'), colors.success)):
+            style.configure(name, background=colors.surface, font=font, foreground=color)
+        style.configure('TButton', background=colors.button, foreground=colors.text, padding=(14, 9),
+                        borderwidth=0, focusthickness=1, focuscolor=ACCENT)
+        style.map('TButton', background=[('disabled', colors.disabled), ('pressed', colors.pressed), ('active', colors.hover)],
+                  foreground=[('disabled', colors.disabled_text)])
+        style.configure('Accent.TButton', background=ACCENT, foreground='#ffffff', focuscolor='#ffffff',
+                        font=(root.peach_font, 10, 'bold'), padding=(20, 10))
+        style.map('Accent.TButton', background=[('disabled', colors.disabled), ('pressed', '#064eaa'), ('active', '#075bbd')],
+                  foreground=[('disabled', colors.disabled_text)])
+        rounded_button_layout(root, style, colors, dark)
+        style.configure('Small.TButton', padding=(10, 6), font=(root.peach_font, 9))
+        style.configure('Link.TButton', background=colors.background, foreground=colors.selected_text, padding=(6, 5))
+        style.map('Link.TButton', background=[('active', colors.hover)])
+        style.configure('Nav.TButton', anchor='w', background=colors.background, foreground=colors.muted, padding=(16, 12))
+        style.configure('Active.Nav.TButton', anchor='w', background=colors.selected, foreground=colors.selected_text,
+                        font=(root.peach_font, 10, 'bold'), padding=(16, 12))
+        style.map('Active.Nav.TButton', background=[('active', colors.selected)])
+        style.configure('TEntry', fieldbackground=colors.surface, foreground=colors.text, padding=9,
+                        borderwidth=1, bordercolor=colors.border, lightcolor=colors.border, darkcolor=colors.border, insertcolor=colors.text)
+        style.map('TEntry', bordercolor=[('focus', '#cf8a6f')], fieldbackground=[('disabled', colors.disabled)],
+                  foreground=[('disabled', colors.disabled_text)])
+        style.configure('TCheckbutton', background=colors.surface, padding=(0, 6), indicatorbackground=colors.surface,
+                        indicatorforeground='#29222a', bordercolor=colors.border)
+        style.map('TCheckbutton', background=[('active', colors.surface)],
+                  indicatorbackground=[('disabled', colors.disabled), ('selected', ACCENT)], foreground=[('disabled', colors.disabled_text)])
+        style.configure('Plain.TCheckbutton', background=colors.background)
+        style.map('Plain.TCheckbutton', background=[('active', colors.background)])
+        style.configure('TCombobox', fieldbackground=colors.surface, background=colors.heading, foreground=colors.text,
+                        arrowcolor=colors.muted, padding=7, borderwidth=1, bordercolor=colors.border)
+        style.map('TCombobox', fieldbackground=[('disabled', colors.disabled), ('readonly', colors.surface)],
+                  foreground=[('disabled', colors.disabled_text), ('readonly', colors.text)])
+        root.option_add('*TCombobox*Listbox.background', colors.surface)
+        root.option_add('*TCombobox*Listbox.foreground', colors.text)
+        root.option_add('*TCombobox*Listbox.selectBackground', colors.selected)
+        root.option_add('*TCombobox*Listbox.selectForeground', colors.text)
+        style.configure('TNotebook', borderwidth=0)
+        style.layout('TNotebook.Tab', [])
+        style.configure('Treeview', background=colors.surface, fieldbackground=colors.surface, foreground=colors.text,
+                        rowheight=29, borderwidth=0, font=(root.peach_font, 9))
+        style.map('Treeview', background=[('selected', colors.selected)], foreground=[('selected', colors.text)])
+        style.configure('Treeview.Heading', background=colors.heading, foreground=colors.muted,
+                        padding=(7, 8), relief='flat', font=(root.peach_font, 9, 'bold'))
+        style.configure('Vertical.TScrollbar', background=colors.scrollbar, troughcolor=colors.background,
+                        borderwidth=0, arrowcolor=colors.muted, width=11, bordercolor=colors.background,
+                        lightcolor=colors.scrollbar, darkcolor=colors.scrollbar)
+        style.map('Vertical.TScrollbar', background=[('disabled', colors.disabled), ('pressed', colors.pressed), ('active', colors.hover)],
+                  lightcolor=[('disabled', colors.disabled)], darkcolor=[('disabled', colors.disabled)],
+                  arrowcolor=[('disabled', colors.disabled_text)])
+        style.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=colors.disabled, borderwidth=0)
+        root.peach_style_theme = dark
     pending = [root]
     while pending:
         widget = pending.pop()
         pending.extend(widget.winfo_children())
         if isinstance(widget, (tk.Tk, tk.Toplevel, tk.Canvas)):
-            widget.configure(background=colors.background)
+            if widget.cget('background') != colors.background:
+                widget.configure(background=colors.background)
         elif isinstance(widget, tk.Text):
             widget.configure(background=colors.surface, foreground=colors.text, insertbackground=colors.text,
                              selectbackground=colors.selected, selectforeground=colors.text, highlightbackground=colors.border)
@@ -186,7 +189,14 @@ class ScrollPage(ttk.Frame):
         self.canvas.pack(side='left', fill='both', expand=True)
         self.body = ttk.Frame(self.canvas)
         item = self.canvas.create_window((0, 0), window=self.body, anchor='nw')
-        self.body.bind('<Configure>', lambda event: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
+        self._scroll_job = None
+        self._scroll_pixels = 0
+        self._region = None
+        self.body.bind('<Configure>', self._update_region)
+        self.bind('<Destroy>', self._cancel_scroll, add='+')
+        if sys.platform == 'darwin':
+            self.canvas.configure(yscrollincrement=1)
+
 
         def resize(event):
             width = min(event.width, max_width) if max_width else event.width
@@ -195,6 +205,30 @@ class ScrollPage(ttk.Frame):
             self.canvas.coords(item, (event.width - width) // 2, 0)
 
         self.canvas.bind('<Configure>', resize)
+
+    def _update_region(self, event):
+        region = self.canvas.bbox('all')
+        if region != self._region:
+            self._region = region
+            self.canvas.configure(scrollregion=region)
+
+    def scroll_pixels(self, pixels):
+        # Trackpad events already include OS acceleration and momentum. Batch
+        # their distances into one paint per frame without a second easing tail.
+        self._scroll_pixels += pixels
+        if self._scroll_job is None:
+            self._scroll_job = self._root().after(16, self._flush_scroll)
+
+    def _flush_scroll(self):
+        self._scroll_job = None
+        pixels, self._scroll_pixels = self._scroll_pixels, 0
+        self.canvas.yview_scroll(pixels, 'units')
+
+    def _cancel_scroll(self, event):
+        if event.widget is self and self._scroll_job is not None:
+            self._root().after_cancel(self._scroll_job)
+            self._scroll_job = None
+
 
 
 def scroll_page_wheel(event):
@@ -207,7 +241,10 @@ def scroll_page_wheel(event):
             return
         if isinstance(widget, ScrollPage):
             if widget.canvas.yview() != (0.0, 1.0):
-                widget.canvas.yview_scroll(-1 if event.num == 4 or (event.num != 5 and event.delta > 0) else 1, 'units')
+                if sys.platform == 'darwin':
+                    widget.scroll_pixels(-event.delta * 4)
+                else:
+                    widget.canvas.yview_scroll(-1 if event.num == 4 or (event.num != 5 and event.delta > 0) else 1, 'units')
                 return 'break'
             return
         widget = widget.master

@@ -60,10 +60,12 @@ def main():
     if sys.platform == 'darwin':
         iconset = stage / 'peachos.iconset'
         iconset.mkdir(exist_ok=True)
+        mac_icon = stage / 'peachos-mac.png'
+        subprocess.run(['swift', str(here / 'mac_icon.swift'), str(mac_icon)], check=True)
         for size in (16, 32, 128, 256, 512):
             for scale in (1, 2):
                 name = f'icon_{size}x{size}' + ('@2x' if scale == 2 else '') + '.png'
-                subprocess.run(['sips', '-z', str(size * scale), str(size * scale), str(here / 'peachos.png'), '--out', str(iconset / name)], check=True, stdout=subprocess.DEVNULL)
+                subprocess.run(['sips', '-z', str(size * scale), str(size * scale), str(mac_icon), '--out', str(iconset / name)], check=True, stdout=subprocess.DEVNULL)
         icon = stage / 'peachos.icns'
         subprocess.run(['iconutil', '-c', 'icns', str(iconset), '-o', str(icon)], check=True)
         command += ['--windowed', '--icon', str(icon), '--osx-bundle-identifier', 'tv.peachos.setup']

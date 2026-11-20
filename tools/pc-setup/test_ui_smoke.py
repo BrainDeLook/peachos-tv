@@ -38,6 +38,28 @@ class InstallerUiSmokeTests(unittest.TestCase):
             self.root.after_cancel(callback)
         self.root.destroy()
 
+    def test_trackpad_burst_batches_distance_and_cancels_pending_frame_on_destroy(self):
+        with patch('ui.sys.platform', 'darwin'):
+            page = ScrollPage(self.root)
+        with patch.object(page.canvas, 'yview_scroll') as scroll:
+            for pixels in (4, 12, 8, -4):
+                page.scroll_pixels(pixels)
+            callback = page._scroll_job
+            self.assertIsNotNone(callback)
+            self.root.after_cancel(callback)
+            page._flush_scroll()
+            scroll.assert_called_once_with(20, 'units')
+        page.scroll_pixels(4)
+        callback = page._scroll_job
+        page.destroy()
+        self.assertNotIn(callback, self.root.tk.call('after', 'info'))
+
+    def test_opening_dialog_does_not_reconfigure_the_existing_theme(self):
+        from ui import apply_theme
+        with patch.object(ttk.Style, 'configure') as configure:
+            apply_theme(self.root, self.app.dark_mode.get())
+            configure.assert_not_called()
+
     def test_busy_disables_edits_and_restores_readonly_and_unavailable_module(self):
         combo = next(widget for widget in descendants(self.app.frame) if isinstance(widget, ttk.Combobox))
         self.assertTrue(combo.instate(('readonly', '!disabled')))
