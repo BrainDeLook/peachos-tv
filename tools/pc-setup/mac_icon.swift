@@ -7,7 +7,7 @@ let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHig
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 NSColor.clear.setFill()
-NSRect(x: 0, y: 0, width: size, height: size).fill()
+NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)).fill()
 // Keep transparent margins so the visible tile matches neighbouring Dock icons.
 let tile = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 184, yRadius: 184)
 NSGradient(starting: NSColor(srgbRed: 1, green: 0.71, blue: 0.58, alpha: 1),
